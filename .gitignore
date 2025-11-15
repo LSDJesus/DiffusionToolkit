@@ -29,6 +29,9 @@ obj/
 _ReSharper*/
 [Tt]est[Rr]esult*
 .vs/
+models/
+scripts/
+_import_joytag/
 #Nuget packages folder
 packages/
 /build

@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- ONNXRuntime with GPU support for NVIDIA -->
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.Gpu" Version="1.20.1" />
+    
+    <!-- Tokenizers for BGE/BERT models -->
+    <PackageReference Include="Microsoft.ML.Tokenizers" Version="0.22.0" />
+    
+    <!-- For image processing with ONNX -->
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.8" />
+    
+    <!-- System.Numerics.Tensors for tensor operations -->
+    <PackageReference Include="System.Numerics.Tensors" Version="9.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Diffusion.Common\Diffusion.Common.csproj" />
+    <ProjectReference Include="..\Diffusion.Database.PostgreSQL\Diffusion.Database.PostgreSQL.csproj" />
+  </ItemGroup>
+
+</Project>

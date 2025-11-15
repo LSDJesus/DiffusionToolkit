@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net6.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <UseWPF>true</UseWPF>
 	<UseWindowsForms>true</UseWindowsForms>
@@ -151,6 +151,8 @@
     <ProjectReference Include="..\Diffusion.Civitai\Diffusion.Civitai.csproj" />
     <ProjectReference Include="..\Diffusion.Common\Diffusion.Common.csproj" />
     <ProjectReference Include="..\Diffusion.Database\Diffusion.Database.csproj" />
+    <ProjectReference Include="..\Diffusion.Database.PostgreSQL\Diffusion.Database.PostgreSQL.csproj" />
+    <ProjectReference Include="..\Diffusion.Embeddings\Diffusion.Embeddings.csproj" />
     <ProjectReference Include="..\Diffusion.Scanner\Diffusion.IO.csproj" />
   </ItemGroup>
 

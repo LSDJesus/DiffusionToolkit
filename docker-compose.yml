@@ -1,0 +1,41 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg18
+    container_name: diffusion_toolkit_db
+    environment:
+      POSTGRES_USER: diffusion
+      POSTGRES_PASSWORD: diffusion_toolkit_secure_2025
+      POSTGRES_DB: diffusion_images
+      POSTGRES_INITDB_ARGS: "-E UTF8 --locale=C"
+    ports:
+      - "5436:5436"
+    volumes:
+      - pgdata:/var/lib/postgresql
+      - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U diffusion"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    shm_size: 1gb
+    command:
+      - "postgres"
+      - "-c"
+      - "shared_buffers=512MB"
+      - "-c"
+      - "effective_cache_size=2GB"
+      - "-c"
+      - "maintenance_work_mem=256MB"
+      - "-c"
+      - "max_connections=100"
+      - "-c"
+      - "work_mem=16MB"
+
+volumes:
+  pgdata:
+    driver: local
+
+networks:
+  default:
+    name: diffusion_toolkit_network

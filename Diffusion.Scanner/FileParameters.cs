@@ -28,10 +28,51 @@ public class FileParameters
     public string? Workflow { get; set; }
     public string? WorkflowId { get; set; }
     public bool HasError { get; set; }
-
-
     public string ErrorMessage { get; set; }
 
     public IReadOnlyCollection<Node>? Nodes { get; set; }
     public string? Hash { get; set; }
+    
+    // Sidecar .txt file content (AI-generated tags)
+    public string? GeneratedTags { get; set; }
+    
+    // Extracted searchable metadata
+    public List<LoraInfo>? Loras { get; set; }
+    public string? Vae { get; set; }
+    public string? RefinerModel { get; set; }
+    public decimal? RefinerSwitch { get; set; }
+    public string? Upscaler { get; set; }
+    public decimal? UpscaleFactor { get; set; }
+    public int? HiresSteps { get; set; }
+    public string? HiresUpscaler { get; set; }
+    public decimal? HiresUpscale { get; set; }
+    public decimal? DenoisingStrength { get; set; }
+    public List<ControlNetInfo>? ControlNets { get; set; }
+    public string? IpAdapter { get; set; }
+    public decimal? IpAdapterStrength { get; set; }
+    public List<string>? WildcardsUsed { get; set; }
+    public decimal? GenerationTimeSeconds { get; set; }
+    public string? Scheduler { get; set; }
+}
+
+/// <summary>
+/// LoRA/LyCORIS information
+/// </summary>
+public class LoraInfo
+{
+    public string Name { get; set; } = string.Empty;
+    public decimal Strength { get; set; }
+}
+
+/// <summary>
+/// ControlNet configuration
+/// </summary>
+public class ControlNetInfo
+{
+    public int Index { get; set; }
+    public string Preprocessor { get; set; } = string.Empty;
+    public string Model { get; set; } = string.Empty;
+    public decimal Weight { get; set; }
+    public decimal? GuidanceStart { get; set; }
+    public decimal? GuidanceEnd { get; set; }
 }

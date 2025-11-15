@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- LLamaSharp for GGUF model support -->
+    <PackageReference Include="LLamaSharp" Version="0.18.0" />
+    <PackageReference Include="LLamaSharp.Backend.Cuda12" Version="0.18.0" />
+    
+    <!-- For image processing -->
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.8" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Diffusion.Common\Diffusion.Common.csproj" />
+    <ProjectReference Include="..\Diffusion.Database.PostgreSQL\Diffusion.Database.PostgreSQL.csproj" />
+  </ItemGroup>
+
+</Project>

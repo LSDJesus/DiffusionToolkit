@@ -527,6 +527,26 @@ public class Metadata
         fileParameters.Width = width;
         fileParameters.Height = height;
 
+        // Import sidecar .txt file (AI-generated tags from WD14, BLIP, etc.)
+        var sidecarPath = Path.ChangeExtension(file, ".txt");
+        if (File.Exists(sidecarPath))
+        {
+            try
+            {
+                fileParameters.GeneratedTags = File.ReadAllText(sidecarPath);
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"Failed to read sidecar file {sidecarPath}: {ex.Message}");
+            }
+        }
+
+        // Extract searchable metadata from Parameters field
+        if (!string.IsNullOrEmpty(fileParameters.Parameters))
+        {
+            ExtractSearchableMetadata(fileParameters);
+        }
+
         return fileParameters;
     }
 
@@ -1472,5 +1492,217 @@ public class Metadata
         }
         foundTag = null;
         return false;
+    }
+
+    /// <summary>
+    /// Extract searchable metadata from Parameters field
+    /// Extracts LoRAs, VAE, Refiner, Upscaler, Hires fix, ControlNet, wildcards, etc.
+    /// </summary>
+    private static void ExtractSearchableMetadata(FileParameters fp)
+    {
+        var parameters = fp.Parameters;
+        if (string.IsNullOrEmpty(parameters))
+            return;
+
+        try
+        {
+            // Extract LoRAs: <lora:name:strength> or <lyco:name:strength>
+            var loraRegex = new Regex(@"<(?:lora|lyco):([^:>]+):([0-9.]+)>", RegexOptions.IgnoreCase);
+            var loraMatches = loraRegex.Matches(parameters);
+            if (loraMatches.Count > 0)
+            {
+                fp.Loras = loraMatches.Select(m => new LoraInfo
+                {
+                    Name = m.Groups[1].Value,
+                    Strength = decimal.Parse(m.Groups[2].Value, CultureInfo.InvariantCulture)
+                }).ToList();
+            }
+
+            // Extract VAE
+            var vaeMatch = Regex.Match(parameters, @"VAE:\s*([^,\n]+)", RegexOptions.IgnoreCase);
+            if (vaeMatch.Success)
+                fp.Vae = vaeMatch.Groups[1].Value.Trim();
+
+            // Extract Refiner (SDXL)
+            var refinerMatch = Regex.Match(parameters, @"Refiner:\s*([^,\n]+)", RegexOptions.IgnoreCase);
+            if (refinerMatch.Success)
+                fp.RefinerModel = refinerMatch.Groups[1].Value.Trim();
+
+            var refinerSwitchMatch = Regex.Match(parameters, @"Refiner switch at:\s*([0-9.]+)", RegexOptions.IgnoreCase);
+            if (refinerSwitchMatch.Success)
+                fp.RefinerSwitch = decimal.Parse(refinerSwitchMatch.Groups[1].Value, CultureInfo.InvariantCulture);
+
+            // Extract Upscaler
+            var upscalerMatch = Regex.Match(parameters, @"Upscaler:\s*([^,\n]+)", RegexOptions.IgnoreCase);
+            if (upscalerMatch.Success)
+                fp.Upscaler = upscalerMatch.Groups[1].Value.Trim();
+
+            var upscaleMatch = Regex.Match(parameters, @"Upscale by:\s*([0-9.]+)", RegexOptions.IgnoreCase);
+            if (upscaleMatch.Success)
+                fp.UpscaleFactor = decimal.Parse(upscaleMatch.Groups[1].Value, CultureInfo.InvariantCulture);
+
+            // Extract Hires fix
+            var hiresStepsMatch = Regex.Match(parameters, @"Hires steps:\s*(\d+)", RegexOptions.IgnoreCase);
+            if (hiresStepsMatch.Success)
+                fp.HiresSteps = int.Parse(hiresStepsMatch.Groups[1].Value);
+
+            var hiresUpscalerMatch = Regex.Match(parameters, @"Hires upscaler:\s*([^,\n]+)", RegexOptions.IgnoreCase);
+            if (hiresUpscalerMatch.Success)
+                fp.HiresUpscaler = hiresUpscalerMatch.Groups[1].Value.Trim();
+
+            var hiresUpscaleMatch = Regex.Match(parameters, @"Hires upscale:\s*([0-9.]+)", RegexOptions.IgnoreCase);
+            if (hiresUpscaleMatch.Success)
+                fp.HiresUpscale = decimal.Parse(hiresUpscaleMatch.Groups[1].Value, CultureInfo.InvariantCulture);
+
+            var denoisingMatch = Regex.Match(parameters, @"Denoising strength:\s*([0-9.]+)", RegexOptions.IgnoreCase);
+            if (denoisingMatch.Success)
+                fp.DenoisingStrength = decimal.Parse(denoisingMatch.Groups[1].Value, CultureInfo.InvariantCulture);
+
+            // Extract ControlNet
+            var controlNetRegex = new Regex(@"ControlNet\s*(\d+):\s*""([^""]+)""", RegexOptions.IgnoreCase);
+            var controlNetMatches = controlNetRegex.Matches(parameters);
+            if (controlNetMatches.Count > 0)
+            {
+                fp.ControlNets = new List<ControlNetInfo>();
+                foreach (Match match in controlNetMatches)
+                {
+                    var index = int.Parse(match.Groups[1].Value);
+                    var config = match.Groups[2].Value;
+
+                    var cn = new ControlNetInfo { Index = index };
+
+                    var preprocessorMatch = Regex.Match(config, @"preprocessor:\s*([^,]+)");
+                    if (preprocessorMatch.Success)
+                        cn.Preprocessor = preprocessorMatch.Groups[1].Value.Trim();
+
+                    var modelMatch = Regex.Match(config, @"model:\s*([^,]+)");
+                    if (modelMatch.Success)
+                        cn.Model = modelMatch.Groups[1].Value.Trim();
+
+                    var weightMatch = Regex.Match(config, @"weight:\s*([0-9.]+)");
+                    if (weightMatch.Success)
+                        cn.Weight = decimal.Parse(weightMatch.Groups[1].Value, CultureInfo.InvariantCulture);
+
+                    var startMatch = Regex.Match(config, @"guidance_start:\s*([0-9.]+)");
+                    if (startMatch.Success)
+                        cn.GuidanceStart = decimal.Parse(startMatch.Groups[1].Value, CultureInfo.InvariantCulture);
+
+                    var endMatch = Regex.Match(config, @"guidance_end:\s*([0-9.]+)");
+                    if (endMatch.Success)
+                        cn.GuidanceEnd = decimal.Parse(endMatch.Groups[1].Value, CultureInfo.InvariantCulture);
+
+                    fp.ControlNets.Add(cn);
+                }
+            }
+
+            // Extract IP-Adapter
+            var ipAdapterMatch = Regex.Match(parameters, @"IP Adapter:\s*([^,\n]+)", RegexOptions.IgnoreCase);
+            if (ipAdapterMatch.Success)
+                fp.IpAdapter = ipAdapterMatch.Groups[1].Value.Trim();
+
+            var ipStrengthMatch = Regex.Match(parameters, @"IP Adapter Strength:\s*([0-9.]+)", RegexOptions.IgnoreCase);
+            if (ipStrengthMatch.Success)
+                fp.IpAdapterStrength = decimal.Parse(ipStrengthMatch.Groups[1].Value, CultureInfo.InvariantCulture);
+
+            // Extract Wildcards
+            var wildcardList = new List<string>();
+            
+            // Method 1: Detect __pattern__ in prompt (A1111 format)
+            if (!string.IsNullOrEmpty(fp.Prompt))
+            {
+                var wildcardRegex = new Regex(@"__([a-zA-Z0-9_/]+)__");
+                var wildcardMatches = wildcardRegex.Matches(fp.Prompt);
+                wildcardList.AddRange(wildcardMatches.Select(m => m.Groups[1].Value));
+            }
+            
+            // Method 2: Extract from ComfyUI workflow JSON (ImpactWildcardEncode and other wildcard nodes)
+            if (!string.IsNullOrEmpty(fp.Workflow))
+            {
+                try
+                {
+                    // Look for ImpactWildcardEncode nodes with wildcard_text field
+                    var impactWildcardRegex = new Regex(
+                        @"""class_type"":\s*""ImpactWildcardEncode""[^}]*""inputs"":\s*\{[^}]*""wildcard_text"":\s*""([^""]+)""",
+                        RegexOptions.IgnoreCase
+                    );
+                    var impactMatches = impactWildcardRegex.Matches(fp.Workflow);
+                    
+                    foreach (Match match in impactMatches)
+                    {
+                        var wildcardText = match.Groups[1].Value;
+                        // Extract all __pattern__ wildcards from the wildcard_text
+                        var wildcardRegex = new Regex(@"__([a-zA-Z0-9_/]+)__");
+                        var wildcards = wildcardRegex.Matches(wildcardText);
+                        wildcardList.AddRange(wildcards.Select(m => m.Groups[1].Value));
+                    }
+                    
+                    // Also look for other wildcard processor nodes (generic fallback)
+                    var wildcardNodeRegex = new Regex(
+                        @"""class_type"":\s*""[^""]*[Ww]ildcard[^""]*""[^}]*""inputs"":\s*\{([^}]+)\}",
+                        RegexOptions.IgnoreCase
+                    );
+                    var nodeMatches = wildcardNodeRegex.Matches(fp.Workflow);
+                    
+                    foreach (Match match in nodeMatches)
+                    {
+                        var inputsSection = match.Groups[1].Value;
+                        // Extract wildcards from any text field in inputs
+                        var wildcardRegex = new Regex(@"__([a-zA-Z0-9_/]+)__");
+                        var wildcards = wildcardRegex.Matches(inputsSection);
+                        wildcardList.AddRange(wildcards.Select(m => m.Groups[1].Value));
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log($"Failed to extract wildcards from workflow JSON: {ex.Message}");
+                }
+            }
+            
+            // Method 3: Extract from parsed ComfyUI nodes (if available)
+            if (fp.Nodes != null && fp.Nodes.Count > 0)
+            {
+                // Look for nodes with class_type containing "wildcard"
+                var wildcardNodes = fp.Nodes.Where(n => 
+                    n.Name != null && 
+                    n.Name.Contains("wildcard", StringComparison.OrdinalIgnoreCase));
+                
+                foreach (var node in wildcardNodes)
+                {
+                    if (node.Inputs != null)
+                    {
+                        foreach (var input in node.Inputs)
+                        {
+                            // Look for text/prompt inputs that might contain __wildcards__
+                            if (input.Value is string textValue && !string.IsNullOrEmpty(textValue))
+                            {
+                                var wildcardRegex = new Regex(@"__([a-zA-Z0-9_/]+)__");
+                                var matches = wildcardRegex.Matches(textValue);
+                                wildcardList.AddRange(matches.Select(m => m.Groups[1].Value));
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Store unique wildcards
+            if (wildcardList.Count > 0)
+            {
+                fp.WildcardsUsed = wildcardList.Distinct().ToList();
+            }
+
+            // Extract Scheduler
+            var schedulerMatch = Regex.Match(parameters, @"Schedule type:\s*([^,\n]+)", RegexOptions.IgnoreCase);
+            if (schedulerMatch.Success)
+                fp.Scheduler = schedulerMatch.Groups[1].Value.Trim();
+
+            // Extract Generation time (if available)
+            var genTimeMatch = Regex.Match(parameters, @"Generation time:\s*([0-9.]+)\s*s", RegexOptions.IgnoreCase);
+            if (genTimeMatch.Success)
+                fp.GenerationTimeSeconds = decimal.Parse(genTimeMatch.Groups[1].Value, CultureInfo.InvariantCulture);
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"Failed to extract searchable metadata: {ex.Message}");
+        }
     }
 }
