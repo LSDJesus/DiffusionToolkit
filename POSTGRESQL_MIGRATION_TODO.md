@@ -254,7 +254,7 @@ Diffusion.MigrationTool.exe migrate --source <sqlite.db> --dest <postgres-connec
 ```json
 {
   "DatabaseType": "PostgreSQL",  // or "SQLite" for legacy
-  "ConnectionString": "Host=localhost;Port=5432;Database=diffusion_images;Username=diffusion;Password=...",
+  "ConnectionString": "Host=localhost;Port=5436;Database=diffusion_images;Username=diffusion;Password=...",
   "EmbeddingModels": {
     "ModelsDirectory": "D:/AI/Github_Desktop/DiffusionToolkit/models/onnx",
     "GpuDevice": 0,

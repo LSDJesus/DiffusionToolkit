@@ -181,6 +181,18 @@ public class PostgreSQLMigrations
 
             CREATE INDEX IF NOT EXISTS idx_node_image_id ON node (image_id);
             CREATE INDEX IF NOT EXISTS idx_node_class_type ON node (class_type);
+            
+            -- Node property table for workflow node properties
+            CREATE TABLE IF NOT EXISTS node_property (
+                id SERIAL PRIMARY KEY,
+                node_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                value TEXT,
+                created_at TIMESTAMP DEFAULT NOW()
+            );
+            
+            CREATE INDEX IF NOT EXISTS idx_node_property_node_id ON node_property (node_id);
+            CREATE INDEX IF NOT EXISTS idx_node_property_name ON node_property (name);
 
             -- Folder table
             CREATE TABLE IF NOT EXISTS folder (
@@ -697,6 +709,29 @@ public class PostgreSQLMigrations
             -- Add missing 'order' column to album table
             ALTER TABLE album ADD COLUMN IF NOT EXISTS ""order"" INT DEFAULT 0;
             CREATE INDEX IF NOT EXISTS idx_album_order ON album (""order"");
+            
+            -- Create query table for saved search queries
+            CREATE TABLE IF NOT EXISTS query (
+                id SERIAL PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE,
+                query_json TEXT NOT NULL,
+                created_date TIMESTAMP DEFAULT NOW(),
+                modified_date TIMESTAMP DEFAULT NOW()
+            );
+            
+            CREATE INDEX IF NOT EXISTS idx_query_name ON query (name);
+            
+            -- Create query_item table for query components (legacy support)
+            CREATE TABLE IF NOT EXISTS query_item (
+                id SERIAL PRIMARY KEY,
+                query_id INT NOT NULL REFERENCES query(id) ON DELETE CASCADE,
+                type TEXT NOT NULL,
+                value TEXT NOT NULL,
+                created_date TIMESTAMP DEFAULT NOW()
+            );
+            
+            CREATE INDEX IF NOT EXISTS idx_query_item_query_id ON query_item (query_id);
+            CREATE INDEX IF NOT EXISTS idx_query_item_type ON query_item (type);
         ";
 
         await _connection.ExecuteAsync(sql);

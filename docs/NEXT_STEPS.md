@@ -97,7 +97,7 @@ Port the critical DataStore methods to get the app running:
 Create a simple console test to verify vector search works:
 
 ```csharp
-var connString = "Host=localhost;Port=5432;Database=diffusion_images;Username=diffusion;Password=diffusion_toolkit_secure_2025";
+var connString = "Host=localhost;Port=5436;Database=diffusion_images;Username=diffusion;Password=diffusion_toolkit_secure_2025";
 var dataStore = new PostgreSQLDataStore(connString);
 await dataStore.Create(null, null);
 

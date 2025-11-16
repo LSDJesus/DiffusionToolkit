@@ -329,7 +329,7 @@ services:
       POSTGRES_PASSWORD: diffusion_toolkit_pw
       POSTGRES_DB: diffusion_images
     ports:
-      - "5432:5432"
+      - "5436:5436"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -3636,7 +3636,7 @@ GitHub Copilot: Yes, exactly! Let me give you a comprehensive summary of everyth
 
 **Files Created:**
 - Diffusion.Database.PostgreSQL - Complete PostgreSQL data layer
-- docker-compose.yml - PostgreSQL 18 with pgvector, port 5432
+- docker-compose.yml - PostgreSQL 18 with pgvector, port 5436
 - Migration system with versioning
 
 ---

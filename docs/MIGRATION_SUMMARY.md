@@ -203,7 +203,7 @@ Console app to:
 
 ### Connection String
 ```
-Host=localhost;Port=5432;Database=diffusion_images;Username=diffusion;Password=diffusion_toolkit_secure_2025
+Host=localhost;Port=5436;Database=diffusion_images;Username=diffusion;Password=diffusion_toolkit_secure_2025
 ```
 
 ### Docker Commands

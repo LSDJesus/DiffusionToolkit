@@ -89,7 +89,7 @@ dotnet build Diffusion.Toolkit.sln
 - Symbols stripped for size
 
 ### Docker Dependency
-The database requires Docker with PostgreSQL 18 + pgvector extension. Start with `docker-compose up -d`. Default connection: `Host=localhost;Port=5432;Database=diffusion_images;Username=diffusion;Password=diffusion_toolkit_secure_2025`
+The database requires Docker with PostgreSQL 18 + pgvector extension. Start with `docker-compose up -d`. Default connection: `Host=localhost;Port=5436;Database=diffusion_images;Username=diffusion;Password=diffusion_toolkit_secure_2025`
 
 ## Common Workflows
 

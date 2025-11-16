@@ -10,7 +10,7 @@ docker-compose up -d
 
 Connection string:
 ```
-Host=localhost;Port=5432;Database=diffusion_images;Username=diffusion;Password=diffusion_toolkit_secure_2025
+Host=localhost;Port=5436;Database=diffusion_images;Username=diffusion;Password=diffusion_toolkit_secure_2025
 ```
 
 ### 2. Install Python Dependencies (for embeddings)
@@ -47,7 +47,7 @@ You can configure this in `appsettings.json`:
 ```powershell
 dotnet run --project Diffusion.Migration -- `
   --source "path/to/images.db" `
-  --target "Host=localhost;Port=5432;Database=diffusion_images;Username=diffusion;Password=diffusion_toolkit_secure_2025" `
+  --target "Host=localhost;Port=5436;Database=diffusion_images;Username=diffusion;Password=diffusion_toolkit_secure_2025" `
   --generate-embeddings true `
   --batch-size 100
 ```
@@ -110,7 +110,7 @@ In `appsettings.json`:
 ```json
 {
   "ConnectionStrings": {
-    "PostgreSQL": "Host=localhost;Port=5432;Database=diffusion_images;Username=diffusion;Password=diffusion_toolkit_secure_2025;Maximum Pool Size=50;Connection Idle Lifetime=60"
+    "PostgreSQL": "Host=localhost;Port=5436;Database=diffusion_images;Username=diffusion;Password=diffusion_toolkit_secure_2025;Maximum Pool Size=50;Connection Idle Lifetime=60"
   }
 }
 ```
