@@ -484,9 +484,11 @@ namespace Diffusion.Toolkit
         private async void OnLoaded(object sender, RoutedEventArgs e)
         {
             var dataStore = new DataStore(AppInfo.DatabasePath);
+            var postgresDataStore = new Diffusion.Database.PostgreSQL.PostgreSQLDataStore(AppInfo.PostgreSQLConnectionString);
             var _showReleaseNotes = false;
 
             ServiceLocator.SetDataStore(dataStore);
+            ServiceLocator.SetPostgreSQLDataStore(postgresDataStore);
 
             var isFirstTime = false;
             IReadOnlyList<string> newFolders = null;

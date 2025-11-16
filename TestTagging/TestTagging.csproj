@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Diffusion.Tagging\Diffusion.Tagging.csproj" />
+    <ProjectReference Include="..\Diffusion.Captioning\Diffusion.Captioning.csproj" />
   </ItemGroup>
 
 </Project>

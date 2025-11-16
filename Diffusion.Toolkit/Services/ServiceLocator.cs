@@ -1,15 +1,19 @@
-﻿using System.Windows.Controls.Primitives;
+﻿using System;
+using System.Windows.Controls.Primitives;
 using System.Windows.Forms;
 using System.Windows;
 using System.Windows.Navigation;
 using System.Windows.Threading;
 using Diffusion.Common;
 using Diffusion.Database;
+using Diffusion.Database.PostgreSQL;
 using Diffusion.Toolkit.Common;
 using Diffusion.Toolkit.Configuration;
 using Diffusion.Toolkit.Models;
 using Diffusion.Toolkit.Thumbnails;
 using Diffusion.Toolkit.Classes;
+using Diffusion.Tagging.Services;
+using Diffusion.Captioning.Services;
 
 namespace Diffusion.Toolkit.Services;
 
@@ -39,6 +43,7 @@ public class ServiceLocator
     private static MessageService? _messageServuce;
     private static ProgressService? _progressService;
     private static DataStore? _dataStore;
+    private static PostgreSQLDataStore? _postgresDataStore;
 
     private static NavigationService? _navigationService;
 
@@ -53,8 +58,12 @@ public class ServiceLocator
     private static NotificationService? _notificationService;
     private static ScanningService? _scanningService;
     private static ContextMenuService? _contextMenuService;
+    private static JoyTagService? _joyTagService;
+    private static WDTagService? _wdTagService;
+    private static JoyCaptionService? _joyCaptionService;
 
     public static DataStore? DataStore => _dataStore;
+    public static PostgreSQLDataStore? PostgreSQLDataStore => _postgresDataStore;
     public static Settings? Settings => _settings;
     public static ToastService ToastService { get; set; }
     public static Dispatcher Dispatcher { get; set; }
@@ -62,6 +71,11 @@ public class ServiceLocator
     public static void SetDataStore(DataStore dataStore)
     {
         _dataStore = dataStore;
+    }
+
+    public static void SetPostgreSQLDataStore(PostgreSQLDataStore dataStore)
+    {
+        _postgresDataStore = dataStore;
     }
 
     public static void SetSettings(Settings? settings)
@@ -168,6 +182,72 @@ public class ServiceLocator
     public static WindowService WindowService
     {
         get { return _windowService ??= new WindowService(); }
+    }
+
+    public static JoyTagService? JoyTagService
+    {
+        get
+        {
+            if (_joyTagService == null && _settings != null)
+            {
+                var modelPath = System.IO.Path.IsPathRooted(_settings.JoyTagModelPath)
+                    ? _settings.JoyTagModelPath
+                    : System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, _settings.JoyTagModelPath);
+                var tagsPath = System.IO.Path.IsPathRooted(_settings.JoyTagTagsPath)
+                    ? _settings.JoyTagTagsPath
+                    : System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, _settings.JoyTagTagsPath);
+
+                if (System.IO.File.Exists(modelPath) && System.IO.File.Exists(tagsPath))
+                {
+                    _joyTagService = new JoyTagService(modelPath, tagsPath, _settings.JoyTagThreshold);
+                }
+            }
+            return _joyTagService;
+        }
+    }
+
+    public static WDTagService? WDTagService
+    {
+        get
+        {
+            if (_wdTagService == null && _settings != null)
+            {
+                var modelPath = System.IO.Path.IsPathRooted(_settings.WDTagModelPath)
+                    ? _settings.WDTagModelPath
+                    : System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, _settings.WDTagModelPath);
+                var tagsPath = System.IO.Path.IsPathRooted(_settings.WDTagTagsPath)
+                    ? _settings.WDTagTagsPath
+                    : System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, _settings.WDTagTagsPath);
+
+                if (System.IO.File.Exists(modelPath) && System.IO.File.Exists(tagsPath))
+                {
+                    _wdTagService = new WDTagService(modelPath, tagsPath, _settings.WDTagThreshold);
+                }
+            }
+            return _wdTagService;
+        }
+    }
+
+    public static JoyCaptionService? JoyCaptionService
+    {
+        get
+        {
+            if (_joyCaptionService == null && _settings != null)
+            {
+                var modelPath = System.IO.Path.IsPathRooted(_settings.JoyCaptionModelPath)
+                    ? _settings.JoyCaptionModelPath
+                    : System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, _settings.JoyCaptionModelPath);
+                var mmprojPath = System.IO.Path.IsPathRooted(_settings.JoyCaptionMMProjPath)
+                    ? _settings.JoyCaptionMMProjPath
+                    : System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, _settings.JoyCaptionMMProjPath);
+
+                if (System.IO.File.Exists(modelPath) && System.IO.File.Exists(mmprojPath))
+                {
+                    _joyCaptionService = new JoyCaptionService(modelPath, mmprojPath);
+                }
+            }
+            return _joyCaptionService;
+        }
     }
 }
 

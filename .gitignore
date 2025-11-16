@@ -32,6 +32,8 @@ _ReSharper*/
 models/
 scripts/
 _import_joytag/
+_test_images/
+
 #Nuget packages folder
 packages/
 /build

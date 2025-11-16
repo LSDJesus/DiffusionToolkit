@@ -820,6 +820,37 @@ namespace Diffusion.Toolkit.Controls
             UnrateSelected();
         }
 
+        private void AutoTag_OnClick(object sender, RoutedEventArgs e)
+        {
+            var selectedImages = ThumbnailListView.SelectedItems.Cast<ImageEntry>()
+                .Where(img => img.Id > 0)
+                .Select(img => img.Id)
+                .ToList();
+
+            if (selectedImages.Count == 0)
+            {
+                MessageBox.Show("No images selected for tagging.", "Auto-Tag", 
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            var window = new Diffusion.Toolkit.Windows.TaggingWindow(selectedImages)
+            {
+                Owner = Window.GetWindow(this)
+            };
+            
+            if (window.ShowDialog() == true)
+            {
+                // Refresh the current view to show new tags
+                if (ServiceLocator.ToastService != null)
+                {
+                    ServiceLocator.ToastService.Toast(
+                        $"Successfully tagged {selectedImages.Count} image(s)", 
+                        "Tagging Complete");
+                }
+            }
+        }
+
         public void ResetView(ReloadOptions? reloadOptions)
         {
             Dispatcher.Invoke(() =>

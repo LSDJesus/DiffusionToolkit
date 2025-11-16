@@ -562,6 +562,8 @@
                     </MenuItem>
                     <MenuItem Style="{StaticResource FileMenuItem}" Header="{lex:Loc Thumbnail.ContextMenu.NSFW}" ToolTip="N" InputGestureText="N" Command="{Binding NSFWCommand}"/>
                     <Separator Style="{StaticResource FileSeparator}"/>
+                    <MenuItem Style="{StaticResource FileMenuItem}" Header="Auto-Tag..." Click="AutoTag_OnClick"/>
+                    <Separator Style="{StaticResource FileSeparator}"/>
                     <MenuItem Style="{StaticResource FileMenuItem}" Header="{lex:Loc Thumbnail.ContextMenu.CopyParameter}">
                         <MenuItem Header="{lex:Loc Thumbnail.ContextMenu.CopyParameter.Prompt}" Command="{Binding CopyPromptCommand}"/>
                         <MenuItem Header="{lex:Loc Thumbnail.ContextMenu.CopyParameter.NegativePrompt}" Command="{Binding CopyNegativePromptCommand}"/>

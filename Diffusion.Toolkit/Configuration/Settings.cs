@@ -76,6 +76,18 @@ public class Settings : SettingsContainer, IScanOptions
     private ThumbnailViewMode _thumbnailViewMode;
     private RenderMode _renderMode;
     private PreviewWindowState _previewWindowState;
+    
+    // Tagging configuration
+    private float _joyTagThreshold;
+    private float _wdTagThreshold;
+    private bool _enableJoyTag;
+    private bool _enableWDTag;
+    private string _joyTagModelPath;
+    private string _joyTagTagsPath;
+    private string _wdTagModelPath;
+    private string _wdTagTagsPath;
+    private string _joyCaptionModelPath;
+    private string _joyCaptionMMProjPath;
 
     public Settings()
     {
@@ -122,6 +134,18 @@ public class Settings : SettingsContainer, IScanOptions
         };
 
         ConfirmDeletion = true;
+        
+        // Tagging defaults
+        JoyTagThreshold = 0.5f;
+        WDTagThreshold = 0.5f;
+        EnableJoyTag = true;
+        EnableWDTag = true;
+        JoyTagModelPath = @"models\onnx\joytag\jtModel.onnx";
+        JoyTagTagsPath = @"models\onnx\joytag\jtTags.csv";
+        WDTagModelPath = @"models\onnx\wdv3_large_tag\wdV3LargeModel.onnx";
+        WDTagTagsPath = @"models\onnx\wdv3_large_tag\wdV3LargeTags.csv";
+        JoyCaptionModelPath = @"models\Joycaption\llama-joycaption-beta-one-hf-llava.i1-Q6_K.gguf";
+        JoyCaptionMMProjPath = @"models\Joycaption\llava.projector";
 
         NavigationSection = new NavigationSectionSettings();
         NavigationSection.Attach(this);
@@ -516,6 +540,66 @@ public class Settings : SettingsContainer, IScanOptions
     {
         get => _previewWindowState;
         set => UpdateValue(ref _previewWindowState, value);
+    }
+
+    public float JoyTagThreshold
+    {
+        get => _joyTagThreshold;
+        set => UpdateValue(ref _joyTagThreshold, value);
+    }
+
+    public float WDTagThreshold
+    {
+        get => _wdTagThreshold;
+        set => UpdateValue(ref _wdTagThreshold, value);
+    }
+
+    public bool EnableJoyTag
+    {
+        get => _enableJoyTag;
+        set => UpdateValue(ref _enableJoyTag, value);
+    }
+
+    public bool EnableWDTag
+    {
+        get => _enableWDTag;
+        set => UpdateValue(ref _enableWDTag, value);
+    }
+
+    public string JoyTagModelPath
+    {
+        get => _joyTagModelPath;
+        set => UpdateValue(ref _joyTagModelPath, value);
+    }
+
+    public string JoyTagTagsPath
+    {
+        get => _joyTagTagsPath;
+        set => UpdateValue(ref _joyTagTagsPath, value);
+    }
+
+    public string WDTagModelPath
+    {
+        get => _wdTagModelPath;
+        set => UpdateValue(ref _wdTagModelPath, value);
+    }
+
+    public string WDTagTagsPath
+    {
+        get => _wdTagTagsPath;
+        set => UpdateValue(ref _wdTagTagsPath, value);
+    }
+
+    public string JoyCaptionModelPath
+    {
+        get => _joyCaptionModelPath;
+        set => UpdateValue(ref _joyCaptionModelPath, value);
+    }
+
+    public string JoyCaptionMMProjPath
+    {
+        get => _joyCaptionMMProjPath;
+        set => UpdateValue(ref _joyCaptionMMProjPath, value);
     }
 
 }

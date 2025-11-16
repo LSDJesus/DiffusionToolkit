@@ -12,6 +12,8 @@ public static class AppInfo
 
     public static string DatabasePath { get; }
 
+    public static string PostgreSQLConnectionString { get; }
+
     public static string SettingsPath { get; }
 
     public static bool IsPortable { get; }
@@ -26,6 +28,9 @@ public static class AppInfo
         }
 
         DatabasePath = Path.Combine(AppInfo.AppDir, "diffusion-toolkit.db");
+
+        // PostgreSQL connection string for tags, captions, embeddings
+        PostgreSQLConnectionString = "Host=localhost;Port=5432;Database=diffusion_images;Username=diffusion;Password=diffusion_toolkit_secure_2025";
 
         IsPortable = true;
 
