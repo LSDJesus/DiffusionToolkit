@@ -123,7 +123,7 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
 
         try
         {
-            var dataStore = ServiceLocator.PostgreSQLDataStore;
+            var dataStore = ServiceLocator.DataStore;
             if (dataStore == null)
             {
                 MessageBox.Show("PostgreSQL database not available.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);

@@ -318,7 +318,7 @@ if (File.Exists("old_database.db") && !CheckPostgreSQLHasData())
 
 ## 🏷️ Image Captioning and Tagging Tasks
 
-### Task 8: JoyTag Integration (ONNX Auto-Tagging)
+### Task 8: COMPLETE JoyTag Integration (ONNX Auto-Tagging) (Also added three WDTag implementations)
 **Priority:** High  
 **Estimated Time:** 3-4 hours
 
@@ -403,7 +403,7 @@ await dataStore.StoreImageTagsAsync(imageId, tags, source: "joytag");
 
 ---
 
-### Task 9: JoyCaption Integration (GGUF Image Captioning)
+### Task 9: COMPLETE JoyCaption Integration (GGUF Image Captioning)
 **Priority:** High  
 **Estimated Time:** 5-6 hours
 
@@ -415,28 +415,12 @@ await dataStore.StoreImageTagsAsync(imageId, tags, source: "joytag");
   - Main: `models/Joycaption/llama-joycaption-beta-one-hf-llava.i1-Q6_K.gguf`
   - Vision: `models/Joycaption/llama-joycaption-beta-one-llava-mmproj-model-f16.gguf`
 
-**Three Integration Options (see `JOYCAPTION_INTEGRATION_GUIDE.md`):**
-
-**Option 1: LLamaSharp (Recommended - Pure C# Integration)**
+**LLamaSharp (Recommended - Pure C# Integration)**
 - ✅ Native C# wrapper around llama.cpp
 - ✅ GPU acceleration (CUDA/Vulkan)
 - ✅ Direct GGUF model loading
 - ❌ Multimodal (vision) support still maturing
 - Package: `LLamaSharp`, `LLamaSharp.Backend.Cuda12`
-
-**Option 2: llama.cpp Server Mode (Production Ready)**
-- ✅ Model stays loaded (fast subsequent requests)
-- ✅ OpenAI-compatible REST API
-- ✅ Can run on separate machine
-- ❌ Need to manage separate process
-
-**Option 3: llama.cpp CLI (Testing Only)**
-- ✅ Simplest to implement
-- ❌ Very slow (model reloads each time: ~20-30s per image)
-- ❌ Not suitable for production
-
-**Recommended Approach for DiffusionToolkit:**
-Start with **Option 2 (Server Mode)** for stability, consider Option 1 later.
 
 **Requirements:**
 - Create `Diffusion.Captioning` project for captioning services

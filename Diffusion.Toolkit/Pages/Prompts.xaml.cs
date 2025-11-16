@@ -9,7 +9,9 @@ using System.Threading.Tasks;
 using System.Windows.Controls;
 using System.Windows.Input;
 using Diffusion.Database;
-using Diffusion.Database.Models;
+using Diffusion.Database.PostgreSQL;
+using Diffusion.Database.PostgreSQL.Models;
+using PgUsedPrompt = Diffusion.Database.PostgreSQL.UsedPrompt;
 using Diffusion.Toolkit.Classes;
 using Diffusion.Toolkit.Common;
 using Diffusion.Toolkit.Controls;
@@ -24,7 +26,7 @@ namespace Diffusion.Toolkit.Pages
     /// </summary>
     public partial class Prompts : NavigationPage
     {
-        private DataStore _dataStore => ServiceLocator.DataStore;
+        private PostgreSQLDataStore _dataStore => ServiceLocator.DataStore;
         private Configuration.Settings _settings => ServiceLocator.Settings;
         private PromptsModel _model;
         private bool _isLoaded;
@@ -90,7 +92,7 @@ namespace Diffusion.Toolkit.Pages
             {
                 _model.IsBusy = true;
                 var prompts = _dataStore.SearchPrompts(_model.PromptQuery, _model.FullTextPrompt, _model.PromptDistance);
-                _model.Prompts = new ObservableCollection<UsedPrompt>(prompts);
+                _model.Prompts = new ObservableCollection<PgUsedPrompt>(prompts);
                 _model.IsBusy = false;
             });
         }
@@ -101,7 +103,7 @@ namespace Diffusion.Toolkit.Pages
             {
                 _model.IsBusy = true;
                 var prompts = _dataStore.SearchNegativePrompts(_model.NegativePromptQuery, _model.NegativeFullTextPrompt, _model.NegativePromptDistance);
-                _model.NegativePrompts = new ObservableCollection<UsedPrompt>(prompts);
+                _model.NegativePrompts = new ObservableCollection<PgUsedPrompt>(prompts);
                 _model.IsBusy = false;
             });
         }

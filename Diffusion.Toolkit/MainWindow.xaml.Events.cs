@@ -289,7 +289,7 @@ namespace Diffusion.Toolkit
                     Logger.Log("Terminating Services...");
                     _isClosing = true;
 
-                    ServiceLocator.DataStore.Close();
+                    ServiceLocator.DataStore?.Dispose(); // PostgreSQL uses Dispose pattern
                     ServiceLocator.ThumbnailService.Stop();
                 }
             }

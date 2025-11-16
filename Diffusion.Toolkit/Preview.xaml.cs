@@ -1,4 +1,5 @@
 ﻿using Diffusion.Database;
+using Diffusion.Database.PostgreSQL;
 using Diffusion.Toolkit.Classes;
 using Diffusion.Toolkit.Controls;
 using Diffusion.Toolkit.Models;
@@ -20,7 +21,7 @@ namespace Diffusion.Toolkit
     /// </summary>
     public partial class PreviewWindow : BorderlessWindow
     {
-        private DataStore _dataStore => ServiceLocator.DataStore;
+        private PostgreSQLDataStore _dataStore => ServiceLocator.DataStore;
         private PreviewModel _model;
         private Action _onNext;
 

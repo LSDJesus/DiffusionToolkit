@@ -134,7 +134,7 @@ namespace Diffusion.Toolkit
             {
                 // For 1.9+ users starting with no config, but with an existing database
                 // Try to load the current root folders
-                var db = ServiceLocator.DataStore.OpenConnection();
+                var db = ServiceLocator.ThumbnailDataStore.OpenConnection();
 
                 List<MinimalFolder> folders = new List<MinimalFolder>();
 

@@ -2,19 +2,20 @@
 using Diffusion.Database;
 using Diffusion.Toolkit.Services;
 using MdXaml.LinkActions;
+using PgUsedPrompt = Diffusion.Database.PostgreSQL.UsedPrompt;
 
 namespace Diffusion.Toolkit.Models;
 
 public class PromptsModel : BaseNotify
 {
-    private ObservableCollection<UsedPrompt> _prompts;
-    private ObservableCollection<UsedPrompt> _negativePrompts;
+    private ObservableCollection<PgUsedPrompt> _prompts;
+    private ObservableCollection<PgUsedPrompt> _negativePrompts;
     private string _promptQuery;
     private int _promptDistance;
     private bool _fullTextPrompt;
     private ResultsView _promptsResults;
     private ResultsView _negativePromptsResults;
-    private UsedPrompt? _selectedPrompt;
+    private PgUsedPrompt? _selectedPrompt;
     private bool _isBusy;
 
     
@@ -25,7 +26,7 @@ public class PromptsModel : BaseNotify
     }
 
     public MainModel MainModel => ServiceLocator.MainModel;
-    public ObservableCollection<UsedPrompt> Prompts
+    public ObservableCollection<PgUsedPrompt> Prompts
     {
         get => _prompts;
         set => SetField(ref _prompts, value);
@@ -37,7 +38,7 @@ public class PromptsModel : BaseNotify
         set => SetField(ref _promptsResults, value);
     }
 
-    public ObservableCollection<UsedPrompt> NegativePrompts
+    public ObservableCollection<PgUsedPrompt> NegativePrompts
     {
         get => _negativePrompts;
         set => SetField(ref _negativePrompts, value);
@@ -85,7 +86,7 @@ public class PromptsModel : BaseNotify
         set => SetField(ref _promptDistance, value);
     }
 
-    public UsedPrompt? SelectedPrompt
+    public PgUsedPrompt? SelectedPrompt
     {
         get => _selectedPrompt;
         set => SetField(ref _selectedPrompt, value);

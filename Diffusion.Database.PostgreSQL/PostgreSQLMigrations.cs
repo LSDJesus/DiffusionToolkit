@@ -9,7 +9,7 @@ namespace Diffusion.Database.PostgreSQL;
 public class PostgreSQLMigrations
 {
     private readonly NpgsqlConnection _connection;
-    private const int CurrentVersion = 8;
+    private const int CurrentVersion = 9;
 
     public PostgreSQLMigrations(NpgsqlConnection connection)
     {
@@ -39,6 +39,7 @@ public class PostgreSQLMigrations
         if (currentVersion < 6) await ApplyV6Async();
         if (currentVersion < 7) await ApplyV7Async();
         if (currentVersion < 8) await ApplyV8Async();
+        if (currentVersion < 9) await ApplyV9Async();
 
         await _connection.ExecuteAsync("INSERT INTO schema_version (version) VALUES (@version)", 
             new { version = CurrentVersion });
@@ -146,11 +147,13 @@ public class PostgreSQLMigrations
             CREATE TABLE IF NOT EXISTS album (
                 id SERIAL PRIMARY KEY,
                 name TEXT NOT NULL UNIQUE,
+                ""order"" INT DEFAULT 0,
                 last_updated TIMESTAMP NOT NULL,
                 created_at TIMESTAMP DEFAULT NOW()
             );
 
             CREATE INDEX IF NOT EXISTS idx_album_name ON album (name);
+            CREATE INDEX IF NOT EXISTS idx_album_order ON album (""order"");
             CREATE INDEX IF NOT EXISTS idx_album_last_updated ON album (last_updated);
 
             -- Album image junction table
@@ -182,17 +185,28 @@ public class PostgreSQLMigrations
             -- Folder table
             CREATE TABLE IF NOT EXISTS folder (
                 id SERIAL PRIMARY KEY,
+                parent_id INT DEFAULT 0,
                 root_folder_id INT NOT NULL,
                 path TEXT NOT NULL UNIQUE,
                 path_tree ltree,
+                image_count INT DEFAULT 0,
+                scanned_date TIMESTAMP,
                 unavailable BOOLEAN DEFAULT FALSE,
+                archived BOOLEAN DEFAULT FALSE,
+                excluded BOOLEAN DEFAULT FALSE,
+                is_root BOOLEAN DEFAULT FALSE,
+                recursive BOOLEAN DEFAULT FALSE,
+                watched BOOLEAN DEFAULT FALSE,
                 created_at TIMESTAMP DEFAULT NOW()
             );
 
+            CREATE INDEX IF NOT EXISTS idx_folder_parent_id ON folder (parent_id);
             CREATE INDEX IF NOT EXISTS idx_folder_root_folder_id ON folder (root_folder_id);
             CREATE INDEX IF NOT EXISTS idx_folder_path ON folder (path);
             CREATE INDEX IF NOT EXISTS idx_folder_path_tree ON folder USING gist(path_tree);
             CREATE INDEX IF NOT EXISTS idx_folder_unavailable ON folder (unavailable);
+            CREATE INDEX IF NOT EXISTS idx_folder_is_root ON folder (is_root);
+            CREATE INDEX IF NOT EXISTS idx_folder_watched ON folder (watched);
         ";
 
         await _connection.ExecuteAsync(sql);
@@ -661,4 +675,31 @@ public class PostgreSQLMigrations
 
         await _connection.ExecuteAsync(sql);
     }
+
+    private async Task ApplyV9Async()
+    {
+        var sql = @"
+            -- Add missing columns to folder table for complete SQLite compatibility
+            ALTER TABLE folder ADD COLUMN IF NOT EXISTS parent_id INT DEFAULT 0;
+            ALTER TABLE folder ADD COLUMN IF NOT EXISTS image_count INT DEFAULT 0;
+            ALTER TABLE folder ADD COLUMN IF NOT EXISTS scanned_date TIMESTAMP;
+            ALTER TABLE folder ADD COLUMN IF NOT EXISTS archived BOOLEAN DEFAULT FALSE;
+            ALTER TABLE folder ADD COLUMN IF NOT EXISTS excluded BOOLEAN DEFAULT FALSE;
+            ALTER TABLE folder ADD COLUMN IF NOT EXISTS is_root BOOLEAN DEFAULT FALSE;
+            ALTER TABLE folder ADD COLUMN IF NOT EXISTS recursive BOOLEAN DEFAULT FALSE;
+            ALTER TABLE folder ADD COLUMN IF NOT EXISTS watched BOOLEAN DEFAULT FALSE;
+            
+            -- Add missing indexes for folder table
+            CREATE INDEX IF NOT EXISTS idx_folder_parent_id ON folder (parent_id);
+            CREATE INDEX IF NOT EXISTS idx_folder_is_root ON folder (is_root);
+            CREATE INDEX IF NOT EXISTS idx_folder_watched ON folder (watched);
+            
+            -- Add missing 'order' column to album table
+            ALTER TABLE album ADD COLUMN IF NOT EXISTS ""order"" INT DEFAULT 0;
+            CREATE INDEX IF NOT EXISTS idx_album_order ON album (""order"");
+        ";
+
+        await _connection.ExecuteAsync(sql);
+    }
 }
+

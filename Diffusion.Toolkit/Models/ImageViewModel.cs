@@ -6,6 +6,7 @@ using System.Windows.Input;
 using System.Windows.Media.Imaging;
 using Diffusion.Toolkit.Services;
 using Node = Diffusion.IO.Node;
+using PgAlbum = Diffusion.Database.PostgreSQL.Models.Album;
 
 namespace Diffusion.Toolkit.Models;
 
@@ -41,7 +42,7 @@ public class ImageViewModel : BaseNotify
     private ICommand _toggleParameters;
     private string? _aestheticScore;
     private ICommand _searchModelCommand;
-    private IEnumerable<Album> _albums;
+    private IEnumerable<PgAlbum> _albums;
     private decimal _cfgScale;
     private int _height;
     private int _width;
@@ -261,7 +262,7 @@ public class ImageViewModel : BaseNotify
         set => SetField(ref _aestheticScore, value);
     }
 
-    public IEnumerable<Album> Albums
+    public IEnumerable<PgAlbum> Albums
     {
         get => _albums;
         set => SetField(ref _albums, value);

@@ -8,7 +8,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using Diffusion.Common;
 using Diffusion.Database;
-using Diffusion.Database.Models;
+using Diffusion.Database.PostgreSQL;
+using Diffusion.Database.PostgreSQL.Models;
 using Diffusion.IO;
 using Diffusion.Toolkit.Configuration;
 using Diffusion.Toolkit.Localization;
@@ -25,7 +26,7 @@ public class ScanningService
 
     private Settings _settings => ServiceLocator.Settings!;
 
-    private DataStore _dataStore => ServiceLocator.DataStore!;
+    private PostgreSQLDataStore _dataStore => ServiceLocator.DataStore!;
 
     public async Task CheckUnavailableFolders()
     {
@@ -63,7 +64,7 @@ public class ScanningService
 
     }
 
-    private int CheckFilesUnavailable(List<ImagePath> folderImages, HashSet<string> folderImagesHashSet, CancellationToken cancellationToken)
+    private int CheckFilesUnavailable(List<Diffusion.Database.PostgreSQL.Models.ImagePath> folderImages, HashSet<string> folderImagesHashSet, CancellationToken cancellationToken)
     {
         int unavailable = 0;
 
@@ -252,7 +253,7 @@ public class ScanningService
             Model = file.Model,
             Steps = file.Steps,
             Sampler = file.Sampler,
-            CFGScale = file.CFGScale,
+            CfgScale = file.CFGScale,
             Seed = file.Seed,
             BatchPos = file.BatchPos,
             BatchSize = file.BatchSize,

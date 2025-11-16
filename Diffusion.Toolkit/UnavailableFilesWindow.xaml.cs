@@ -5,6 +5,7 @@ using System.Linq;
 using System.Windows;
 using Diffusion.Common;
 using Diffusion.Database;
+using Diffusion.Database.PostgreSQL;
 using Diffusion.Toolkit.Configuration;
 using Diffusion.Toolkit.Services;
 
@@ -15,7 +16,7 @@ namespace Diffusion.Toolkit
     /// </summary>
     public partial class UnavailableFilesWindow : BorderlessWindow
     {
-        private DataStore _dataStore => ServiceLocator.DataStore;
+        private PostgreSQLDataStore _dataStore => ServiceLocator.DataStore;
         private Settings _settings => ServiceLocator.Settings;
 
         public UnavailableFilesModel Model { get; }

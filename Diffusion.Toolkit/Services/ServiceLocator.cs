@@ -42,8 +42,8 @@ public class ServiceLocator
     private static FolderService? _folderService;
     private static MessageService? _messageServuce;
     private static ProgressService? _progressService;
-    private static DataStore? _dataStore;
-    private static PostgreSQLDataStore? _postgresDataStore;
+    private static DataStore? _thumbnailDataStore; // SQLite for thumbnail caching only
+    private static PostgreSQLDataStore? _dataStore; // Primary PostgreSQL database
 
     private static NavigationService? _navigationService;
 
@@ -62,20 +62,20 @@ public class ServiceLocator
     private static WDTagService? _wdTagService;
     private static JoyCaptionService? _joyCaptionService;
 
-    public static DataStore? DataStore => _dataStore;
-    public static PostgreSQLDataStore? PostgreSQLDataStore => _postgresDataStore;
+    public static PostgreSQLDataStore? DataStore => _dataStore; // Primary PostgreSQL database
+    public static DataStore? ThumbnailDataStore => _thumbnailDataStore; // SQLite for thumbnails only
     public static Settings? Settings => _settings;
     public static ToastService ToastService { get; set; }
     public static Dispatcher Dispatcher { get; set; }
 
-    public static void SetDataStore(DataStore dataStore)
+    public static void SetDataStore(PostgreSQLDataStore dataStore)
     {
         _dataStore = dataStore;
     }
 
-    public static void SetPostgreSQLDataStore(PostgreSQLDataStore dataStore)
+    public static void SetThumbnailDataStore(DataStore dataStore)
     {
-        _postgresDataStore = dataStore;
+        _thumbnailDataStore = dataStore;
     }
 
     public static void SetSettings(Settings? settings)

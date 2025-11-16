@@ -1,4 +1,8 @@
 ﻿using Diffusion.Database;
+using Diffusion.Database.PostgreSQL;
+using PgImagePath = Diffusion.Database.PostgreSQL.Models.ImagePath;
+using DbImagePath = Diffusion.Database.ImagePath;
+using Diffusion.Database.PostgreSQL.Models;
 using Diffusion.Toolkit.Classes;
 using System;
 using System.Collections.Generic;
@@ -36,11 +40,11 @@ namespace Diffusion.Toolkit.Controls
     /// </summary>
     public partial class ThumbnailView : UserControl
     {
-        private IEnumerable<Album> _albums;
+        private IEnumerable<Diffusion.Database.PostgreSQL.Models.Album> _albums;
 
         public ThumbnailViewModel Model { get; set; }
 
-        private DataStore _dataStore => ServiceLocator.DataStore;
+        private PostgreSQLDataStore _dataStore => ServiceLocator.DataStore;
 
         private string GetLocalizedText(string key)
         {
@@ -677,7 +681,7 @@ namespace Diffusion.Toolkit.Controls
                         {
                             try
                             {
-                                var files = imageEntries.Select(d => new ImagePath() { Id = d.Id, Path = d.Path }).ToList();
+                                var files = imageEntries.Select(d => new DbImagePath() { Id = d.Id, Path = d.Path }).ToList();
 
                                 await ServiceLocator.FileService.DeleteFiles(files,
                                     ServiceLocator.ProgressService.CancellationToken);

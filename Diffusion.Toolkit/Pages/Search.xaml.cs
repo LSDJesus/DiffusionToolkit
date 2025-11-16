@@ -1,4 +1,10 @@
 ﻿using Diffusion.Database;
+using Diffusion.Database.PostgreSQL;
+using PgSorting = Diffusion.Database.PostgreSQL.Sorting;
+using PgPaging = Diffusion.Database.PostgreSQL.Paging;
+using PgAlbum = Diffusion.Database.PostgreSQL.Models.Album;
+using PgImageView = Diffusion.Database.PostgreSQL.ImageView;
+using Diffusion.Database.PostgreSQL.Models;
 using Diffusion.Toolkit.Models;
 using System;
 using System.Collections.Generic;
@@ -765,7 +771,7 @@ namespace Diffusion.Toolkit.Pages
                 });
 
                 //_model.Images!.Clear();
-                int count = 0;
+                long count = 0;
                 long size = 0;
 
 
@@ -902,11 +908,11 @@ namespace Diffusion.Toolkit.Pages
                             //_model.CurrentImage.;
                         }
 
-                        _model.Pages = count / ServiceLocator.Settings.PageSize + (count % ServiceLocator.Settings.PageSize > 1 ? 1 : 0);
+                        _model.Pages = (int)(count / ServiceLocator.Settings.PageSize + (count % ServiceLocator.Settings.PageSize > 1 ? 1 : 0));
 
 
-                        _model.Count = count;
-                        _model.Size = size;
+                        _model.Count = (int)count;
+                        _model.Size = (int)size;
 
                         UpdateResults();
 
@@ -963,7 +969,7 @@ namespace Diffusion.Toolkit.Pages
             set => ServiceLocator.MainModel.QueryOptions = value;
         }
 
-        public Sorting Sorting { get; private set; }
+        public PgSorting Sorting { get; private set; }
 
         private void ModelOnPropertyChanged(object? sender, PropertyChangedEventArgs e)
         {
@@ -1055,12 +1061,12 @@ namespace Diffusion.Toolkit.Pages
                 var imageViewModel = new ImageViewModel();
                 imageViewModel.IsParametersVisible = old;
                 imageViewModel.ToggleParameters = new RelayCommand<object>((o) => ToggleInfo());
-                imageViewModel.OpenAlbumCommand = new RelayCommand<Album>((o) =>
+                imageViewModel.OpenAlbumCommand = new RelayCommand<PgAlbum>((o) =>
                 {
                     var albumModel = ServiceLocator.MainModel.Albums.First(d => d.Id == o.Id);
                     OpenAlbum(albumModel);
                 });
-                imageViewModel.RemoveFromAlbumCommand = new RelayCommand<Album>(RemoveFromAlbum);
+                imageViewModel.RemoveFromAlbumCommand = new RelayCommand<PgAlbum>(RemoveFromAlbum);
 
                 if (image != null)
                 {
@@ -1344,15 +1350,15 @@ namespace Diffusion.Toolkit.Pages
         private List<ImageEntry> GetSearchResults(long rId)
         {
 
-            var paging = new Paging()
+            var paging = new PgPaging()
             {
                 PageSize = ServiceLocator.Settings.PageSize,
                 Offset = ServiceLocator.Settings.PageSize * (_model.Page - 1)
             };
 
-            Sorting = new Sorting(_model.SortBy, _model.SortDirection);
+            Sorting = new PgSorting(_model.SortBy, _model.SortDirection);
 
-            IEnumerable<ImageView> matches = Enumerable.Empty<ImageView>();
+            IEnumerable<PgImageView> matches = Enumerable.Empty<PgImageView>();
 
             matches = Time(() => ServiceLocator.DataStore
                 .SearchEx(QueryOptions,
@@ -1500,7 +1506,7 @@ namespace Diffusion.Toolkit.Pages
                             var (count, size) = ServiceLocator.DataStore.FolderCountAndSize(dest.Id);
                             Dispatcher.Invoke(() =>
                             {
-                                dest.Count = count;
+                                dest.Count = (int)count;
                                 dest.Size = size;
                             });
                         });
@@ -1918,7 +1924,7 @@ namespace Diffusion.Toolkit.Pages
             SearchImages(null);
         }
 
-        private void RemoveFromAlbum(Album albumModel)
+        private void RemoveFromAlbum(Diffusion.Database.PostgreSQL.Models.Album albumModel)
         {
             ServiceLocator.DataStore.RemoveImagesFromAlbum(albumModel.Id, new[] { _model.CurrentImage.Id });
             UpdateImagesInPlace();

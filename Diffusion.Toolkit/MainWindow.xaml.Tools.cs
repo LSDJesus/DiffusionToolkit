@@ -5,6 +5,8 @@ using System.Linq;
 using System.Threading.Tasks;
 using Diffusion.Toolkit.Services;
 using Diffusion.Database.Models;
+using PgAlbum = Diffusion.Database.PostgreSQL.Models.Album;
+using PgImageView = Diffusion.Database.PostgreSQL.ImageView;
 
 namespace Diffusion.Toolkit
 {
@@ -58,7 +60,7 @@ namespace Diffusion.Toolkit
             //});
         }
 
-        private IEnumerable<ImageView> GetSearchResults()
+        private IEnumerable<PgImageView> GetSearchResults()
         {
             return !_search.Filter.IsEmpty ? _dataStore.Search(_search.Filter, _search.QueryOptions, _search.Sorting) : _dataStore.Search(_search.QueryOptions, _search.Sorting);
         }
@@ -225,7 +227,7 @@ namespace Diffusion.Toolkit
 
                 if (selector.IsNewAlbum)
                 {
-                    var album = _dataStore.CreateAlbum(new Album() { Name = selector.AlbumName });
+                    var album = _dataStore.CreateAlbum(new PgAlbum() { Name = selector.AlbumName });
                     albumName = selector.AlbumName;
 
                     await Task.Run(() =>

@@ -19,6 +19,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using Diffusion.Database;
+using Diffusion.Database.PostgreSQL;
 using Diffusion.Toolkit.Configuration;
 using Diffusion.Toolkit.Localization;
 using Diffusion.Toolkit.Services;
@@ -36,7 +37,7 @@ namespace Diffusion.Toolkit.Pages
 
         private List<FolderChange> _folderChanges = new List<FolderChange>();
 
-        private DataStore _dataStore => ServiceLocator.DataStore;
+        private PostgreSQLDataStore _dataStore => ServiceLocator.DataStore;
 
         private string GetLocalizedText(string key)
         {
@@ -200,10 +201,11 @@ namespace Diffusion.Toolkit.Pages
 
         private void Backup_DB(object sender, RoutedEventArgs e)
         {
-            _dataStore.CreateBackup();
-
+            // PostgreSQL backups require pg_dump command-line tool
             var result = MessageBox.Show(this._window,
-                "A database backup has been created.",
+                "PostgreSQL backups must be performed using pg_dump command-line tool.\n\n" +
+                "Example: pg_dump -h localhost -p 5436 -U diffusion -d diffusion_images -F c -f backup.dump\n\n" +
+                "See documentation for details.",
                 "Backup Database", MessageBoxButton.OK,
                 MessageBoxImage.Information);
         }

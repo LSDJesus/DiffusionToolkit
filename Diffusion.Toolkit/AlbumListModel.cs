@@ -2,6 +2,7 @@
 using System.Windows.Input;
 using Diffusion.Database.Models;
 using Diffusion.Toolkit.Models;
+using PgAlbum = Diffusion.Database.PostgreSQL.Models.Album;
 
 namespace Diffusion.Toolkit;
 
@@ -10,8 +11,8 @@ public class AlbumListModel : BaseNotify
     private string _albumName;
     private bool _isNewAlbum;
     private bool _isExistingAlbum;
-    private Album? _selectedAlbum;
-    private IEnumerable<Album> _albums;
+    private PgAlbum? _selectedAlbum;
+    private IEnumerable<PgAlbum> _albums;
     private bool _canClickOk;
 
     public ICommand Escape { get; set; }
@@ -28,7 +29,7 @@ public class AlbumListModel : BaseNotify
         set => SetField(ref _isExistingAlbum, value);
     }
 
-    public Album? SelectedAlbum
+    public PgAlbum? SelectedAlbum
     {
         get => _selectedAlbum;
         set => SetField(ref _selectedAlbum, value);
@@ -40,7 +41,7 @@ public class AlbumListModel : BaseNotify
         set => SetField(ref _albumName, value);
     }
 
-    public IEnumerable<Album> Albums
+    public IEnumerable<PgAlbum> Albums
     {
         get => _albums;
         set => SetField(ref _albums, value);

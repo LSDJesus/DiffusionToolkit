@@ -33,6 +33,7 @@ models/
 scripts/
 _import_joytag/
 _test_images/
+_import_wdtag/
 
 #Nuget packages folder
 packages/

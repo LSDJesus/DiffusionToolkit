@@ -5,8 +5,10 @@ using System.Windows;
 using Diffusion.Common;
 using Diffusion.Database;
 using Diffusion.Database.Models;
+using Diffusion.Database.PostgreSQL;
 using Diffusion.Toolkit.Classes;
 using Diffusion.Toolkit.Configuration;
+using PgAlbum = Diffusion.Database.PostgreSQL.Models.Album;
 
 namespace Diffusion.Toolkit
 {
@@ -16,11 +18,11 @@ namespace Diffusion.Toolkit
     public partial class AlbumSortWindow : BorderlessWindow
     {
         private readonly AlbumSortModel _model;
-        private readonly DataStore _dataStore;
+        private readonly PostgreSQLDataStore _dataStore;
         private readonly Settings _settings;
         private bool _isDirty;
 
-        public AlbumSortWindow(DataStore dataStore, Settings settings)
+        public AlbumSortWindow(PostgreSQLDataStore dataStore, Settings settings)
         {
             _dataStore = dataStore;
             _settings = settings;
@@ -30,7 +32,7 @@ namespace Diffusion.Toolkit
 
             _model.SortAlbumsBy = _settings.SortAlbumsBy ?? "Date";
             _model.Escape = new RelayCommand<object>(o => Escape());
-            _model.Albums = new ObservableCollection<Album>(dataStore.GetAlbums());
+            _model.Albums = new ObservableCollection<PgAlbum>(dataStore.GetAlbums());
             _model.MoveUpCommand = new RelayCommand<object>(o => MoveUp());
             _model.MoveDownCommand = new RelayCommand<object>(o => MoveDown());
             _model.PropertyChanged += ModelOnPropertyChanged;
@@ -59,14 +61,14 @@ namespace Diffusion.Toolkit
             {
                 case "Name":
                     _model.SelectedAlbum = null;
-                    _model.SortedAlbums = new ObservableCollection<Album>(_model.Albums.OrderBy(a => a.Name));
+                    _model.SortedAlbums = new ObservableCollection<PgAlbum>(_model.Albums.OrderBy(a => a.Name));
                     break;
                 case "Date":
                     _model.SelectedAlbum = null;
-                    _model.SortedAlbums = new ObservableCollection<Album>(_model.Albums.OrderBy(a => a.LastUpdated));
+                    _model.SortedAlbums = new ObservableCollection<PgAlbum>(_model.Albums.OrderBy(a => a.LastUpdated));
                     break;
                 case "Custom":
-                    _model.SortedAlbums = new ObservableCollection<Album>(_model.Albums.OrderBy(a => a.Order));
+                    _model.SortedAlbums = new ObservableCollection<PgAlbum>(_model.Albums.OrderBy(a => a.Order));
                     break;
             }
 

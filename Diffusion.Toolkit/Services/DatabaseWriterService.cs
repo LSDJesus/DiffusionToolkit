@@ -5,7 +5,7 @@ using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
 using Diffusion.Common;
-using Diffusion.Database.Models;
+using Diffusion.Database.PostgreSQL.Models;
 using Diffusion.IO;
 using Diffusion.Toolkit.Configuration;
 using Diffusion.Toolkit.Thumbnails;

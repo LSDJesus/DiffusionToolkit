@@ -10,6 +10,7 @@ using Diffusion.Toolkit.Classes;
 using Diffusion.Toolkit.Models;
 using Diffusion.Toolkit.Services;
 using Diffusion.Database.Models;
+using PgAlbum = Diffusion.Database.PostgreSQL.Models.Album;
 
 namespace Diffusion.Toolkit
 {
@@ -232,7 +233,7 @@ namespace Diffusion.Toolkit
 
             try
             {
-                var album = _dataStore.CreateAlbum(new Album() { Name = name });
+                var album = _dataStore.CreateAlbum(new PgAlbum() { Name = name });
 
                 var images = (imageEntries ?? Enumerable.Empty<ImageEntry>()).ToList();
 

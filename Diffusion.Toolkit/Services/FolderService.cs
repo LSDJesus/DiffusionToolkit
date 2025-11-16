@@ -13,7 +13,8 @@ using System.Windows.Controls;
 using System.Windows.Threading;
 using Diffusion.Common;
 using Diffusion.Database;
-using Diffusion.Database.Models;
+using Diffusion.Database.PostgreSQL;
+using Diffusion.Database.PostgreSQL.Models;
 using Diffusion.IO;
 using Diffusion.Toolkit.Common;
 using Diffusion.Toolkit.Configuration;
@@ -51,7 +52,7 @@ namespace Diffusion.Toolkit.Services
 
         private Settings _settings => ServiceLocator.Settings!;
 
-        private DataStore _dataStore => ServiceLocator.DataStore!;
+        private PostgreSQLDataStore _dataStore => ServiceLocator.DataStore!;
 
         private Dispatcher _dispatcher => ServiceLocator.Dispatcher;
 
@@ -258,7 +259,7 @@ namespace Diffusion.Toolkit.Services
             //UpdateFolderChildren(folder, comparer);
         }
 
-        string GetFolderName(Folder folder)
+        string GetFolderName(FolderView folder)
         {
             if (folder.IsRoot)
             {
@@ -280,7 +281,7 @@ namespace Diffusion.Toolkit.Services
                         ServiceLocator.MainModel.Folders = new ObservableCollection<FolderViewModel>(folders.Where(d => d.IsRoot).Select(folder => new FolderViewModel()
                         {
                             Id = folder.Id,
-                            HasChildren = folder.HasChildren,
+                            HasChildren = folder.HasChildren > 0,
                             Visible = true,
                             Depth = 0,
                             Name = GetFolderName(folder),
@@ -313,7 +314,7 @@ namespace Diffusion.Toolkit.Services
                                 folder => new FolderViewModel()
                                 {
                                     Id = folder.Id,
-                                    HasChildren = folder.HasChildren,
+                                    HasChildren = folder.HasChildren > 0,
                                     Visible = true,
                                     Depth = 0,
                                     Name = GetFolderName(folder),
@@ -676,7 +677,7 @@ namespace Diffusion.Toolkit.Services
             {
                 Id = sub.Id,
                 Parent = folder,
-                HasChildren = sub.HasChildren,
+                HasChildren = sub.HasChildren > 0,
                 Visible = true,
                 Depth = folder.Depth + 1,
                 Name = Path.GetFileName(sub.Path),
@@ -1309,9 +1310,10 @@ namespace Diffusion.Toolkit.Services
             }
         }
 
-        public IEnumerable<ImagePath> GetFiles(int folderId, bool recursive)
+        public IEnumerable<Diffusion.Database.ImagePath> GetFiles(int folderId, bool recursive)
         {
-            return ServiceLocator.DataStore.GetFolderImages(folderId, recursive);
+            var pgImages = ServiceLocator.DataStore.GetFolderImages(folderId, recursive);
+            return pgImages.Select(img => new Diffusion.Database.ImagePath { Id = img.Id, Path = img.Path, FolderId = img.FolderId, Unavailable = img.Unavailable });
         }
 
         public void UpdateRootFolder(int id, string path, bool watched, bool recursive, string propertyName)

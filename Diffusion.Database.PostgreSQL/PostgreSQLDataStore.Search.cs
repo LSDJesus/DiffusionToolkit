@@ -53,6 +53,12 @@ public class CountSize
 {
     public long Total { get; set; }
     public long Size { get; set; }
+    
+    public void Deconstruct(out long total, out long size)
+    {
+        total = Total;
+        size = Size;
+    }
 }
 
 public class UsedPrompt
@@ -456,6 +462,7 @@ public class ImageView
     public string Path { get; set; } = "";
     public DateTime CreatedDate { get; set; }
     public bool Nsfw { get; set; }
+    public bool NSFW { get => Nsfw; set => Nsfw = value; }  // Alias for backward compatibility
     public int AlbumCount { get; set; }
     public bool HasError { get; set; }
 }

@@ -1,5 +1,6 @@
 ﻿using Diffusion.Common;
 using Diffusion.Database;
+using Diffusion.Database.PostgreSQL;
 using Diffusion.Toolkit.Models;
 using System;
 using System.Collections.Generic;
@@ -53,7 +54,7 @@ namespace Diffusion.Toolkit
         private readonly MainModel _model;
         private NavigatorService _navigatorService;
 
-        private DataStore _dataStore => ServiceLocator.DataStore;
+        private PostgreSQLDataStore _dataStore => ServiceLocator.DataStore;
         private Settings _settings;
 
 
@@ -483,12 +484,33 @@ namespace Diffusion.Toolkit
 
         private async void OnLoaded(object sender, RoutedEventArgs e)
         {
-            var dataStore = new DataStore(AppInfo.DatabasePath);
-            var postgresDataStore = new Diffusion.Database.PostgreSQL.PostgreSQLDataStore(AppInfo.PostgreSQLConnectionString);
-            var _showReleaseNotes = false;
+            // Initialize PostgreSQL connection (Docker: localhost:5436, credentials in docker-compose.yml)
+            var postgresConnectionString = AppInfo.PostgreSQLConnectionString;
+            
+            PostgreSQLDataStore? pgDataStore = null;
+            try
+            {
+                pgDataStore = new PostgreSQLDataStore(postgresConnectionString);
+                await pgDataStore.Create(() => null, _ => { });
+                ServiceLocator.SetDataStore(pgDataStore); // Primary database
+                Logger.Log("✓ PostgreSQL connection established");
+            }
+            catch (Exception pgEx)
+            {
+                Logger.Log($"✗ PostgreSQL connection failed: {pgEx.Message}");
+                MessageBox.Show(this, 
+                    $"Failed to connect to PostgreSQL database.\n\nMake sure Docker is running with: docker-compose up -d\n\nError: {pgEx.Message}", 
+                    "Database Connection Error", 
+                    MessageBoxButton.OK, 
+                    MessageBoxImage.Error);
+                return;
+            }
 
-            ServiceLocator.SetDataStore(dataStore);
-            ServiceLocator.SetPostgreSQLDataStore(postgresDataStore);
+            // Keep SQLite for thumbnail caching only
+            var thumbnailDataStore = new DataStore(AppInfo.DatabasePath);
+            ServiceLocator.SetThumbnailDataStore(thumbnailDataStore);
+
+            var _showReleaseNotes = false;
 
             var isFirstTime = false;
             IReadOnlyList<string> newFolders = null;
@@ -650,7 +672,7 @@ namespace Diffusion.Toolkit
             Logger.Log($"Initializing pages");
 
 
-            await dataStore.Create(
+            await thumbnailDataStore.Create(
                 () => Dispatcher.Invoke(() => _messagePopupManager.ShowMessage("Please wait while we update your database", "Updating Database")),
                 (handle) =>
                 {

@@ -3,7 +3,9 @@ using System.Linq;
 using System.Windows;
 using Diffusion.Database;
 using Diffusion.Database.Models;
+using Diffusion.Database.PostgreSQL;
 using Diffusion.Toolkit.Classes;
+using PgAlbum = Diffusion.Database.PostgreSQL.Models.Album;
 
 namespace Diffusion.Toolkit
 {
@@ -13,16 +15,16 @@ namespace Diffusion.Toolkit
     public partial class AlbumListWindow : BorderlessWindow
     {
         private readonly AlbumListModel _model;
-        private readonly DataStore _dataStore;
+        private readonly PostgreSQLDataStore _dataStore;
 
         public string AlbumName { get; private set; }
 
         public bool IsNewAlbum { get; private set; }
 
-        public Album SelectedAlbum { get; private set; }
+        public PgAlbum SelectedAlbum { get; private set; }
 
 
-        public AlbumListWindow(DataStore dataStore)
+        public AlbumListWindow(PostgreSQLDataStore dataStore)
         {
             _dataStore = dataStore;
             _model = new AlbumListModel();

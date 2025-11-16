@@ -1,5 +1,6 @@
 ﻿using Diffusion.Common;
 using Diffusion.Database;
+using Diffusion.Database.PostgreSQL;
 using Diffusion.Toolkit.Services;
 using System;
 using System.IO;
@@ -127,7 +128,10 @@ namespace Diffusion.Toolkit
 
             Logger.Log($"Opening database at {targetDbPath}");
 
-            var dataStore = new DataStore(targetDbPath);
+            // Portable mode uses default PostgreSQL connection
+            var connectionString = "Host=localhost;Port=5436;Database=diffusion_images;Username=diffusion;Password=diffusion_toolkit_secure_2025";
+            
+            var dataStore = new PostgreSQLDataStore(connectionString);
 
             ServiceLocator.SetDataStore(dataStore);
         }
