@@ -27,7 +27,7 @@ public partial class PostgreSQLDataStore
         if (nodeList.Count == 0) return;
 
         // Insert nodes
-        var nodeQuery = new StringBuilder("INSERT INTO node (image_id, node_id, name) VALUES ");
+        var nodeQuery = new StringBuilder("INSERT INTO node (image_id, node_id, class_type) VALUES ");
         var nodeParams = new DynamicParameters();
         var nodeHolders = new List<string>();
 
@@ -38,9 +38,9 @@ public partial class PostgreSQLDataStore
             
             nodeParams.Add($"@img{i}", image.Id);
             nodeParams.Add($"@nid{i}", node.Id);
-            nodeParams.Add($"@name{i}", node.Name);
+            nodeParams.Add($"@class{i}", node.Name);
             
-            nodeHolders.Add($"(@img{i}, @nid{i}, @name{i})");
+            nodeHolders.Add($"(@img{i}, @nid{i}, @class{i})");
         }
 
         nodeQuery.Append(string.Join(", ", nodeHolders));
@@ -115,14 +115,7 @@ public partial class PostgreSQLDataStore
 
         lock (_lock)
         {
-            // Delete node properties first (foreign key constraint)
-            conn.Execute(@"
-                DELETE FROM node_property 
-                WHERE node_id IN (
-                    SELECT id FROM node WHERE image_id = ANY(@ImageIds)
-                )", new { ImageIds = imageIds });
-
-            // Delete nodes
+            // Delete nodes - CASCADE will delete node_property automatically via FK constraint
             conn.Execute(
                 "DELETE FROM node WHERE image_id = ANY(@ImageIds)",
                 new { ImageIds = imageIds });

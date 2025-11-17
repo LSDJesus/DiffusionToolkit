@@ -201,12 +201,14 @@ namespace Diffusion.Toolkit.Pages
             var query = _model.SelectedPrompt.Prompt;
             bool showImages = true;
 
+            // Guard against negative offset when Page is 0 (empty results)
+            var page = Math.Max(1, _model.PromptsResults.Page);
 
             if (showImages)
             {
                 matches = _dataStore
                     .SearchPrompt(query, _settings.PageSize,
-                        _settings.PageSize * (_model.PromptsResults.Page - 1),
+                        _settings.PageSize * (page - 1),
                         _model.PromptsResults.SortBy,
                         _model.PromptsResults.SortDirection
                     );

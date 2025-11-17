@@ -20,7 +20,17 @@ public partial class PostgreSQLDataStore : IDisposable
     public PostgreSQLDataStore(string connectionString)
     {
         _connectionString = connectionString;
-        var builder = new NpgsqlDataSourceBuilder(connectionString);
+        
+        // Parse and enhance connection string with pooling settings
+        var connStringBuilder = new NpgsqlConnectionStringBuilder(connectionString)
+        {
+            MaxPoolSize = 50,           // Limit max connections from this app (default 100)
+            MinPoolSize = 5,            // Keep some connections warm
+            ConnectionIdleLifetime = 300, // Close idle connections after 5 minutes
+            ConnectionPruningInterval = 10  // Check for idle connections every 10 seconds
+        };
+        
+        var builder = new NpgsqlDataSourceBuilder(connStringBuilder.ConnectionString);
         builder.EnableParameterLogging();
         _dataSource = builder.Build();
     }

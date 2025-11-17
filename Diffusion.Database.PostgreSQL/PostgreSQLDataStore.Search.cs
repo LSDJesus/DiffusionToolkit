@@ -3,8 +3,64 @@ using Dapper;
 using Diffusion.Common;
 using Diffusion.Common.Query;
 using Diffusion.Database.PostgreSQL.Models;
+using System.Text;
 
 namespace Diffusion.Database.PostgreSQL;
+
+/// <summary>
+/// Helper to convert positional bindings (IEnumerable<object>) to named Dapper parameters
+/// and replace ? placeholders with @p0, @p1, etc.
+/// </summary>
+internal static class BindingHelper
+{
+    public static (string Query, DynamicParameters Parameters) ConvertBindingsToNamedParameters(string query, IEnumerable<object> bindings)
+    {
+        var parameters = new DynamicParameters();
+        var bindingArray = bindings.ToArray();
+        
+        // Replace ? with @p0, @p1, @p2, etc. in order
+        var paramIndex = 0;
+        var result = new StringBuilder();
+        var inQuotes = false;
+        var inIdentifier = false;
+        
+        for (int i = 0; i < query.Length; i++)
+        {
+            var ch = query[i];
+            
+            // Track if we're inside quotes
+            if (ch == '\'' && (i == 0 || query[i-1] != '\\'))
+            {
+                inQuotes = !inQuotes;
+                result.Append(ch);
+            }
+            // Track if we're inside double-quoted identifiers
+            else if (ch == '"' && (i == 0 || query[i-1] != '\\'))
+            {
+                inIdentifier = !inIdentifier;
+                result.Append(ch);
+            }
+            // Replace ? with named parameter if not inside quotes/identifiers
+            else if (ch == '?' && !inQuotes && !inIdentifier)
+            {
+                var paramName = $"p{paramIndex}";
+                result.Append($"@{paramName}");
+                
+                if (paramIndex < bindingArray.Length)
+                {
+                    parameters.Add(paramName, bindingArray[paramIndex]);
+                }
+                paramIndex++;
+            }
+            else
+            {
+                result.Append(ch);
+            }
+        }
+        
+        return (result.ToString(), parameters);
+    }
+}
 
 public class Paging
 {
@@ -73,6 +129,14 @@ public class UsedPrompt
 public partial class PostgreSQLDataStore
 {
     private const string ViewColumns = "favorite, for_deletion, rating, aesthetic_score, created_date, nsfw, has_error";
+    
+    /// <summary>
+    /// Convert positional bindings from QueryCombiner to named Dapper parameters and update query
+    /// </summary>
+    private static (string Query, DynamicParameters Parameters) ConvertBindingsToNamedParameters(string query, IEnumerable<object> bindings)
+    {
+        return BindingHelper.ConvertBindingsToNamedParameters(query, bindings);
+    }
     
     public IEnumerable<ModelView> GetImageModels()
     {
@@ -160,13 +224,16 @@ public partial class PostgreSQLDataStore
         
         var whereClause = QueryCombiner.GetInitialWhereClause("main", options);
         
-        var join = $"INNER JOIN ({q.Query}) sub ON main.id = sub.id";
+        // Convert subquery first
+        var (convertedSubQuery, parameters) = ConvertBindingsToNamedParameters(q.Query, q.Bindings);
+        
+        var join = $"INNER JOIN ({convertedSubQuery}) sub ON main.id = sub.id";
         
         var where = whereClause.Length > 0 ? $"WHERE {whereClause}" : "";
         
-        var countSize = conn.Query<CountSize>(
-            $"SELECT COUNT(*) AS total, COALESCE(SUM(file_size),0) AS size FROM image main {join} {where}", 
-            q.Bindings.ToArray());
+        var sql = $"SELECT COUNT(*) AS total, COALESCE(SUM(file_size),0) AS size FROM image main {join} {where}";
+        
+        var countSize = conn.Query<CountSize>(sql, parameters);
         
         return countSize.First();
     }
@@ -280,18 +347,19 @@ public partial class PostgreSQLDataStore
         
         var q = QueryBuilder.QueryPrompt(prompt!);
         
-        var parameters = new DynamicParameters(q.Bindings);
-        parameters.Add("pageSize", pageSize);
-        parameters.Add("offset", offset);
-        
-        var images = conn.Query<ImageView>(
-            $@"SELECT m1.id, m1.path, {ViewColumns}, 
+        // Convert query and bindings
+        var sql = $@"SELECT m1.id, m1.path, {ViewColumns}, 
                (SELECT COUNT(1) FROM album_image WHERE image_id = m1.id) AS album_count 
                FROM image m1 {string.Join(' ', q.Joins)} 
                WHERE {q.WhereClause} 
                ORDER BY {sortField} {sortDir} 
-               LIMIT @pageSize OFFSET @offset",
-            parameters);
+               LIMIT @pageSize OFFSET @offset";
+               
+        var (convertedSql, parameters) = ConvertBindingsToNamedParameters(sql, q.Bindings);
+        parameters.Add("pageSize", pageSize);
+        parameters.Add("offset", offset);
+        
+        var images = conn.Query<ImageView>(convertedSql, parameters);
         
         return images;
     }
@@ -304,28 +372,33 @@ public partial class PostgreSQLDataStore
         
         var whereClause = QueryCombiner.GetInitialWhereClause("main", queryOptions);
         
-        var join = $"INNER JOIN ({q.Query}) sub ON main.id = sub.id";
+        // Convert subquery first
+        var (convertedSubQuery, parameters) = ConvertBindingsToNamedParameters(q.Query, q.Bindings);
+        
+        var join = $"INNER JOIN ({convertedSubQuery}) sub ON main.id = sub.id";
         
         var where = whereClause.Length > 0 ? $"WHERE {whereClause}" : "";
         
         var page = "";
-        var parameters = new DynamicParameters(q.Bindings);
-        
         if (paging != null)
         {
             page = " LIMIT @pageSize OFFSET @offset";
-            parameters.Add("pageSize", paging.PageSize);
-            parameters.Add("offset", paging.Offset);
         }
         
         var (sortField, sortDir) = sorting;
         
-        var images = conn.Query<ImageView>(
-            $@"SELECT main.id, main.path, {ViewColumns}, 
+        var sql = $@"SELECT main.id, main.path, {ViewColumns}, 
                (SELECT COUNT(1) FROM album_image WHERE image_id = main.id) AS album_count 
                FROM image main {join} {where} 
-               ORDER BY {sortField} {sortDir} {page}",
-            parameters);
+               ORDER BY {sortField} {sortDir} {page}";
+        
+        if (paging != null)
+        {
+            parameters.Add("pageSize", paging.PageSize);
+            parameters.Add("offset", paging.Offset);
+        }
+        
+        var images = conn.Query<ImageView>(sql, parameters);
         
         return images;
     }
@@ -338,28 +411,33 @@ public partial class PostgreSQLDataStore
         
         var whereClause = QueryCombiner.GetInitialWhereClause("main", options);
         
-        var join = $"INNER JOIN ({q.Query}) sub ON main.id = sub.id";
+        // Convert subquery first
+        var (convertedSubQuery, parameters) = ConvertBindingsToNamedParameters(q.Query, q.Bindings);
+        
+        var join = $"INNER JOIN ({convertedSubQuery}) sub ON main.id = sub.id";
         
         var where = whereClause.Length > 0 ? $"WHERE {whereClause}" : "";
         
         var page = "";
-        var parameters = new DynamicParameters(q.Bindings);
-        
         if (paging != null)
         {
             page = " LIMIT @pageSize OFFSET @offset";
-            parameters.Add("pageSize", paging.PageSize);
-            parameters.Add("offset", paging.Offset);
         }
         
         var (sortField, sortDir) = sorting;
         
-        var images = conn.Query<ImageView>(
-            $@"SELECT main.id, main.path, {ViewColumns}, 
+        var sql = $@"SELECT main.id, main.path, {ViewColumns}, 
                (SELECT COUNT(1) FROM album_image WHERE image_id = main.id) AS album_count 
                FROM image main {join} {where} 
-               ORDER BY {sortField} {sortDir} {page}",
-            parameters);
+               ORDER BY {sortField} {sortDir} {page}";
+        
+        if (paging != null)
+        {
+            parameters.Add("pageSize", paging.PageSize);
+            parameters.Add("offset", paging.Offset);
+        }
+        
+        var images = conn.Query<ImageView>(sql, parameters);
         
         return images;
     }
@@ -372,28 +450,33 @@ public partial class PostgreSQLDataStore
         
         var whereClause = QueryCombiner.GetInitialWhereClause("main", options);
         
-        var join = $"INNER JOIN ({q.Query}) sub ON main.id = sub.id";
+        // Convert subquery first
+        var (convertedSubQuery, parameters) = ConvertBindingsToNamedParameters(q.Query, q.Bindings);
+        
+        var join = $"INNER JOIN ({convertedSubQuery}) sub ON main.id = sub.id";
         
         var where = whereClause.Length > 0 ? $"WHERE {whereClause}" : "";
         
         var page = "";
-        var parameters = new DynamicParameters(q.Bindings);
-        
         if (paging != null)
         {
             page = " LIMIT @pageSize OFFSET @offset";
-            parameters.Add("pageSize", paging.PageSize);
-            parameters.Add("offset", paging.Offset);
         }
         
         var (sortField, sortDir) = sorting;
         
-        var images = conn.Query<ImageView>(
-            $@"SELECT main.id, main.path, {ViewColumns}, 
+        var sql = $@"SELECT main.id, main.path, {ViewColumns}, 
                (SELECT COUNT(1) FROM album_image WHERE image_id = main.id) AS album_count 
                FROM image main {join} {where} 
-               ORDER BY {sortField} {sortDir} {page}",
-            parameters);
+               ORDER BY {sortField} {sortDir} {page}";
+        
+        if (paging != null)
+        {
+            parameters.Add("pageSize", paging.PageSize);
+            parameters.Add("offset", paging.Offset);
+        }
+        
+        var images = conn.Query<ImageView>(sql, parameters);
         
         return images;
     }

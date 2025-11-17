@@ -949,7 +949,10 @@ namespace Diffusion.Toolkit.Pages
                 {
                     if (d.IsFaulted)
                     {
-                        ServiceLocator.MessageService.Show(d.Exception.Message, "An error occured while searching", PopupButtons.OK);
+                        var exception = d.Exception?.GetBaseException() ?? d.Exception;
+                        var errorMessage = exception?.Message ?? "Unknown error";
+                        Logger.Log($"Search error: {errorMessage}\r\nStack: {exception?.StackTrace}");
+                        ServiceLocator.MessageService.Show(errorMessage, "An error occured while searching", PopupButtons.OK);
                         _model.IsBusy = false;
                     }
                 });
@@ -1349,11 +1352,13 @@ namespace Diffusion.Toolkit.Pages
 
         private List<ImageEntry> GetSearchResults(long rId)
         {
-
+            // Guard against negative offset when Page is 0 (empty results)
+            var page = Math.Max(1, _model.Page);
+            
             var paging = new PgPaging()
             {
                 PageSize = ServiceLocator.Settings.PageSize,
-                Offset = ServiceLocator.Settings.PageSize * (_model.Page - 1)
+                Offset = ServiceLocator.Settings.PageSize * (page - 1)
             };
 
             Sorting = new PgSorting(_model.SortBy, _model.SortDirection);

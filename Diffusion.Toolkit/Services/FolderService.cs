@@ -1067,13 +1067,22 @@ namespace Diffusion.Toolkit.Services
 
         public async Task<bool> ShowRemoveFolderDialog(FolderViewModel folder)
         {
-            var title = GetLocalizedText("Actions.Folders.Remove.Title");
+            // Use appropriate title/message based on whether this is a root folder
+            var isRoot = folder.Depth == 0;
+            var title = GetLocalizedText(isRoot ? "Actions.RootFolders.Remove.Title" : "Actions.Folders.Remove.Title");
+            var messageKey = isRoot ? "Actions.RootFolders.Remove.Message" : "Actions.Folders.Remove.Message";
 
-            var result = await ServiceLocator.MessageService.Show(GetLocalizedText("Actions.Folders.Remove.Message").Replace("{folder}", folder.Name), title, PopupButtons.YesNo);
+            var result = await ServiceLocator.MessageService.Show(GetLocalizedText(messageKey).Replace("{folder}", folder.Name), title, PopupButtons.YesNo);
 
             if (result == PopupResult.Yes)
             {
                 ServiceLocator.DataStore.RemoveFolder(folder.Id);
+
+                // Remove watcher if this is a root folder (root folders can have watchers)
+                if (isRoot)
+                {
+                    RemoveWatcher(folder.Path);
+                }
 
                 await LoadFolders();
 

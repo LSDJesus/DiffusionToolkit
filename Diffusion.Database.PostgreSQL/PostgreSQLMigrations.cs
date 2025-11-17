@@ -9,7 +9,7 @@ namespace Diffusion.Database.PostgreSQL;
 public class PostgreSQLMigrations
 {
     private readonly NpgsqlConnection _connection;
-    private const int CurrentVersion = 9;
+    private const int CurrentVersion = 11;
 
     public PostgreSQLMigrations(NpgsqlConnection connection)
     {
@@ -40,9 +40,16 @@ public class PostgreSQLMigrations
         if (currentVersion < 7) await ApplyV7Async();
         if (currentVersion < 8) await ApplyV8Async();
         if (currentVersion < 9) await ApplyV9Async();
+        if (currentVersion < 10) await ApplyV10Async();
+        if (currentVersion < 11) await ApplyV11Async();
 
-        await _connection.ExecuteAsync("INSERT INTO schema_version (version) VALUES (@version)", 
-            new { version = CurrentVersion });
+        // Only insert version if migrations were applied
+        if (currentVersion < CurrentVersion)
+        {
+            await _connection.ExecuteAsync(
+                "INSERT INTO schema_version (version) VALUES (@version) ON CONFLICT (version) DO NOTHING", 
+                new { version = CurrentVersion });
+        }
     }
 
     private async Task ApplyV1Async()
@@ -736,5 +743,70 @@ public class PostgreSQLMigrations
 
         await _connection.ExecuteAsync(sql);
     }
-}
 
+    private async Task ApplyV10Async()
+    {
+        var sql = @"
+            -- Create query table for saved search queries
+            CREATE TABLE IF NOT EXISTS query (
+                id SERIAL PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE,
+                query_json TEXT NOT NULL,
+                created_date TIMESTAMP DEFAULT NOW(),
+                modified_date TIMESTAMP DEFAULT NOW()
+            );
+            
+            CREATE INDEX IF NOT EXISTS idx_query_name ON query (name);
+            
+            -- Create query_item table for query components (legacy support)
+            CREATE TABLE IF NOT EXISTS query_item (
+                id SERIAL PRIMARY KEY,
+                query_id INT NOT NULL REFERENCES query(id) ON DELETE CASCADE,
+                type TEXT NOT NULL,
+                value TEXT NOT NULL,
+                created_date TIMESTAMP DEFAULT NOW()
+            );
+            
+            CREATE INDEX IF NOT EXISTS idx_query_item_query_id ON query_item (query_id);
+            CREATE INDEX IF NOT EXISTS idx_query_item_type ON query_item (type);
+            
+            -- Create node_property table for workflow node properties
+            CREATE TABLE IF NOT EXISTS node_property (
+                id SERIAL PRIMARY KEY,
+                node_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                value TEXT,
+                created_at TIMESTAMP DEFAULT NOW()
+            );
+            
+            CREATE INDEX IF NOT EXISTS idx_node_property_node_id ON node_property (node_id);
+            CREATE INDEX IF NOT EXISTS idx_node_property_name ON node_property (name);
+        ";
+
+        await _connection.ExecuteAsync(sql);
+    }
+
+    private async Task ApplyV11Async()
+    {
+        // Fix node_property.node_id type: TEXT → INTEGER to match node.id
+        var sql = @"
+            -- Drop existing indexes
+            DROP INDEX IF EXISTS idx_node_property_node_id;
+            
+            -- Drop existing data (feature doesn't exist in SQLite, safe to clear)
+            TRUNCATE TABLE node_property CASCADE;
+            
+            -- Change node_id type from TEXT to INTEGER
+            ALTER TABLE node_property ALTER COLUMN node_id TYPE INTEGER USING node_id::integer;
+            
+            -- Add foreign key constraint
+            ALTER TABLE node_property ADD CONSTRAINT fk_node_property_node 
+                FOREIGN KEY (node_id) REFERENCES node(id) ON DELETE CASCADE;
+            
+            -- Recreate index
+            CREATE INDEX idx_node_property_node_id ON node_property (node_id);
+        ";
+
+        await _connection.ExecuteAsync(sql);
+    }
+}

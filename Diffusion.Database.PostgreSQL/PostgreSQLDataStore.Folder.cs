@@ -139,17 +139,43 @@ public partial class PostgreSQLDataStore
         {
             using var conn = OpenConnection();
 
-            return conn.QuerySingle<int>(@"
-                INSERT INTO folder (parent_id, path, image_count, scanned_date, unavailable, archived, excluded, is_root, recursive, watched)
-                VALUES (0, @path, 0, NULL, false, false, false, true, @recursive, @watched)
-                ON CONFLICT (path) DO UPDATE SET
-                    parent_id = 0,
-                    excluded = false,
-                    is_root = true,
-                    recursive = @recursive,
-                    watched = @watched
-                RETURNING id",
-                new { path, recursive, watched });
+            // For root folders, root_folder_id should be the folder's own ID
+            // We use a two-step process: insert with temporary value, then update
+            var id = conn.QuerySingleOrDefault<int?>(
+                "SELECT id FROM folder WHERE path = @path",
+                new { path });
+
+            if (id.HasValue)
+            {
+                // Update existing folder
+                conn.Execute(@"
+                    UPDATE folder SET
+                        parent_id = 0,
+                        excluded = false,
+                        is_root = true,
+                        recursive = @recursive,
+                        watched = @watched,
+                        root_folder_id = id
+                    WHERE id = @id",
+                    new { id = id.Value, recursive, watched });
+                return id.Value;
+            }
+            else
+            {
+                // Insert new folder with temporary root_folder_id = 0
+                var newId = conn.QuerySingle<int>(@"
+                    INSERT INTO folder (parent_id, root_folder_id, path, image_count, scanned_date, unavailable, archived, excluded, is_root, recursive, watched)
+                    VALUES (0, 0, @path, 0, NULL, false, false, false, true, @recursive, @watched)
+                    RETURNING id",
+                    new { path, recursive, watched });
+
+                // Update root_folder_id to point to itself
+                conn.Execute(
+                    "UPDATE folder SET root_folder_id = @newId WHERE id = @newId",
+                    new { newId });
+
+                return newId;
+            }
         }
     }
 
@@ -159,15 +185,40 @@ public partial class PostgreSQLDataStore
         {
             using var conn = OpenConnection();
 
-            return conn.QuerySingle<int>(@"
-                INSERT INTO folder (parent_id, path, image_count, scanned_date, unavailable, archived, excluded, is_root)
-                VALUES (0, @path, 0, NULL, false, false, true, false)
-                ON CONFLICT (path) DO UPDATE SET
-                    parent_id = 0,
-                    excluded = true,
-                    is_root = false
-                RETURNING id",
+            // Check if folder exists
+            var id = conn.QuerySingleOrDefault<int?>(
+                "SELECT id FROM folder WHERE path = @path",
                 new { path });
+
+            if (id.HasValue)
+            {
+                // Update existing folder
+                conn.Execute(@"
+                    UPDATE folder SET
+                        parent_id = 0,
+                        excluded = true,
+                        is_root = false,
+                        root_folder_id = id
+                    WHERE id = @id",
+                    new { id = id.Value });
+                return id.Value;
+            }
+            else
+            {
+                // Insert new excluded folder with temporary root_folder_id = 0
+                var newId = conn.QuerySingle<int>(@"
+                    INSERT INTO folder (parent_id, root_folder_id, path, image_count, scanned_date, unavailable, archived, excluded, is_root)
+                    VALUES (0, 0, @path, 0, NULL, false, false, true, false)
+                    RETURNING id",
+                    new { path });
+
+                // Update root_folder_id to point to itself
+                conn.Execute(
+                    "UPDATE folder SET root_folder_id = @newId WHERE id = @newId",
+                    new { newId });
+
+                return newId;
+            }
         }
     }
 
@@ -221,11 +272,12 @@ public partial class PostgreSQLDataStore
                 int id;
                 lock (_lock)
                 {
+                    // Sub-folders inherit root_folder_id from their root
                     id = conn.QuerySingle<int>(@"
-                        INSERT INTO folder (parent_id, path, unavailable, archived, excluded, is_root)
-                        VALUES (@currentParentId, @current, false, false, false, false)
+                        INSERT INTO folder (parent_id, root_folder_id, path, unavailable, archived, excluded, is_root)
+                        VALUES (@currentParentId, @rootId, @current, false, false, false, false)
                         RETURNING id",
-                        new { currentParentId, current });
+                        new { currentParentId, rootId = root.Id, current });
                 }
                 
                 folderCache?.Add(current, new Folder() 
