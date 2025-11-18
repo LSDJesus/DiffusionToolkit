@@ -14,6 +14,7 @@ using Diffusion.IO;
 using Diffusion.Toolkit.Configuration;
 using Diffusion.Toolkit.Localization;
 using Diffusion.Toolkit.Models;
+using DBModels = Diffusion.Database.Models;
 
 namespace Diffusion.Toolkit.Services;
 
@@ -224,7 +225,28 @@ public class ScanningService
                 }
             }
 
-            await ServiceLocator.MetadataScannerService.QueueBatchAsync(filesToScan, null, cancellationToken);
+            // Phase 1: Quick scan - add basic file info rapidly (only for new files)
+            if (!updateImages)
+            {
+                var addedCount = await QuickScanFiles(filesToScan, cancellationToken);
+
+                if (addedCount > 0)
+                {
+                    Logger.Log($"Quick scan complete: {addedCount} new files indexed. Use 'Rebuild' to extract full metadata.");
+                    ServiceLocator.ToastService.Toast($"{addedCount} images quick-scanned. Use Rebuild for full metadata extraction.", "Quick Scan Complete");
+                }
+                else
+                {
+                    Logger.Log("Quick scan complete: No new files found.");
+                    ServiceLocator.ToastService.Toast("No new images found", "Quick Scan Complete");
+                }
+            }
+            else
+            {
+                // Phase 2: Full metadata extraction (Rebuild mode)
+                Logger.Log($"Starting full metadata extraction for {filesToScan.Count} files...");
+                await ServiceLocator.MetadataScannerService.QueueBatchAsync(filesToScan, null, cancellationToken);
+            }
 
         }
         catch (Exception ex)
@@ -232,6 +254,82 @@ public class ScanningService
             await ServiceLocator.MessageService.ShowMedium(ex.Message,
                 "Scan Error", PopupButtons.OK);
         }
+    }
+
+    /// <summary>
+    /// Phase 1: Quick scan that rapidly indexes files with basic information
+    /// Returns the number of files actually added to the database
+    /// </summary>
+    private async Task<int> QuickScanFiles(List<string> filePaths, CancellationToken cancellationToken)
+    {
+        if (filePaths.Count == 0) return 0;
+
+        ServiceLocator.ProgressService.SetStatus($"Quick scanning {filePaths.Count} files...");
+
+        return await Task.Run(() =>
+        {
+            var folderCache = new Dictionary<string, Folder>();
+            var fileInfoList = new List<(string path, long fileSize, DateTime createdDate, DateTime modifiedDate)>();
+
+            // Gather basic file info (very fast - no metadata parsing)
+            foreach (var filePath in filePaths)
+            {
+                if (cancellationToken.IsCancellationRequested) break;
+
+                try
+                {
+                    var fileInfo = new FileInfo(filePath);
+                    if (fileInfo.Exists)
+                    {
+                        fileInfoList.Add((
+                            filePath,
+                            fileInfo.Length,
+                            fileInfo.CreationTimeUtc,
+                            fileInfo.LastWriteTimeUtc
+                        ));
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log($"Quick scan error for {filePath}: {ex.Message}");
+                }
+            }
+
+            if (fileInfoList.Count == 0) return 0;
+
+            // Bulk insert into database
+            using var conn = _dataStore.OpenConnection();
+            var added = _dataStore.QuickAddImages(conn, fileInfoList, folderCache, cancellationToken);
+            
+            Logger.Log($"Quick scan complete: {added} files indexed out of {fileInfoList.Count} candidates");
+            
+            return added;
+        }, cancellationToken);
+    }
+
+    /// <summary>
+    /// Background task: Deep scan images that were quick-scanned
+    /// </summary>
+    public async Task DeepScanPendingImages(int batchSize = 100, CancellationToken cancellationToken = default)
+    {
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            var pendingPaths = _dataStore.GetQuickScannedPaths(limit: batchSize).ToList();
+            
+            if (pendingPaths.Count == 0)
+            {
+                break; // No more pending images
+            }
+
+            ServiceLocator.ProgressService.SetStatus($"Deep scanning {pendingPaths.Count} images...");
+            
+            await ServiceLocator.MetadataScannerService.QueueBatchAsync(pendingPaths, null, cancellationToken);
+            
+            // Wait for batch to complete
+            await Task.Delay(1000, cancellationToken);
+        }
+
+        Logger.Log("Deep scan complete");
     }
 
 
@@ -267,7 +365,8 @@ public class ScanningService
             NoMetadata = file.NoMetadata,
             WorkflowId = file.WorkflowId,
             HasError = file.HasError,
-            Hash = file.Hash
+            Hash = file.Hash,
+            ScanPhase = (int)DBModels.ScanPhase.DeepScan  // Mark as fully scanned with metadata
         };
 
         if (storeMetadata)

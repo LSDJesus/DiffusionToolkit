@@ -35,6 +35,24 @@ public partial class PostgreSQLDataStore : IDisposable
         _dataSource = builder.Build();
     }
 
+    public NpgsqlConnectionStringBuilder GetConnection()
+    {
+        return new NpgsqlConnectionStringBuilder(_connectionString);
+    }
+
+    public string GetStatus()
+    {
+        try
+        {
+            using var conn = OpenConnection();
+            return $"Connected ({conn.ServerVersion})";
+        }
+        catch (Exception e)
+        {
+            return $"Error: {e.Message}";
+        }
+    }
+
     /// <summary>
     /// Opens a new database connection from the pool
     /// </summary>

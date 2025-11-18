@@ -63,6 +63,11 @@ public class Image
     public DateTime? ViewedDate { get; set; }
     [UserDefined]
     public DateTime? TouchedDate { get; set; }
+    
+    /// <summary>
+    /// Indicates whether this image has been fully scanned for metadata (0 = quick scan only, 1 = deep scan completed)
+    /// </summary>
+    public int ScanPhase { get; set; }
 }
 
 

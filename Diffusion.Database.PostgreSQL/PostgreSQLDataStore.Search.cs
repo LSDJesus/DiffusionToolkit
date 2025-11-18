@@ -9,7 +9,7 @@ namespace Diffusion.Database.PostgreSQL;
 
 /// <summary>
 /// Helper to convert positional bindings (IEnumerable<object>) to named Dapper parameters
-/// and replace ? placeholders with @p0, @p1, etc.
+/// and replace ? placeholders with @p0, @p1, @p2, etc.
 /// </summary>
 internal static class BindingHelper
 {
@@ -165,26 +165,30 @@ public partial class PostgreSQLDataStore
     public long CountFileSize(QueryOptions queryOptions)
     {
         using var conn = OpenConnection();
-        
+
         var q = QueryCombiner.Parse(queryOptions);
-        
+
+        var (convertedSql, parameters) = ConvertBindingsToNamedParameters(q.Query, q.Bindings);
+
         var size = conn.ExecuteScalar<long>(
-            $"SELECT SUM(file_size) FROM image main INNER JOIN ({q.Query}) sub ON sub.id = main.id", 
-            q.Bindings.ToArray());
-        
+            $"SELECT SUM(file_size) FROM image main INNER JOIN ({convertedSql}) sub ON sub.id = main.id",
+            parameters);
+
         return size;
     }
 
     public long CountPromptFileSize(string prompt)
     {
         using var conn = OpenConnection();
-        
+
         var q = QueryBuilder.QueryPrompt(prompt);
-        
+
+        var (convertedSql, parameters) = ConvertBindingsToNamedParameters(q.WhereClause, q.Bindings);
+
         var size = conn.ExecuteScalar<long>(
-            $"SELECT SUM(file_size) FROM image m1 {string.Join(' ', q.Joins)} WHERE {q.WhereClause}", 
-            q.Bindings.ToArray());
-        
+            $"SELECT SUM(file_size) FROM image m1 {string.Join(' ', q.Joins)} WHERE {convertedSql}",
+            parameters);
+
         return size;
     }
 
@@ -241,32 +245,36 @@ public partial class PostgreSQLDataStore
     public int CountPrompt(string prompt)
     {
         using var conn = OpenConnection();
-        
+
         var q = QueryBuilder.QueryPrompt(prompt);
-        
+
+        var (convertedSql, parameters) = ConvertBindingsToNamedParameters(q.WhereClause, q.Bindings);
+
         var count = conn.ExecuteScalar<int>(
-            $"SELECT COUNT(*) FROM image m1 {string.Join(' ', q.Joins)} WHERE {q.WhereClause}", 
-            q.Bindings.ToArray());
-        
+            $"SELECT COUNT(*) FROM image m1 {string.Join(' ', q.Joins)} WHERE {convertedSql}",
+            parameters);
+
         return count;
     }
 
     public CountSize CountAndFileSizeEx(QueryOptions options)
     {
         using var conn = OpenConnection();
-        
+
         var q = QueryCombiner.ParseEx(options);
-        
+
         var whereClause = QueryCombiner.GetInitialWhereClause("main", options);
-        
-        var join = $"INNER JOIN ({q.Query}) sub ON main.id = sub.id";
-        
+
+        var (convertedSubQuery, parameters) = ConvertBindingsToNamedParameters(q.Query, q.Bindings);
+
+        var join = $"INNER JOIN ({convertedSubQuery}) sub ON main.id = sub.id";
+
         var where = whereClause.Length > 0 ? $"WHERE {whereClause}" : "";
-        
+
         var countSize = conn.Query<CountSize>(
-            $"SELECT COUNT(*) AS total, SUM(file_size) AS size FROM image main {join} {where}", 
-            q.Bindings.ToArray());
-        
+            $"SELECT COUNT(*) AS total, SUM(file_size) AS size FROM image main {join} {where}",
+            parameters);
+
         return countSize.First();
     }
 

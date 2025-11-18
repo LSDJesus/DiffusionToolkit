@@ -27,11 +27,13 @@ public partial class PostgreSQLDataStore
         {
             using var conn = OpenConnection();
             
-            var idList = ids.ToArray();
-            
+            var parameters = new DynamicParameters();
+            parameters.Add("@forDeletion", forDeletion);
+            parameters.Add("@ids", ids.ToArray());
+
             conn.Execute(
                 "UPDATE image SET for_deletion = @forDeletion, touched_date = NOW() WHERE id = ANY(@ids)",
-                new { forDeletion, ids = idList });
+                parameters);
         }
     }
 
@@ -52,12 +54,14 @@ public partial class PostgreSQLDataStore
         lock (_lock)
         {
             using var conn = OpenConnection();
-            
-            var idList = ids.ToArray();
-            
+
+            var parameters = new DynamicParameters();
+            parameters.Add("@favorite", favorite);
+            parameters.Add("@ids", ids.ToArray());
+
             conn.Execute(
                 "UPDATE image SET favorite = @favorite, touched_date = NOW() WHERE id = ANY(@ids)",
-                new { favorite, ids = idList });
+                parameters);
         }
     }
 
@@ -79,13 +83,15 @@ public partial class PostgreSQLDataStore
         {
             using var conn = OpenConnection();
             
-            var idList = ids.ToArray();
-            
+            var parameters = new DynamicParameters();
+            parameters.Add("@nsfw", nsfw);
+            parameters.Add("@ids", ids.ToArray());
+
             var update = preserve 
                 ? "UPDATE image SET nsfw = nsfw OR @nsfw, touched_date = NOW() WHERE id = ANY(@ids)"
                 : "UPDATE image SET nsfw = @nsfw, touched_date = NOW() WHERE id = ANY(@ids)";
             
-            conn.Execute(update, new { nsfw, ids = idList });
+            conn.Execute(update, parameters);
         }
     }
 
@@ -107,11 +113,13 @@ public partial class PostgreSQLDataStore
         {
             using var conn = OpenConnection();
             
-            var idList = ids.ToArray();
-            
+            var parameters = new DynamicParameters();
+            parameters.Add("@rating", rating);
+            parameters.Add("@ids", ids.ToArray());
+
             conn.Execute(
                 "UPDATE image SET rating = @rating, touched_date = NOW() WHERE id = ANY(@ids)",
-                new { rating, ids = idList });
+                parameters);
         }
     }
 
@@ -133,11 +141,13 @@ public partial class PostgreSQLDataStore
         {
             using var conn = OpenConnection();
             
-            var idList = ids.ToArray();
-            
+            var parameters = new DynamicParameters();
+            parameters.Add("@customTags", customTags);
+            parameters.Add("@ids", ids.ToArray());
+
             conn.Execute(
                 "UPDATE image SET custom_tags = @customTags, touched_date = NOW() WHERE id = ANY(@ids)",
-                new { customTags, ids = idList });
+                parameters);
         }
     }
 
@@ -159,11 +169,13 @@ public partial class PostgreSQLDataStore
         {
             using var conn = OpenConnection();
             
-            var idList = ids.ToArray();
-            
+            var parameters = new DynamicParameters();
+            parameters.Add("@unavailable", unavailable);
+            parameters.Add("@ids", ids.ToArray());
+
             conn.Execute(
                 "UPDATE image SET unavailable = @unavailable, touched_date = NOW() WHERE id = ANY(@ids)",
-                new { unavailable, ids = idList });
+                parameters);
         }
     }
 
@@ -185,11 +197,9 @@ public partial class PostgreSQLDataStore
         {
             using var conn = OpenConnection();
             
-            var idList = ids.ToArray();
-            
             conn.Execute(
                 "UPDATE image SET viewed_date = NOW() WHERE id = ANY(@ids)",
-                new { ids = idList });
+                new { ids = ids.ToArray() });
         }
     }
 

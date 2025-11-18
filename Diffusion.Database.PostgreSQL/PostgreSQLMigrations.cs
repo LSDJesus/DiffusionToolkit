@@ -9,7 +9,7 @@ namespace Diffusion.Database.PostgreSQL;
 public class PostgreSQLMigrations
 {
     private readonly NpgsqlConnection _connection;
-    private const int CurrentVersion = 11;
+    private const int CurrentVersion = 12;
 
     public PostgreSQLMigrations(NpgsqlConnection connection)
     {
@@ -42,6 +42,7 @@ public class PostgreSQLMigrations
         if (currentVersion < 9) await ApplyV9Async();
         if (currentVersion < 10) await ApplyV10Async();
         if (currentVersion < 11) await ApplyV11Async();
+        if (currentVersion < 12) await ApplyV12Async();
 
         // Only insert version if migrations were applied
         if (currentVersion < CurrentVersion)
@@ -805,6 +806,26 @@ public class PostgreSQLMigrations
             
             -- Recreate index
             CREATE INDEX idx_node_property_node_id ON node_property (node_id);
+        ";
+
+        await _connection.ExecuteAsync(sql);
+    }
+
+    private async Task ApplyV12Async()
+    {
+        // Add scan_phase column for two-phase scanning (quick scan → deep metadata scan)
+        // Phase 0 (QuickScan) = only basic file info indexed
+        // Phase 1 (DeepScan) = full metadata extracted and embedded
+        // Existing images default to DeepScan (1) as they're already fully scanned
+        var sql = @"
+            -- Add scan_phase column to track metadata extraction completeness
+            ALTER TABLE image ADD COLUMN IF NOT EXISTS scan_phase INTEGER DEFAULT 1 NOT NULL;
+            
+            -- Create index for finding quick-scanned images needing deep scan
+            CREATE INDEX IF NOT EXISTS idx_image_scan_phase ON image (scan_phase) WHERE scan_phase = 0;
+            
+            -- Update all existing images to DeepScan (they already have metadata)
+            UPDATE image SET scan_phase = 1 WHERE scan_phase = 0 OR scan_phase IS NULL;
         ";
 
         await _connection.ExecuteAsync(sql);

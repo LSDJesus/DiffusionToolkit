@@ -372,9 +372,43 @@
             </TabItem>
             <TabItem Header="{lex:Loc Settings.Database}">
                 <StackPanel HorizontalAlignment="Left" Margin="10">
-                    <Button Click="Open_DB_Folder" Width="200" Height="26" Margin="0,0,0,10" Content="{lex:Loc Settings.Database.OpenFolder}"></Button>
-                    <Button Click="Backup_DB" Width="200" Height="26" Margin="0,0,0,10" Content="{lex:Loc Settings.Database.Backup}"></Button>
-                    <Button Click="Restore_DB" Width="200" Height="26" Content="{lex:Loc Settings.Database.Restore}"></Button>
+                    <GroupBox Header="Connection Info" Margin="0,0,0,10" Padding="10">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="100"/>
+                                <ColumnDefinition Width="200"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <Label Grid.Row="0" Grid.Column="0" Content="Host:"/>
+                            <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding Host, Mode=OneWay}" IsReadOnly="True"/>
+
+                            <Label Grid.Row="1" Grid.Column="0" Content="Port:"/>
+                            <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding Port, Mode=OneWay}" IsReadOnly="True"/>
+
+                            <Label Grid.Row="2" Grid.Column="0" Content="Database:"/>
+                            <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding Database, Mode=OneWay}" IsReadOnly="True"/>
+
+                            <Label Grid.Row="3" Grid.Column="0" Content="Username:"/>
+                            <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding Username, Mode=OneWay}" IsReadOnly="True"/>
+                            
+                            <Label Grid.Row="4" Grid.Column="0" Content="Status:"/>
+                            <Label Grid.Row="4" Grid.Column="1" Content="{Binding Status, Mode=OneWay}" FontWeight="Bold"/>
+                        </Grid>
+                    </GroupBox>
+
+                    <GroupBox Header="Actions" Padding="10">
+                        <StackPanel>
+                            <Button Click="Backup_DB" Width="200" Height="26" Margin="0,0,0,10" Content="{lex:Loc Settings.Database.Backup}"></Button>
+                            <Button Click="Restore_DB" Width="200" Height="26" Content="{lex:Loc Settings.Database.Restore}"></Button>
+                        </StackPanel>
+                    </GroupBox>
                 </StackPanel>
             </TabItem>
         </TabControl>

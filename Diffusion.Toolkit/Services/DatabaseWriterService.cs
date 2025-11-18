@@ -189,11 +189,30 @@ public class UnboundDataWriterQueue
             var path = job.FileParameters.Path;
             if (path.Length > 100)
             {
-                path = "...\\" + path[path.LastIndexOf("\\", 100, StringComparison.Ordinal)..];
+                // Find the last backslash after skipping the first part of the path
+                var lastBackslash = path.LastIndexOf("\\", StringComparison.Ordinal);
+                if (lastBackslash > 0 && path.Length - lastBackslash < 80)
+                {
+                    // If filename is reasonable, show "...\filename"
+                    path = "..." + path.Substring(lastBackslash);
+                }
+                else
+                {
+                    // Otherwise truncate from end
+                    path = "..." + path.Substring(path.Length - 97);
+                }
             }
             else if (path.Length > 70)
             {
-                path = "...\\" + path[path.LastIndexOf("\\", 70, StringComparison.Ordinal)..];
+                var lastBackslash = path.LastIndexOf("\\", StringComparison.Ordinal);
+                if (lastBackslash > 0 && path.Length - lastBackslash < 60)
+                {
+                    path = "..." + path.Substring(lastBackslash);
+                }
+                else
+                {
+                    path = "..." + path.Substring(path.Length - 67);
+                }
             }
             ServiceLocator.ProgressService.SetStatus($"Scanning: {path}");
 

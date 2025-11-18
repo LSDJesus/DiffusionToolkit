@@ -224,4 +224,115 @@ public partial class PostgreSQLDataStore
         
         return sb.ToString();
     }
+
+    /// <summary>
+    /// Quick scan: Bulk insert image records with only basic file information
+    /// This is Phase 1 of two-phase scanning for rapid initial indexing
+    /// Uses PostgreSQL COPY for maximum bulk insert performance
+    /// </summary>
+    public int QuickAddImages(NpgsqlConnection conn, IEnumerable<(string path, long fileSize, DateTime createdDate, DateTime modifiedDate)> files, Dictionary<string, Folder> folderCache, CancellationToken cancellationToken)
+    {
+        var fileList = files.ToList();
+        if (fileList.Count == 0) return 0;
+
+        // Pre-load ALL folder and root_folder mappings to avoid per-file queries
+        var allFolders = conn.Query<(int id, int root_folder_id)>("SELECT id, root_folder_id FROM folder")
+            .ToDictionary(f => f.id, f => f.root_folder_id);
+
+        // Create a temporary table to stage the data
+        var tempTableName = $"temp_quick_import_{Guid.NewGuid():N}";
+        
+        try
+        {
+            // Create temp table
+            conn.Execute($@"
+                CREATE TEMP TABLE {tempTableName} (
+                    path TEXT,
+                    file_name TEXT,
+                    file_size BIGINT,
+                    created_date TIMESTAMP,
+                    modified_date TIMESTAMP,
+                    folder_id INT,
+                    root_folder_id INT
+                ) ON COMMIT DROP");
+
+            // Use COPY for blazing fast bulk insert into temp table
+            using (var writer = conn.BeginBinaryImport($"COPY {tempTableName} (path, file_name, file_size, created_date, modified_date, folder_id, root_folder_id) FROM STDIN (FORMAT BINARY)"))
+            {
+                foreach (var (path, fileSize, createdDate, modifiedDate) in fileList)
+                {
+                    if (cancellationToken.IsCancellationRequested) break;
+
+                    var dirName = Path.GetDirectoryName(path);
+                    var fileName = Path.GetFileName(path);
+
+                    if (!EnsureFolderExists(dirName ?? "", folderCache, out var folderId))
+                    {
+                        continue;
+                    }
+
+                    // Use pre-loaded cache
+                    if (!allFolders.TryGetValue(folderId, out var rootFolderId))
+                    {
+                        Logger.Log($"Warning: folder_id {folderId} not found in cache");
+                        continue;
+                    }
+
+                    writer.StartRow();
+                    writer.Write(path, NpgsqlTypes.NpgsqlDbType.Text);
+                    writer.Write(fileName, NpgsqlTypes.NpgsqlDbType.Text);
+                    writer.Write(fileSize, NpgsqlTypes.NpgsqlDbType.Bigint);
+                    writer.Write(createdDate, NpgsqlTypes.NpgsqlDbType.Timestamp);
+                    writer.Write(modifiedDate, NpgsqlTypes.NpgsqlDbType.Timestamp);
+                    writer.Write(folderId, NpgsqlTypes.NpgsqlDbType.Integer);
+                    writer.Write(rootFolderId, NpgsqlTypes.NpgsqlDbType.Integer);
+                }
+
+                writer.Complete();
+            }
+
+            // Bulk insert from temp table into main table (handles conflicts)
+            var inserted = conn.Execute($@"
+                INSERT INTO image (
+                    path, file_name, file_size, created_date, modified_date, 
+                    folder_id, root_folder_id, scan_phase, no_metadata, has_error, 
+                    width, height, steps, cfg_scale, seed, batch_size, batch_pos, 
+                    favorite, for_deletion, nsfw, unavailable
+                )
+                SELECT 
+                    path, file_name, file_size, created_date, modified_date,
+                    folder_id, root_folder_id, 
+                    0, false, false, 0, 0, 0, 0, 0, 0, 0, false, false, false, false
+                FROM {tempTableName}
+                ON CONFLICT (path) DO NOTHING");
+
+            return inserted;
+        }
+        catch (Exception e)
+        {
+            Logger.Log($"QuickAddImages error: {e.Message}");
+            if (e.StackTrace != null) Logger.Log(e.StackTrace);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Get all image paths that are in QuickScan phase (need deep metadata extraction)
+    /// </summary>
+    public IEnumerable<string> GetQuickScannedPaths(int? folderId = null, int limit = 1000)
+    {
+        using var conn = OpenConnection();
+        
+        var query = "SELECT path FROM image WHERE scan_phase = 0";
+        
+        if (folderId.HasValue)
+        {
+            query += " AND folder_id = @folderId";
+        }
+        
+        query += " LIMIT @limit";
+
+        return conn.Query<string>(query, new { folderId, limit });
+    }
 }
+

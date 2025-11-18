@@ -106,7 +106,11 @@ public partial class PostgreSQLDataStore
         using var connection = _dataSource.CreateConnection();
         await connection.OpenAsync();
 
-        var tags = await connection.QueryAsync<ImageTag>(sql, new { imageIds = imageIds.ToArray(), source });
+        var parameters = new DynamicParameters();
+        parameters.Add("@imageIds", imageIds.ToArray());
+        parameters.Add("@source", source);
+
+        var tags = await connection.QueryAsync<ImageTag>(sql, parameters);
         
         return tags
             .GroupBy(t => t.ImageId)
@@ -180,13 +184,13 @@ public partial class PostgreSQLDataStore
         using var connection = _dataSource.CreateConnection();
         await connection.OpenAsync();
 
-        var imageIds = await connection.QueryAsync<int>(sql, new 
-        { 
-            tags = tagsList.ToArray(), 
-            minConfidence, 
-            source,
-            tagCount = tagsList.Count 
-        });
+        var parameters = new DynamicParameters();
+        parameters.Add("@tags", tagsList.ToArray());
+        parameters.Add("@minConfidence", minConfidence);
+        parameters.Add("@source", source);
+        parameters.Add("@tagCount", tagsList.Count);
+
+        var imageIds = await connection.QueryAsync<int>(sql, parameters);
         
         return imageIds.ToList();
     }
@@ -214,7 +218,12 @@ public partial class PostgreSQLDataStore
         using var connection = _dataSource.CreateConnection();
         await connection.OpenAsync();
 
-        var imageIds = await connection.QueryAsync<int>(sql, new { tags = tagsList.ToArray(), minConfidence, source });
+        var parameters = new DynamicParameters();
+        parameters.Add("@tags", tagsList.ToArray());
+        parameters.Add("@minConfidence", minConfidence);
+        parameters.Add("@source", source);
+
+        var imageIds = await connection.QueryAsync<int>(sql, parameters);
         return imageIds.ToList();
     }
 

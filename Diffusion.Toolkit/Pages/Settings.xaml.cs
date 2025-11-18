@@ -33,15 +33,15 @@ namespace Diffusion.Toolkit.Pages
     public partial class Settings : NavigationPage
     {
         private SettingsModel _model = new SettingsModel();
-        public Configuration.Settings _settings => ServiceLocator.Settings;
+        public Configuration.Settings _settings => ServiceLocator.Settings!;
 
         private List<FolderChange> _folderChanges = new List<FolderChange>();
 
-        private PostgreSQLDataStore _dataStore => ServiceLocator.DataStore;
+        private PostgreSQLDataStore _dataStore => ServiceLocator.DataStore!;
 
         private string GetLocalizedText(string key)
         {
-            return (string)JsonLocalizationProvider.Instance.GetLocalizedObject(key, null, CultureInfo.InvariantCulture);
+            return (string?)JsonLocalizationProvider.Instance.GetLocalizedObject(key, null!, CultureInfo.InvariantCulture) ?? key;
         }
 
         public Settings(Window window) : base("settings")
@@ -103,15 +103,15 @@ namespace Diffusion.Toolkit.Pages
             _model.StoreWorkflow = _settings.StoreWorkflow;
             _model.ScanUnavailable = _settings.ScanUnavailable;
 
-            _model.ExternalApplications = new ObservableCollection<ExternalApplicationModel>(_settings.ExternalApplications.Select(d => new ExternalApplicationModel()
+            _model.ExternalApplications = new ObservableCollection<ExternalApplicationModel>(_settings.ExternalApplications?.Select(d => new ExternalApplicationModel()
             {
                 CommandLineArgs = d.CommandLineArgs,
                 Name = d.Name,
                 Path = d.Path
-            }));
+            }) ?? new List<ExternalApplicationModel>());
 
             _model.Theme = _settings.Theme;
-            _model.Culture = _settings.Culture;
+            _model.Culture = _settings.Culture ?? string.Empty;
             _model.SetPristine();
         }
 
@@ -124,9 +124,9 @@ namespace Diffusion.Toolkit.Pages
 
             _model.ThemeOptions = new List<OptionValue>()
             {
-                new (GetLocalizedText("Settings.Themes.Theme.System"), "System"),
-                new (GetLocalizedText("Settings.Themes.Theme.Light"), "Light"),
-                new (GetLocalizedText("Settings.Themes.Theme.Dark"), "Dark")
+                new (GetLocalizedText("Settings.Themes.Theme.System") ?? "System", "System"),
+                new (GetLocalizedText("Settings.Themes.Theme.Light") ?? "Light", "Light"),
+                new (GetLocalizedText("Settings.Themes.Theme.Dark") ?? "Dark", "Dark")
             };
 
             try
@@ -135,9 +135,12 @@ namespace Diffusion.Toolkit.Pages
 
                 var langs = JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(configPath));
 
-                foreach (var (name, culture) in langs)
+                if (langs != null)
                 {
-                    cultures.Add(new Langauge(name, culture));
+                    foreach (var (name, culture) in langs)
+                    {
+                        cultures.Add(new Langauge(name, culture));
+                    }
                 }
             }
             catch (Exception ex)
@@ -194,11 +197,6 @@ namespace Diffusion.Toolkit.Pages
             e.Handled = regex.IsMatch(e.Text);
         }
 
-        private void Open_DB_Folder(object sender, RoutedEventArgs e)
-        {
-            Process.Start("explorer.exe", $"/select,\"{_dataStore.DatabasePath}\"");
-        }
-
         private void Backup_DB(object sender, RoutedEventArgs e)
         {
             // PostgreSQL backups require pg_dump command-line tool
@@ -212,44 +210,12 @@ namespace Diffusion.Toolkit.Pages
 
         private void Restore_DB(object sender, RoutedEventArgs e)
         {
-            using var dialog = new CommonOpenFileDialog();
-            dialog.Filters.Add(new CommonFileDialogFilter("SQLite databases", ".db"));
-            dialog.DefaultDirectory = Path.GetDirectoryName(_dataStore.DatabasePath);
-            dialog.Filters.Add(new CommonFileDialogFilter("All files", ".*"));
-            if (dialog.ShowDialog(this._window) == CommonFileDialogResult.Ok)
-            {
-                if (dialog.FileName == _dataStore.DatabasePath)
-                {
-                    MessageBox.Show(this._window,
-                    "The selected file is the current database. Please try another file.",
-                    "Restore Database", MessageBoxButton.OK,
-                    MessageBoxImage.Exclamation);
-
-                    return;
-                }
-
-                var result = MessageBox.Show(this._window,
-                    $"Are you sure you want to restore the file {dialog.FileName}? Your current database will be overwritten!",
-                "Restore Database", MessageBoxButton.YesNo,
-                    MessageBoxImage.Exclamation, MessageBoxResult.No);
-
-                if (result == MessageBoxResult.Yes)
-                {
-                    if (!_dataStore.TryRestoreBackup(dialog.FileName))
-                    {
-                        MessageBox.Show(this._window,
-                            "The database backup is not a Diffusion Toolkit database.",
-                            "Restore Database", MessageBoxButton.OK,
-                            MessageBoxImage.Error);
-                        return;
-                    }
-                }
-
-                MessageBox.Show(this._window,
-                    "The database backup has been restored.",
-                    "Restore Database", MessageBoxButton.OK,
-                    MessageBoxImage.Information);
-            }
+            var result = MessageBox.Show(this._window,
+                $"PostgreSQL backups must be performed using pg_restore command-line tool.\n\n" +
+                $"Example: pg_restore -h localhost -p 5436 -U diffusion -d diffusion_images -c -F c backup.dump\n\n" +
+                $"This will clear existing data before restoring.\n\nSee documentation for details.",
+                "Restore Database", MessageBoxButton.OK,
+                MessageBoxImage.Information);
         }
 
         private void BrowseHashCache_OnClick(object sender, RoutedEventArgs e)
@@ -279,6 +245,8 @@ namespace Diffusion.Toolkit.Pages
             //var button = (Button)sender;
             //var dc = (ExternalApplication)button.DataContext;
             var app = _model.SelectedApplication;
+
+            if (app == null) return;
 
             using var dialog = new CommonOpenFileDialog();
             dialog.DefaultFileName = app.Path;
@@ -400,6 +368,14 @@ namespace Diffusion.Toolkit.Pages
 
                 _settings.Culture = _model.Culture;
 
+                var connection = _dataStore.GetConnection();
+                _model.Host = connection.Host ?? "";
+                _model.Port = connection.Port;
+                _model.Database = connection.Database ?? "";
+                _model.Username = connection.Username ?? "";
+                _model.Status = _dataStore.GetStatus();
+
+                _model.SetPristine();
             }
         }
 

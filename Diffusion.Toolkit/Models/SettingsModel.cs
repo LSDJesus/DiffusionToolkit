@@ -49,12 +49,35 @@ public class SettingsModel : BaseNotify
     private bool _permanentlyDelete;
     private bool _showFilenames;
     private bool _softwareOnly;
+    private string _host;
+    private int _port;
+    private string _database;
+    private string _username;
+    private string _status;
 
     public SettingsModel()
     {
         SelectedIndex = -1;
         ExcludedSelectedIndex = -1;
+        _modelRootPath = string.Empty;
+        _imagePaths = new ObservableCollection<string>();
+        _fileExtensions = string.Empty;
+        _theme = string.Empty;
+        _culture = string.Empty;
+        _nsfwTags = string.Empty;
+        _hashCache = string.Empty;
+        _excludePaths = new ObservableCollection<string>();
+        _escape = null!;
+        _customCommandLine = string.Empty;
+        _customCommandLineArgs = string.Empty;
+        _cultures = new List<Langauge>();
+        _externalApplications = new ObservableCollection<ExternalApplicationModel>();
         ExternalApplications = new ObservableCollection<ExternalApplicationModel>();
+        _themeOptions = new List<OptionValue>();
+        _host = string.Empty;
+        _database = string.Empty;
+        _username = string.Empty;
+        _status = string.Empty;
         //ExternalApplications.CollectionChanged += ExternalApplicationsOnCollectionChanged;
 
         PropertyChanged += OnPropertyChanged;
@@ -79,7 +102,7 @@ public class SettingsModel : BaseNotify
 
     private void OnPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        ServiceLocator.MainModel.IsSettingsDirty = IsDirty;
+        ServiceLocator.MainModel!.IsSettingsDirty = IsDirty;
     }
 
     public int SelectedIndex
@@ -295,6 +318,36 @@ public class SettingsModel : BaseNotify
     {
         get => _selectedApplication;
         set => SetField(ref _selectedApplication, value, false);
+    }
+
+    public string Host
+    {
+        get => _host;
+        set => SetField(ref _host, value);
+    }
+
+    public int Port
+    {
+        get => _port;
+        set => SetField(ref _port, value);
+    }
+
+    public string Database
+    {
+        get => _database;
+        set => SetField(ref _database, value);
+    }
+
+    public string Username
+    {
+        get => _username;
+        set => SetField(ref _username, value);
+    }
+
+    public string Status
+    {
+        get => _status;
+        set => SetField(ref _status, value);
     }
 
     public override bool IsDirty => _isDirty;

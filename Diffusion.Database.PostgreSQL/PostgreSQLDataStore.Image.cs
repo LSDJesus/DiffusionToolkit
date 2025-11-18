@@ -390,27 +390,9 @@ public partial class PostgreSQLDataStore
         if (string.IsNullOrEmpty(folderPath))
             return false;
 
-        // Check cache first
-        if (folderCache.TryGetValue(folderPath, out var folder))
-        {
-            folderId = folder.Id;
-            return true;
-        }
-
-        // Query database
+        // Use the public method that creates missing folders in the hierarchy
         using var conn = OpenConnection();
-        folder = conn.QueryFirstOrDefault<Folder>(
-            "SELECT * FROM folder WHERE path = @Path",
-            new { Path = folderPath });
-
-        if (folder != null)
-        {
-            folderCache[folderPath] = folder;
-            folderId = folder.Id;
-            return true;
-        }
-
-        return false;
+        return EnsureFolderExists(conn, folderPath, folderCache, out folderId);
     }
 
     /// <summary>

@@ -189,7 +189,7 @@ public static class QueryCombiner
             var hashes = options.Models.Where(d => !string.IsNullOrEmpty(d.Hash)).Select(d => d.Hash).ToList();
             var hashPlaceholders = string.Join(",", hashes.Select(a => "?"));
 
-            orFilters.Add($"SELECT m1.Id FROM Image m1 WHERE m1.ModelHash IN ({hashPlaceholders})");
+            orFilters.Add($"SELECT m1.Id FROM Image m1 WHERE m1.model_hash IN ({hashPlaceholders})");
             bindings = bindings.Concat(hashes);
 
             var names = options.Models.Where(d => !string.IsNullOrEmpty(d.Name)).Select(d => d.Name)
@@ -209,13 +209,13 @@ public static class QueryCombiner
         //if (options.FolderIds is { Count: > 0 })
         //{
         //    var folderIds = string.Join(",", options.FolderIds.Select(a => "?"));
-        //    filters.Add($"SELECT m1.Id FROM Image m1 INNER JOIN Folder f ON f.Id = m1.FolderId WHERE f.Id IN ({folderIds})");
+        //    filters.Add($"SELECT m1.Id FROM Image m1 INNER JOIN Folder f ON f.Id = m1.folder_id WHERE f.Id IN ({folderIds})");
         //    bindings = bindings.Concat(options.AlbumIds.Cast<object>());
         //}
 
         if (options.SearchView == SearchView.Folder)
         {
-            filters.Add($"SELECT m1.Id FROM Image m1 INNER JOIN Folder f ON f.Id = m1.FolderId WHERE f.Path = ?");
+            filters.Add($"SELECT m1.Id FROM Image m1 INNER JOIN Folder f ON f.Id = m1.folder_id WHERE f.Path = ?");
             bindings = bindings.Concat(new[] { (object)options.Folder! });
         }
 

@@ -47,7 +47,7 @@ public static partial class QueryBuilder
 
     private static readonly Regex NegativePromptRegex = new Regex("\\b(?:negative prompt|negative_prompt|negative):\\s*(?<value>.*)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-    public static List<string> Samplers { get; set; }
+    public static List<string> Samplers { get; set; } = new List<string>();
 
     public static bool HideNSFW { get; set; }
     public static bool HideDeleted { get; set; }
@@ -204,9 +204,9 @@ public static partial class QueryBuilder
             prompt = AlbumRegex.Replace(prompt, String.Empty);
 
             var value = match.Groups["value"].Value;
-            conditions.Add(new KeyValuePair<string, object>("(Album.Name = ?)", value));
-            joins.Add("INNER JOIN AlbumImage ON m1.Id = AlbumImage.ImageId");
-            joins.Add("INNER JOIN Album ON AlbumImage.AlbumId = Album.Id");
+            conditions.Add(new KeyValuePair<string, object>("(album.name = ?)", value));
+            joins.Add("INNER JOIN album_image ON m1.id = album_image.image_id");
+            joins.Add("INNER JOIN album ON album_image.album_id = album.id");
         }
     }
 
@@ -219,8 +219,8 @@ public static partial class QueryBuilder
             prompt = FolderRegex.Replace(prompt, String.Empty);
 
             var value = match.Groups["value"].Value;
-            conditions.Add(new KeyValuePair<string, object>("(Folder.Path = ?)", value));
-            joins.Add("INNER JOIN Folder ON m1.FolderId = Folder.Id");
+            conditions.Add(new KeyValuePair<string, object>("(folder.path = ?)", value));
+            joins.Add("INNER JOIN folder ON m1.folder_id = folder.id");
         }
     }
 
@@ -319,11 +319,11 @@ public static partial class QueryBuilder
 
             if (value)
             {
-                conditions.Add(new KeyValuePair<string, object>("(SELECT COUNT(1) FROM AlbumImage WHERE ImageId = m1.Id) > 0", null));
+                conditions.Add(new KeyValuePair<string, object>("(SELECT COUNT(1) FROM AlbumImage WHERE ImageId = m1.Id) > 0", DBNull.Value));
             }
             else
             {
-                conditions.Add(new KeyValuePair<string, object>("(SELECT COUNT(1) FROM AlbumImage WHERE ImageId = m1.Id) = 0", null));
+                conditions.Add(new KeyValuePair<string, object>("(SELECT COUNT(1) FROM AlbumImage WHERE ImageId = m1.Id) = 0", DBNull.Value));
             }
         }
 
@@ -452,7 +452,7 @@ public static partial class QueryBuilder
 
             if (value.ToLower() == "none")
             {
-                conditions.Add(new KeyValuePair<string, object>($"(Rating IS NULL)", null));
+                conditions.Add(new KeyValuePair<string, object>($"(Rating IS NULL)", DBNull.Value));
             }
             else
             {
@@ -531,13 +531,13 @@ public static partial class QueryBuilder
                 switch (match.Groups["orientation"].Value)
                 {
                     case "portrait":
-                        conditions.Add(new KeyValuePair<string, object>("(Width < Height)", null));
+                        conditions.Add(new KeyValuePair<string, object>("(Width < Height)", DBNull.Value));
                         break;
                     case "landscape":
-                        conditions.Add(new KeyValuePair<string, object>("(Width > Height)", null));
+                        conditions.Add(new KeyValuePair<string, object>("(Width > Height)", DBNull.Value));
                         break;
                     case "square":
-                        conditions.Add(new KeyValuePair<string, object>("(Width = Height)", null));
+                        conditions.Add(new KeyValuePair<string, object>("(Width = Height)", DBNull.Value));
                         break;
                 }
             }
@@ -597,7 +597,7 @@ public static partial class QueryBuilder
             {
                 if (match.Groups[i].Value.Length > 0)
                 {
-                    orConditions.Add(new KeyValuePair<string, object>("(ModelHash = ? COLLATE NOCASE)", match.Groups[i].Value));
+                    orConditions.Add(new KeyValuePair<string, object>("(model_hash ILIKE ?)", match.Groups[i].Value));
                 }
             }
 
@@ -624,15 +624,15 @@ public static partial class QueryBuilder
                 {
                     if (model.Filename.Contains(name, StringComparison.InvariantCultureIgnoreCase))
                     {
-                        orConditions.Add(new KeyValuePair<string, object>("(ModelHash = ? COLLATE NOCASE)", model.Hash));
+                        orConditions.Add(new KeyValuePair<string, object>("(model_hash ILIKE ?)", model.Hash));
                         if (!string.IsNullOrEmpty(model.SHA256))
                         {
-                            orConditions.Add(new KeyValuePair<string, object>("(ModelHash = ? COLLATE NOCASE)", model.SHA256.Substring(0, 10)));
+                            orConditions.Add(new KeyValuePair<string, object>("(model_hash ILIKE ?)", model.SHA256.Substring(0, 10)));
                         }
                     }
                 }
 
-                orConditions.Add(new KeyValuePair<string, object>("(Model LIKE ?)", name.Replace("*", "%")));
+                orConditions.Add(new KeyValuePair<string, object>("(model LIKE ?)", name.Replace("*", "%")));
             }
 
             if (orConditions.Any())
@@ -644,7 +644,7 @@ public static partial class QueryBuilder
             }
             else
             {
-                conditions.Add(new KeyValuePair<string, object>($"(0 == 1)", null));
+                conditions.Add(new KeyValuePair<string, object>($"(1 = 0)", new object[] { }));
             }
         }
     }
@@ -661,30 +661,14 @@ public static partial class QueryBuilder
             var name = match.Groups["name"].Value;
             var hash = match.Groups["hash"].Value;
 
-            //foreach (var model in _models)
-            //{
-            //    if (model.Filename.Contains(name, StringComparison.InvariantCultureIgnoreCase))
-            //    {
-            //        if (!string.IsNullOrEmpty(model.Hash))
-            //        {
-            //            orConditions.Add(new KeyValuePair<string, object>("(ModelHash = ? COLLATE NOCASE)", model.Hash));
-            //        }
-
-            //        if (!string.IsNullOrEmpty(model.SHA256))
-            //        {
-            //            orConditions.Add(new KeyValuePair<string, object>("(ModelHash = ? COLLATE NOCASE)", model.SHA256.Substring(0, 10)));
-            //        }
-            //    }
-            //}
-
             if (!string.IsNullOrEmpty(name.Trim()))
             {
-                orConditions.Add(new KeyValuePair<string, object>("(Model = ? COLLATE NOCASE)", name));
+                orConditions.Add(new KeyValuePair<string, object>("(model ILIKE ?)", name));
             }
 
             if (!string.IsNullOrEmpty(hash.Trim()))
             {
-                orConditions.Add(new KeyValuePair<string, object>("(ModelHash = ? COLLATE NOCASE)", hash));
+                orConditions.Add(new KeyValuePair<string, object>("(model_hash ILIKE ?)", hash));
             }
 
 
@@ -697,7 +681,7 @@ public static partial class QueryBuilder
             }
             else
             {
-                conditions.Add(new KeyValuePair<string, object>($"(0 == 1)", null));
+                conditions.Add(new KeyValuePair<string, object>($"(1 = 0)", new object[] { }));
             }
         }
     }
