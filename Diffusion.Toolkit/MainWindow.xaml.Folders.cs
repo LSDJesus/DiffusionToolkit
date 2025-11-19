@@ -132,11 +132,101 @@ namespace Diffusion.Toolkit
                 _ = ServiceLocator.FolderService.LoadFolders();
             });
 
+            _model.TagFolderWithJoyTagCommand = new AsyncCommand<FolderViewModel>(async (folder) =>
+            {
+                await TagFolder(folder, tagWithJoyTag: true, tagWithWD: false, caption: false);
+            });
+
+            _model.TagFolderWithWDTagCommand = new AsyncCommand<FolderViewModel>(async (folder) =>
+            {
+                await TagFolder(folder, tagWithJoyTag: false, tagWithWD: true, caption: false);
+            });
+
+            _model.TagFolderWithBothCommand = new AsyncCommand<FolderViewModel>(async (folder) =>
+            {
+                await TagFolder(folder, tagWithJoyTag: true, tagWithWD: true, caption: false);
+            });
+
+            _model.CaptionFolderCommand = new AsyncCommand<FolderViewModel>(async (folder) =>
+            {
+                await TagFolder(folder, tagWithJoyTag: false, tagWithWD: false, caption: true);
+            });
+
+            _model.ImportSidecarsCommand = new AsyncCommand<FolderViewModel>(async (folder) =>
+            {
+                await ImportSidecarsFromFolder(folder);
+            });
+
             await ServiceLocator.FolderService.LoadFolders();
 
         }
 
+        private async Task TagFolder(FolderViewModel folder, bool tagWithJoyTag, bool tagWithWD, bool caption)
+        {
+            if (folder == null) return;
 
+            // Get all images in the folder recursively
+            var images = ServiceLocator.DataStore.GetFolderImages(folder.Id, true);
+            var imageIds = images.Select(img => img.Id).ToList();
 
+            if (imageIds.Count == 0)
+            {
+                System.Windows.MessageBox.Show($"No images found in folder '{folder.Name}'.", 
+                    "Auto-Tag Folder", 
+                    System.Windows.MessageBoxButton.OK, 
+                    System.Windows.MessageBoxImage.Information);
+                return;
+            }
+
+            // Open tagging window with pre-selected options
+            var window = new Diffusion.Toolkit.Windows.TaggingWindow(imageIds)
+            {
+                Owner = this
+            };
+
+            // Pre-configure the window based on what was selected
+            window.Loaded += (s, e) =>
+            {
+                // Access the checkboxes by name and set their IsChecked property
+                var joyTagCheckBox = window.FindName("JoyTagCheckBox") as System.Windows.Controls.CheckBox;
+                var wdTagCheckBox = window.FindName("WDTagCheckBox") as System.Windows.Controls.CheckBox;
+                var joyCaptionCheckBox = window.FindName("JoyCaptionCheckBox") as System.Windows.Controls.CheckBox;
+
+                if (joyTagCheckBox != null) joyTagCheckBox.IsChecked = tagWithJoyTag;
+                if (wdTagCheckBox != null) wdTagCheckBox.IsChecked = tagWithWD;
+                if (joyCaptionCheckBox != null) joyCaptionCheckBox.IsChecked = caption;
+            };
+
+            if (window.ShowDialog() == true)
+            {
+                // Refresh the current view to show new tags
+                if (ServiceLocator.ToastService != null)
+                {
+                    ServiceLocator.ToastService.Toast(
+                        $"Successfully processed {imageIds.Count} image(s) in folder '{folder.Name}'", 
+                        "Tagging Complete");
+                }
+                
+                // Refresh the search results
+                ServiceLocator.SearchService.RefreshResults();
+            }
+        }
+
+        private async Task ImportSidecarsFromFolder(FolderViewModel folder)
+        {
+            if (folder == null) return;
+
+            // Open sidecar import window
+            var window = new Diffusion.Toolkit.Windows.SidecarImportWindow(folder.Path, folder.Id)
+            {
+                Owner = this
+            };
+
+            if (window.ShowDialog() == true)
+            {
+                // Refresh the search results to show imported tags
+                ServiceLocator.SearchService.RefreshResults();
+            }
+        }
     }
 }

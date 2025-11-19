@@ -22,13 +22,13 @@
 
         <!-- Tagger Selection -->
         <StackPanel Grid.Row="1" Margin="0,0,0,20">
-            <CheckBox x:Name="JoyTagCheckBox" Content="JoyTag (Multi-label ONNX Tagger)" 
+            <CheckBox x:Name="JoyTagCheckBox" Content="JoyTag (Multi-label ONNX - Booru Tags)" 
                       IsChecked="True" Margin="0,5" FontSize="14"
                       IsEnabled="{Binding JoyTagAvailable}"/>
             <TextBlock Text="{Binding JoyTagStatus}" Margin="25,0,0,5" 
                        Foreground="{DynamicResource TextBrush}" Opacity="0.7" FontSize="11"/>
             
-            <CheckBox x:Name="WDTagCheckBox" Content="WD v3 Large (Booru-style Tags)" 
+            <CheckBox x:Name="WDTagCheckBox" Content="WD v3 Large (Multi-label ONNX - Booru Tags)" 
                       IsChecked="True" Margin="0,5" FontSize="14"
                       IsEnabled="{Binding WDTagAvailable}"/>
             <TextBlock Text="{Binding WDTagStatus}" Margin="25,0,0,5" 
@@ -36,9 +36,26 @@
             
             <CheckBox x:Name="JoyCaptionCheckBox" Content="JoyCaption (Natural Language Descriptions)" 
                       IsChecked="False" Margin="0,5" FontSize="14"
-                      IsEnabled="{Binding JoyCaptionAvailable}"/>
+                      IsEnabled="{Binding JoyCaptionAvailable}"
+                      Checked="JoyCaptionCheckBox_CheckedChanged" Unchecked="JoyCaptionCheckBox_CheckedChanged"/>
             <TextBlock Text="{Binding JoyCaptionStatus}" Margin="25,0,0,5" 
                        Foreground="{DynamicResource TextBrush}" Opacity="0.7" FontSize="11"/>
+            
+            <!-- Caption Prompt Selection (visible when JoyCaption is checked) -->
+            <StackPanel x:Name="CaptionPromptPanel" Margin="25,5,0,5" 
+                        Visibility="{Binding ElementName=JoyCaptionCheckBox, Path=IsChecked, Converter={StaticResource BoolToVisibilityConverter}}">
+                <Label Content="Caption Style:" FontSize="11" Padding="0,0,0,3"/>
+                <ComboBox Name="CaptionPromptComboBox" FontSize="12" Height="24" SelectedIndex="0">
+                    <ComboBoxItem Content="Detailed Description (150-200 words)" Tag="detailed"/>
+                    <ComboBoxItem Content="Short (Single sentence)" Tag="short"/>
+                    <ComboBoxItem Content="Technical Analysis" Tag="technical"/>
+                    <ComboBoxItem Content="Precise Colors" Tag="precise_colors"/>
+                    <ComboBoxItem Content="Character Focus" Tag="character"/>
+                    <ComboBoxItem Content="Scene Focus" Tag="scene"/>
+                    <ComboBoxItem Content="Artistic Style" Tag="artistic"/>
+                    <ComboBoxItem Content="Booru-style Tags" Tag="booru"/>
+                </ComboBox>
+            </StackPanel>
         </StackPanel>
 
         <!-- Progress Section -->

@@ -254,6 +254,11 @@ public class ScanningService
             await ServiceLocator.MessageService.ShowMedium(ex.Message,
                 "Scan Error", PopupButtons.OK);
         }
+        finally
+        {
+            // Always clear status to prevent frozen progress bar
+            ServiceLocator.ProgressService.ClearStatus();
+        }
     }
 
     /// <summary>
@@ -303,6 +308,9 @@ public class ScanningService
             
             Logger.Log($"Quick scan complete: {added} files indexed out of {fileInfoList.Count} candidates");
             
+            // Clear the progress status
+            ServiceLocator.ProgressService.ClearStatus();
+            
             return added;
         }, cancellationToken);
     }
@@ -312,24 +320,32 @@ public class ScanningService
     /// </summary>
     public async Task DeepScanPendingImages(int batchSize = 100, CancellationToken cancellationToken = default)
     {
-        while (!cancellationToken.IsCancellationRequested)
+        try
         {
-            var pendingPaths = _dataStore.GetQuickScannedPaths(limit: batchSize).ToList();
-            
-            if (pendingPaths.Count == 0)
+            while (!cancellationToken.IsCancellationRequested)
             {
-                break; // No more pending images
+                var pendingPaths = _dataStore.GetQuickScannedPaths(limit: batchSize).ToList();
+                
+                if (pendingPaths.Count == 0)
+                {
+                    break; // No more pending images
+                }
+
+                ServiceLocator.ProgressService.SetStatus($"Deep scanning {pendingPaths.Count} images...");
+                
+                await ServiceLocator.MetadataScannerService.QueueBatchAsync(pendingPaths, null, cancellationToken);
+                
+                // Wait for batch to complete
+                await Task.Delay(1000, cancellationToken);
             }
 
-            ServiceLocator.ProgressService.SetStatus($"Deep scanning {pendingPaths.Count} images...");
-            
-            await ServiceLocator.MetadataScannerService.QueueBatchAsync(pendingPaths, null, cancellationToken);
-            
-            // Wait for batch to complete
-            await Task.Delay(1000, cancellationToken);
+            Logger.Log("Deep scan complete");
         }
-
-        Logger.Log("Deep scan complete");
+        finally
+        {
+            // Always clear status to prevent frozen progress bar
+            ServiceLocator.ProgressService.ClearStatus();
+        }
     }
 
 

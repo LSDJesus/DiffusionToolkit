@@ -735,6 +735,12 @@ public class MainModel : BaseNotify
 
     public ICommand ToggleNavigationPane { get; set; }
     public ICommand ShowInExplorerCommand { get; set; }
+    public ICommand TagFolderWithJoyTagCommand { get; set; }
+    public ICommand TagFolderWithWDTagCommand { get; set; }
+    public ICommand TagFolderWithBothCommand { get; set; }
+    public ICommand CaptionFolderCommand { get; set; }
+    public ICommand ImportSidecarsCommand { get; set; }
+    
     public string ToastMessage
     {
         get => _toastMessage;

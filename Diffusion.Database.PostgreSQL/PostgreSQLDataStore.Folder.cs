@@ -256,7 +256,11 @@ public partial class PostgreSQLDataStore
         int nextSeparator;
         do
         {
-            nextSeparator = path.IndexOf("\\", current.Length + 1, StringComparison.Ordinal);
+            // Check bounds before calling IndexOf to avoid ArgumentOutOfRangeException
+            int startIndex = current.Length + 1;
+            nextSeparator = startIndex < path.Length 
+                ? path.IndexOf("\\", startIndex, StringComparison.Ordinal)
+                : -1;
             current = nextSeparator > 0 ? path[..nextSeparator] : path;
 
             var existingId = conn.ExecuteScalar<int?>(

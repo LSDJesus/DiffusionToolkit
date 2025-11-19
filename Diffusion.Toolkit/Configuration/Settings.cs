@@ -88,6 +88,12 @@ public class Settings : SettingsContainer, IScanOptions
     private string _wdTagTagsPath;
     private string _joyCaptionModelPath;
     private string _joyCaptionMMProjPath;
+    private bool _storeTagConfidence;
+    private bool _enableWDV3Large;
+    private string _wdV3LargeModelPath;
+    private string _wdV3LargeTagsPath;
+    private float _wdV3LargeThreshold;
+    private string _joyCaptionDefaultPrompt;
 
     public Settings()
     {
@@ -138,14 +144,20 @@ public class Settings : SettingsContainer, IScanOptions
         // Tagging defaults
         JoyTagThreshold = 0.5f;
         WDTagThreshold = 0.5f;
+        WDV3LargeThreshold = 0.5f;
         EnableJoyTag = true;
         EnableWDTag = true;
+        EnableWDV3Large = true;
+        StoreTagConfidence = false;
         JoyTagModelPath = @"models\onnx\joytag\jtModel.onnx";
         JoyTagTagsPath = @"models\onnx\joytag\jtTags.csv";
         WDTagModelPath = @"models\onnx\wdv3_large_tag\wdV3LargeModel.onnx";
         WDTagTagsPath = @"models\onnx\wdv3_large_tag\wdV3LargeTags.csv";
+        WDV3LargeModelPath = @"models\onnx\wdv3_large_tag\wdV3LargeModel.onnx";
+        WDV3LargeTagsPath = @"models\onnx\wdv3_large_tag\wdV3LargeTags.csv";
         JoyCaptionModelPath = @"models\Joycaption\llama-joycaption-beta-one-hf-llava.i1-Q6_K.gguf";
         JoyCaptionMMProjPath = @"models\Joycaption\llava.projector";
+        JoyCaptionDefaultPrompt = "detailed";
 
         NavigationSection = new NavigationSectionSettings();
         NavigationSection.Attach(this);
@@ -600,6 +612,42 @@ public class Settings : SettingsContainer, IScanOptions
     {
         get => _joyCaptionMMProjPath;
         set => UpdateValue(ref _joyCaptionMMProjPath, value);
+    }
+
+    public bool StoreTagConfidence
+    {
+        get => _storeTagConfidence;
+        set => UpdateValue(ref _storeTagConfidence, value);
+    }
+
+    public bool EnableWDV3Large
+    {
+        get => _enableWDV3Large;
+        set => UpdateValue(ref _enableWDV3Large, value);
+    }
+
+    public string WDV3LargeModelPath
+    {
+        get => _wdV3LargeModelPath;
+        set => UpdateValue(ref _wdV3LargeModelPath, value);
+    }
+
+    public string WDV3LargeTagsPath
+    {
+        get => _wdV3LargeTagsPath;
+        set => UpdateValue(ref _wdV3LargeTagsPath, value);
+    }
+
+    public float WDV3LargeThreshold
+    {
+        get => _wdV3LargeThreshold;
+        set => UpdateValue(ref _wdV3LargeThreshold, value);
+    }
+
+    public string JoyCaptionDefaultPrompt
+    {
+        get => _joyCaptionDefaultPrompt;
+        set => UpdateValue(ref _joyCaptionDefaultPrompt, value);
     }
 
 }

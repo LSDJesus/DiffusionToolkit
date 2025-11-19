@@ -6,6 +6,7 @@ using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Controls;
 using Diffusion.Database.Models;
 using Diffusion.Database.PostgreSQL;
 using Diffusion.Toolkit.Services;
@@ -37,16 +38,31 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
         JoyCaptionAvailable = ServiceLocator.JoyCaptionService != null;
 
         JoyTagStatus = JoyTagAvailable 
-            ? $"Ready (Threshold: {ServiceLocator.Settings?.JoyTagThreshold ?? 0.5f})" 
+            ? $"Ready (Threshold: {ServiceLocator.Settings?.JoyTagThreshold ?? 0.5f:F2})" 
             : "Model not found";
         WDTagStatus = WDTagAvailable 
-            ? $"Ready (Threshold: {ServiceLocator.Settings?.WDTagThreshold ?? 0.5f})" 
+            ? $"Ready (Threshold: {ServiceLocator.Settings?.WDTagThreshold ?? 0.5f:F2})" 
             : "Model not found";
         JoyCaptionStatus = JoyCaptionAvailable 
             ? "Ready" 
             : "Model not found";
 
         ImageCount = imageIds.Count;
+        
+        // Set default prompt based on settings after InitializeComponent
+        Loaded += (s, e) =>
+        {
+            var defaultPrompt = ServiceLocator.Settings?.JoyCaptionDefaultPrompt ?? "detailed";
+            for (int i = 0; i < CaptionPromptComboBox.Items.Count; i++)
+            {
+                if (CaptionPromptComboBox.Items[i] is ComboBoxItem item && 
+                    item.Tag?.ToString() == defaultPrompt)
+                {
+                    CaptionPromptComboBox.SelectedIndex = i;
+                    break;
+                }
+            }
+        };
     }
 
     public bool JoyTagAvailable { get; }
@@ -133,6 +149,7 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
             var runJoyTag = JoyTagCheckBox.IsChecked == true && ServiceLocator.JoyTagService != null;
             var runWDTag = WDTagCheckBox.IsChecked == true && ServiceLocator.WDTagService != null;
             var runJoyCaption = JoyCaptionCheckBox.IsChecked == true && ServiceLocator.JoyCaptionService != null;
+            var storeConfidence = ServiceLocator.Settings?.StoreTagConfidence ?? false;
 
             foreach (var imageId in _imageIds)
             {
@@ -145,43 +162,147 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
                 CurrentImageName = System.IO.Path.GetFileName(image.Path);
                 ProgressMessage = "Processing...";
 
-                // Run taggers in parallel for efficiency
-                var tasks = new List<Task>();
-
-                if (runJoyTag)
+                // When both taggers are enabled, we need to deduplicate and average confidence
+                if (runJoyTag && runWDTag)
                 {
-                    tasks.Add(Task.Run(async () =>
+                    await Task.Run(async () =>
                     {
-                        var tags = await ServiceLocator.JoyTagService!.TagImageAsync(image.Path);
-                        var tagTuples = tags.Select(t => (t.Tag, t.Confidence)).ToList();
-                        await dataStore.StoreImageTagsAsync(imageId, tagTuples, "joytag");
-                    }, _cancellationTokenSource.Token));
+                        // Run both taggers
+                        var joyTagsTask = ServiceLocator.JoyTagService!.TagImageAsync(image.Path);
+                        var wdTagsTask = ServiceLocator.WDTagService!.TagImageAsync(image.Path);
+                        await Task.WhenAll(joyTagsTask, wdTagsTask);
+
+                        var joyTags = await joyTagsTask;
+                        var wdTags = await wdTagsTask;
+
+                        // Combine and deduplicate tags
+                        var tagDict = new Dictionary<string, List<float>>(StringComparer.OrdinalIgnoreCase);
+                        
+                        foreach (var tag in joyTags)
+                        {
+                            if (!tagDict.ContainsKey(tag.Tag))
+                                tagDict[tag.Tag] = new List<float>();
+                            tagDict[tag.Tag].Add(tag.Confidence);
+                        }
+                        
+                        foreach (var tag in wdTags)
+                        {
+                            if (!tagDict.ContainsKey(tag.Tag))
+                                tagDict[tag.Tag] = new List<float>();
+                            tagDict[tag.Tag].Add(tag.Confidence);
+                        }
+
+                        // Average confidence for duplicates
+                        var deduplicatedTags = tagDict.Select(kvp => 
+                            (Tag: kvp.Key, Confidence: kvp.Value.Average())
+                        ).ToList();
+
+                        await dataStore.StoreImageTagsAsync(imageId, deduplicatedTags, "joytag+wdv3large");
+                    }, _cancellationTokenSource.Token);
+                }
+                else
+                {
+                    // Run taggers separately
+                    var tasks = new List<Task>();
+
+                    if (runJoyTag)
+                    {
+                        tasks.Add(Task.Run(async () =>
+                        {
+                            var tags = await ServiceLocator.JoyTagService!.TagImageAsync(image.Path);
+                            var tagTuples = tags.Select(t => (t.Tag, t.Confidence)).ToList();
+                            await dataStore.StoreImageTagsAsync(imageId, tagTuples, "joytag");
+                        }, _cancellationTokenSource.Token));
+                    }
+
+                    if (runWDTag)
+                    {
+                        tasks.Add(Task.Run(async () =>
+                        {
+                            var tags = await ServiceLocator.WDTagService!.TagImageAsync(image.Path);
+                            var tagTuples = tags.Select(t => (t.Tag, t.Confidence)).ToList();
+                            await dataStore.StoreImageTagsAsync(imageId, tagTuples, "wdv3large");
+                        }, _cancellationTokenSource.Token));
+                    }
+
+                    if (runJoyCaption)
+                    {
+                        tasks.Add(Task.Run(async () =>
+                        {
+                            // Get selected prompt
+                            string selectedPrompt = "detailed";
+                            Dispatcher.Invoke(() =>
+                            {
+                                if (CaptionPromptComboBox.SelectedItem is ComboBoxItem selected)
+                                {
+                                    selectedPrompt = selected.Tag?.ToString() ?? "detailed";
+                                }
+                            });
+                            
+                            // Map prompt tag to actual prompt string
+                            var promptText = selectedPrompt switch
+                            {
+                                "detailed" => Captioning.Services.JoyCaptionService.PROMPT_DETAILED,
+                                "short" => Captioning.Services.JoyCaptionService.PROMPT_SHORT,
+                                "technical" => Captioning.Services.JoyCaptionService.PROMPT_TECHNICAL,
+                                "precise_colors" => Captioning.Services.JoyCaptionService.PROMPT_PRECISE_COLORS,
+                                "character" => Captioning.Services.JoyCaptionService.PROMPT_CHARACTER_FOCUS,
+                                "scene" => Captioning.Services.JoyCaptionService.PROMPT_SCENE_FOCUS,
+                                "artistic" => Captioning.Services.JoyCaptionService.PROMPT_ARTISTIC_STYLE,
+                                "booru" => Captioning.Services.JoyCaptionService.PROMPT_BOORU_TAGS,
+                                _ => Captioning.Services.JoyCaptionService.PROMPT_DETAILED
+                            };
+                            
+                            var result = await ServiceLocator.JoyCaptionService!.CaptionImageAsync(
+                                image.Path, 
+                                promptText);
+                            
+                            await dataStore.StoreCaptionAsync(imageId, result.Caption, "joycaption", 
+                                result.PromptUsed, result.TokenCount, (float)result.GenerationTimeMs);
+                        }, _cancellationTokenSource.Token));
+                    }
+
+                    await Task.WhenAll(tasks);
                 }
 
-                if (runWDTag)
+                // Handle caption separately if only captioning (no tagging)
+                if (runJoyCaption && !runJoyTag && !runWDTag)
                 {
-                    tasks.Add(Task.Run(async () =>
+                    await Task.Run(async () =>
                     {
-                        var tags = await ServiceLocator.WDTagService!.TagImageAsync(image.Path);
-                        var tagTuples = tags.Select(t => (t.Tag, t.Confidence)).ToList();
-                        await dataStore.StoreImageTagsAsync(imageId, tagTuples, "wdv3large");
-                    }, _cancellationTokenSource.Token));
-                }
-
-                if (runJoyCaption)
-                {
-                    tasks.Add(Task.Run(async () =>
-                    {
+                        // Get selected prompt
+                        string selectedPrompt = "detailed";
+                        Dispatcher.Invoke(() =>
+                        {
+                            if (CaptionPromptComboBox.SelectedItem is ComboBoxItem selected)
+                            {
+                                selectedPrompt = selected.Tag?.ToString() ?? "detailed";
+                            }
+                        });
+                        
+                        // Map prompt tag to actual prompt string
+                        var promptText = selectedPrompt switch
+                        {
+                            "detailed" => Captioning.Services.JoyCaptionService.PROMPT_DETAILED,
+                            "short" => Captioning.Services.JoyCaptionService.PROMPT_SHORT,
+                            "technical" => Captioning.Services.JoyCaptionService.PROMPT_TECHNICAL,
+                            "precise_colors" => Captioning.Services.JoyCaptionService.PROMPT_PRECISE_COLORS,
+                            "character" => Captioning.Services.JoyCaptionService.PROMPT_CHARACTER_FOCUS,
+                            "scene" => Captioning.Services.JoyCaptionService.PROMPT_SCENE_FOCUS,
+                            "artistic" => Captioning.Services.JoyCaptionService.PROMPT_ARTISTIC_STYLE,
+                            "booru" => Captioning.Services.JoyCaptionService.PROMPT_BOORU_TAGS,
+                            _ => Captioning.Services.JoyCaptionService.PROMPT_DETAILED
+                        };
+                        
                         var result = await ServiceLocator.JoyCaptionService!.CaptionImageAsync(
                             image.Path, 
-                            Captioning.Services.JoyCaptionService.PROMPT_DETAILED);
+                            promptText);
                         
                         await dataStore.StoreCaptionAsync(imageId, result.Caption, "joycaption", 
                             result.PromptUsed, result.TokenCount, (float)result.GenerationTimeMs);
-                    }, _cancellationTokenSource.Token));
+                    }, _cancellationTokenSource.Token);
                 }
 
-                await Task.WhenAll(tasks);
                 ProcessedImages++;
             }
 
@@ -221,6 +342,12 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
             DialogResult = false;
             Close();
         }
+    }
+
+    private void JoyCaptionCheckBox_CheckedChanged(object sender, RoutedEventArgs e)
+    {
+        // Trigger CanStart update
+        OnPropertyChanged(nameof(CanStart));
     }
 
     protected virtual void OnPropertyChanged([CallerMemberName] string? propertyName = null)

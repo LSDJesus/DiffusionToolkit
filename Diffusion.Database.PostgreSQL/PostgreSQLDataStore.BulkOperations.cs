@@ -60,7 +60,7 @@ public partial class PostgreSQLDataStore
             var image = imageList[i];
             var dirName = Path.GetDirectoryName(image.Path);
 
-            if (!EnsureFolderExists(dirName ?? "", folderCache, out var folderId))
+            if (!EnsureFolderExists(conn, dirName ?? "", folderCache, out var folderId))
             {
                 Logger.Log($"Root folder not found for {dirName}");
                 image.HasError = true;
@@ -162,7 +162,7 @@ public partial class PostgreSQLDataStore
 
             var dirName = Path.GetDirectoryName(image.Path);
 
-            if (!EnsureFolderExists(dirName ?? "", folderCache, out var folderId))
+            if (!EnsureFolderExists(conn, dirName ?? "", folderCache, out var folderId))
             {
                 Logger.Log($"Root folder not found for {dirName}");
                 image.HasError = true;
@@ -244,7 +244,7 @@ public partial class PostgreSQLDataStore
         
         try
         {
-            // Create temp table
+            // Create temp table (preserve rows across implicit commits during COPY)
             conn.Execute($@"
                 CREATE TEMP TABLE {tempTableName} (
                     path TEXT,
@@ -254,7 +254,7 @@ public partial class PostgreSQLDataStore
                     modified_date TIMESTAMP,
                     folder_id INT,
                     root_folder_id INT
-                ) ON COMMIT DROP");
+                )");
 
             // Use COPY for blazing fast bulk insert into temp table
             using (var writer = conn.BeginBinaryImport($"COPY {tempTableName} (path, file_name, file_size, created_date, modified_date, folder_id, root_folder_id) FROM STDIN (FORMAT BINARY)"))
@@ -266,7 +266,7 @@ public partial class PostgreSQLDataStore
                     var dirName = Path.GetDirectoryName(path);
                     var fileName = Path.GetFileName(path);
 
-                    if (!EnsureFolderExists(dirName ?? "", folderCache, out var folderId))
+                    if (!EnsureFolderExists(conn, dirName ?? "", folderCache, out var folderId))
                     {
                         continue;
                     }
@@ -306,12 +306,23 @@ public partial class PostgreSQLDataStore
                 FROM {tempTableName}
                 ON CONFLICT (path) DO NOTHING");
 
+            // Clean up temp table
+            conn.Execute($"DROP TABLE IF EXISTS {tempTableName}");
+
             return inserted;
         }
         catch (Exception e)
         {
             Logger.Log($"QuickAddImages error: {e.Message}");
             if (e.StackTrace != null) Logger.Log(e.StackTrace);
+            
+            // Try to clean up temp table on error
+            try
+            {
+                conn.Execute($"DROP TABLE IF EXISTS {tempTableName}");
+            }
+            catch { /* Ignore cleanup errors */ }
+            
             throw;
         }
     }

@@ -907,7 +907,14 @@ namespace Diffusion.Toolkit
                         {
                             if (await ServiceLocator.ProgressService.TryStartTask())
                             {
-                                await ServiceLocator.ScanningService.ScanWatchedFolders(false, false, ServiceLocator.ProgressService.CancellationToken);
+                                try
+                                {
+                                    await ServiceLocator.ScanningService.ScanWatchedFolders(false, false, ServiceLocator.ProgressService.CancellationToken);
+                                }
+                                finally
+                                {
+                                    ServiceLocator.ProgressService.CompleteTask();
+                                }
                             }
                         });
                     }

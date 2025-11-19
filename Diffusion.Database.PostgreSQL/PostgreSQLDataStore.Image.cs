@@ -173,17 +173,18 @@ public partial class PostgreSQLDataStore
     /// </summary>
     public void MoveImage(int id, string newPath, Dictionary<string, Folder> folderCache)
     {
-        var dirName = Path.GetDirectoryName(newPath);
-        
-        if (string.IsNullOrEmpty(dirName) || !EnsureFolderExists(dirName, folderCache, out var folderId))
-        {
-            Logger.Log($"Root folder not found for {dirName}");
-            return;
-        }
-
         lock (_lock)
         {
             using var conn = OpenConnection();
+            
+            var dirName = Path.GetDirectoryName(newPath);
+            
+            if (string.IsNullOrEmpty(dirName) || !EnsureFolderExists(conn, dirName, folderCache, out var folderId))
+            {
+                Logger.Log($"Root folder not found for {dirName}");
+                return;
+            }
+
             conn.Execute(
                 "UPDATE image SET path = @Path, folder_id = @FolderId WHERE id = @Id",
                 new { Path = newPath, FolderId = folderId, Id = id });
@@ -197,7 +198,7 @@ public partial class PostgreSQLDataStore
     {
         var dirName = Path.GetDirectoryName(newPath);
         
-        if (string.IsNullOrEmpty(dirName) || !EnsureFolderExists(dirName, folderCache, out var folderId))
+        if (string.IsNullOrEmpty(dirName) || !EnsureFolderExists(conn, dirName, folderCache, out var folderId))
         {
             Logger.Log($"Root folder not found for {dirName}");
             return;
@@ -382,7 +383,11 @@ public partial class PostgreSQLDataStore
     /// <summary>
     /// Helper method to ensure folder exists in the database
     /// Reuses folder cache to avoid repeated lookups
+    /// NOTE: This overload is DEPRECATED - it opens a new connection for each call.
+    /// Callers should use EnsureFolderExists(NpgsqlConnection, string, Dictionary, out int) directly
+    /// with their existing connection to avoid connection pool exhaustion.
     /// </summary>
+    [Obsolete("Use EnsureFolderExists(NpgsqlConnection conn, ...) to reuse connections and avoid pool exhaustion")]
     private bool EnsureFolderExists(string folderPath, Dictionary<string, Folder> folderCache, out int folderId)
     {
         folderId = 0;
@@ -390,7 +395,7 @@ public partial class PostgreSQLDataStore
         if (string.IsNullOrEmpty(folderPath))
             return false;
 
-        // Use the public method that creates missing folders in the hierarchy
+        // WARNING: Opens a new connection - prefer passing existing connection
         using var conn = OpenConnection();
         return EnsureFolderExists(conn, folderPath, folderCache, out folderId);
     }
@@ -501,17 +506,18 @@ public partial class PostgreSQLDataStore
     /// </summary>
     public void UpdateImageFolderId(int id, string path, Dictionary<string, Folder> folderCache)
     {
-        var dirName = Path.GetDirectoryName(path);
-        
-        if (string.IsNullOrEmpty(dirName) || !EnsureFolderExists(dirName, folderCache, out var folderId))
-        {
-            Logger.Log($"Root folder not found for {dirName}");
-            return;
-        }
-
         lock (_lock)
         {
             using var conn = OpenConnection();
+            
+            var dirName = Path.GetDirectoryName(path);
+            
+            if (string.IsNullOrEmpty(dirName) || !EnsureFolderExists(conn, dirName, folderCache, out var folderId))
+            {
+                Logger.Log($"Root folder not found for {dirName}");
+                return;
+            }
+
             conn.Execute(
                 "UPDATE image SET folder_id = @FolderId WHERE id = @Id",
                 new { FolderId = folderId, Id = id });

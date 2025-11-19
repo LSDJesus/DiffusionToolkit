@@ -58,7 +58,14 @@ namespace Diffusion.Toolkit
             {
                 if (await ServiceLocator.ProgressService.TryStartTask())
                 {
-                    await ServiceLocator.ScanningService.ScanWatchedFolders(false, true, ServiceLocator.ProgressService.CancellationToken);
+                    try
+                    {
+                        await ServiceLocator.ScanningService.ScanWatchedFolders(false, true, ServiceLocator.ProgressService.CancellationToken);
+                    }
+                    finally
+                    {
+                        ServiceLocator.ProgressService.CompleteTask();
+                    }
                 }
 
             });
@@ -70,7 +77,14 @@ namespace Diffusion.Toolkit
             {
                 if (await ServiceLocator.ProgressService.TryStartTask())
                 {
-                    await ServiceLocator.ScanningService.ScanWatchedFolders(true, true, ServiceLocator.ProgressService.CancellationToken);
+                    try
+                    {
+                        await ServiceLocator.ScanningService.ScanWatchedFolders(true, true, ServiceLocator.ProgressService.CancellationToken);
+                    }
+                    finally
+                    {
+                        ServiceLocator.ProgressService.CompleteTask();
+                    }
                 }
 
             });

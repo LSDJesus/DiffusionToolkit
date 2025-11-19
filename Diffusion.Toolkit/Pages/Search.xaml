@@ -402,6 +402,27 @@
                                                                           CommandParameter="{Binding .}"
                                                                           IsEnabled="{Binding Source={StaticResource SearchProxy}, Path=Data.NavigationSection.FoldersSection.CanShowInExplorer}"
                                                                           Header="{lex:Loc Search.Navigation.Folders.ContextMenu.ShowInExplorer}"></MenuItem>
+                                                                    
+                                                                    <Separator></Separator>
+                                                                    <MenuItem Header="Auto-Tag Folder...">
+                                                                        <MenuItem Command="{Binding Source={StaticResource Proxy}, Path=Data.TagFolderWithJoyTagCommand}"
+                                                                                  CommandParameter="{Binding .}"
+                                                                                  Header="Tag with JoyTag"/>
+                                                                        <MenuItem Command="{Binding Source={StaticResource Proxy}, Path=Data.TagFolderWithWDTagCommand}"
+                                                                                  CommandParameter="{Binding .}"
+                                                                                  Header="Tag with WD v3 Large"/>
+                                                                        <MenuItem Command="{Binding Source={StaticResource Proxy}, Path=Data.TagFolderWithBothCommand}"
+                                                                                  CommandParameter="{Binding .}"
+                                                                                  Header="Tag with Both"/>
+                                                                    </MenuItem>
+                                                                    <MenuItem Command="{Binding Source={StaticResource Proxy}, Path=Data.CaptionFolderCommand}"
+                                                                              CommandParameter="{Binding .}"
+                                                                              Header="Caption Images (JoyCaption)..."/>
+                                                                    
+                                                                    <Separator></Separator>
+                                                                    <MenuItem Command="{Binding Source={StaticResource Proxy}, Path=Data.ImportSidecarsCommand}"
+                                                                              CommandParameter="{Binding .}"
+                                                                              Header="Import Sidecar .txt Files..."/>
                                                                 </ContextMenu>
                                                             </Grid.ContextMenu>
                                                             <Grid.Resources>
