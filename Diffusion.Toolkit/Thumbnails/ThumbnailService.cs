@@ -1,4 +1,5 @@
 ﻿using Diffusion.Toolkit.Services;
+using Diffusion.Scanner;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -76,7 +77,8 @@ public class ThumbnailService
             EntryType = image.EntryType,
             Path = image.Path,
             Height = image.Height,
-            Width = image.Width
+            Width = image.Width,
+            IsVideo = image.IsVideo
         };
 
         _ = QueueAsync(job, (d) =>
@@ -209,14 +211,25 @@ public class ThumbnailService
                                 continue;
                             }
 
-                            thumbnail = GetThumbnailImmediate(job.Data.Path, job.Data.Width, job.Data.Height, Size);
+                            // Generate video thumbnail if it's a video file
+                            if (job.Data.IsVideo)
+                            {
+                                thumbnail = await GetVideoThumbnailAsync(job.Data.Path, Size);
+                            }
+                            else
+                            {
+                                thumbnail = GetThumbnailImmediate(job.Data.Path, job.Data.Width, job.Data.Height, Size);
+                            }
                         }
                         else
                         {
                             thumbnail = GetDefaultThumbnailImmediate();
                         }
 
-                        ThumbnailCache.Instance.AddThumbnail(job.Data.Path, Size, (BitmapImage)thumbnail);
+                        if (thumbnail != null)
+                        {
+                            ThumbnailCache.Instance.AddThumbnail(job.Data.Path, Size, (BitmapImage)thumbnail);
+                        }
 
                         job.Completion(new ThumbailResult(thumbnail));
 
@@ -377,6 +390,62 @@ public class ThumbnailService
         bitmap.EndInit();
         bitmap.Freeze();
         return bitmap;
+    }
+
+    /// <summary>
+    /// Generates a thumbnail from a video file using FFmpeg.
+    /// Creates a temporary JPEG file and loads it as BitmapImage.
+    /// </summary>
+    private async Task<BitmapImage?> GetVideoThumbnailAsync(string videoPath, int size)
+    {
+        try
+        {
+            // Initialize FFmpeg if not already done
+            if (!VideoThumbnailGenerator.IsInitialized)
+            {
+                VideoThumbnailGenerator.Initialize();
+            }
+
+            // Create temp file for thumbnail
+            var tempPath = Path.Combine(Path.GetTempPath(), $"thumb_{Guid.NewGuid()}.jpg");
+
+            // Generate thumbnail from video (capture at 0.5 seconds)
+            bool success = await VideoThumbnailGenerator.GenerateThumbnailAsync(
+                videoPath, 
+                tempPath, 
+                width: size, 
+                captureTimeSeconds: 0.5);
+
+            if (!success || !File.Exists(tempPath))
+            {
+                return null;
+            }
+
+            // Load thumbnail into BitmapImage
+            var bitmap = new BitmapImage();
+            bitmap.BeginInit();
+            bitmap.CacheOption = BitmapCacheOption.OnLoad;
+            bitmap.UriSource = new Uri(tempPath, UriKind.Absolute);
+            bitmap.EndInit();
+            bitmap.Freeze();
+
+            // Clean up temp file
+            try
+            {
+                File.Delete(tempPath);
+            }
+            catch
+            {
+                // Ignore cleanup errors
+            }
+
+            return bitmap;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Error generating video thumbnail for {videoPath}: {ex.Message}");
+            return null;
+        }
     }
 
 

@@ -53,6 +53,14 @@ public class FileParameters
     public List<string>? WildcardsUsed { get; set; }
     public decimal? GenerationTimeSeconds { get; set; }
     public string? Scheduler { get; set; }
+    
+    // Video-specific metadata
+    public int? DurationMs { get; set; }              // Video duration in milliseconds
+    public string? VideoCodec { get; set; }           // Video codec (h264, vp9, av1, etc.)
+    public string? AudioCodec { get; set; }           // Audio codec (aac, opus, mp3, etc.)
+    public decimal? FrameRate { get; set; }           // Frames per second
+    public int? Bitrate { get; set; }                 // Total bitrate in kbps
+    public bool IsVideo { get; set; }                 // True if this is a video file
 }
 
 /// <summary>

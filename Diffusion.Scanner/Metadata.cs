@@ -51,6 +51,10 @@ public class Metadata
         JPEG,
         WebP,
         MP4,
+        AVIF,
+        GIF,
+        AVI,
+        WEBM,
         Other,
     }
 
@@ -58,12 +62,17 @@ public class Metadata
     private static byte[] JPEGMagic = new byte[] { 0xFF, 0xD8, 0xFF };
     private static byte[] RIFFMagic = new byte[] { 0x52, 0x49, 0x46, 0x46 };
     private static byte[] WebPMagic = new byte[] { 0x57, 0x45, 0x42, 0x50 };
+    private static byte[] AVIFMagic = new byte[] { 0x66, 0x74, 0x79, 0x70, 0x61, 0x76, 0x69, 0x66 }; // "ftypavif" at offset 4
+    private static byte[] GIF87Magic = new byte[] { 0x47, 0x49, 0x46, 0x38, 0x37, 0x61 }; // "GIF87a"
+    private static byte[] GIF89Magic = new byte[] { 0x47, 0x49, 0x46, 0x38, 0x39, 0x61 }; // "GIF89a"
+    private static byte[] AVIMagic = new byte[] { 0x41, 0x56, 0x49, 0x20 }; // "AVI " at offset 8
+    private static byte[] WEBMMagic = new byte[] { 0x1A, 0x45, 0xDF, 0xA3 }; // EBML header
 
     private static FileType GetFileType(Stream stream)
     {
-        var buffer = new byte[12];
+        var buffer = new byte[16]; // Increased to 16 to detect AVIF at offset 4
 
-        stream.Read(buffer, 0, 12);
+        stream.Read(buffer, 0, 16);
 
         var span = buffer.AsSpan();
 
@@ -75,9 +84,29 @@ public class Metadata
         {
             return FileType.JPEG;
         }
-        if (span.Slice(0, 4).SequenceEqual(RIFFMagic) && span.Slice(8, 4).SequenceEqual(WebPMagic))
+        if (span.Slice(0, 4).SequenceEqual(RIFFMagic))
         {
-            return FileType.WebP;
+            // Check if RIFF container is WebP or AVI
+            if (span.Slice(8, 4).SequenceEqual(WebPMagic))
+            {
+                return FileType.WebP;
+            }
+            if (span.Length >= 12 && span.Slice(8, 4).SequenceEqual(AVIMagic))
+            {
+                return FileType.AVI;
+            }
+        }
+        if (span.Length >= 12 && span.Slice(4, 8).SequenceEqual(AVIFMagic))
+        {
+            return FileType.AVIF;
+        }
+        if (span.Slice(0, 6).SequenceEqual(GIF87Magic) || span.Slice(0, 6).SequenceEqual(GIF89Magic))
+        {
+            return FileType.GIF;
+        }
+        if (span.Slice(0, 4).SequenceEqual(WEBMMagic))
+        {
+            return FileType.WEBM;
         }
 
         return FileType.Other;
@@ -169,6 +198,253 @@ public class Metadata
         {
             case FileType.MP4:
                 {
+                    try
+                    {
+                        fileParameters = new FileParameters();
+                        fileParameters.IsVideo = true;
+                        
+                        IEnumerable<Directory> directories = MetadataExtractor.ImageMetadataReader.ReadMetadata(stream);
+                        
+                        foreach (var directory in directories)
+                        {
+                            // MP4 Video track metadata
+                            if (directory.Name == "MP4 Video" || directory.Name.Contains("QuickTime Video"))
+                            {
+                                // Extract duration
+                                var durationTag = directory.Tags.FirstOrDefault(t => 
+                                    t.Name.Contains("Duration", StringComparison.OrdinalIgnoreCase));
+                                if (durationTag != null && durationTag.Description != null)
+                                {
+                                    // Parse duration string (could be "00:01:23.456" or "83456 ms")
+                                    if (TryParseDuration(durationTag.Description, out int durationMs))
+                                    {
+                                        fileParameters.DurationMs = durationMs;
+                                    }
+                                }
+                                
+                                // Extract frame rate
+                                var fpsTag = directory.Tags.FirstOrDefault(t => 
+                                    t.Name.Contains("Frame Rate", StringComparison.OrdinalIgnoreCase) ||
+                                    t.Name.Contains("Frames Per Second", StringComparison.OrdinalIgnoreCase));
+                                if (fpsTag != null && decimal.TryParse(fpsTag.Description?.Split(' ')[0], out decimal fps))
+                                {
+                                    fileParameters.FrameRate = fps;
+                                }
+                                
+                                // Extract video codec/compression
+                                var codecTag = directory.Tags.FirstOrDefault(t => 
+                                    t.Name.Contains("Compression Type", StringComparison.OrdinalIgnoreCase) ||
+                                    t.Name.Contains("Codec", StringComparison.OrdinalIgnoreCase) ||
+                                    t.Name.Contains("Format", StringComparison.OrdinalIgnoreCase));
+                                if (codecTag != null && !string.IsNullOrWhiteSpace(codecTag.Description))
+                                {
+                                    fileParameters.VideoCodec = codecTag.Description;
+                                }
+                            }
+                            
+                            // MP4 Sound/Audio track metadata
+                            if (directory.Name == "MP4 Sound" || directory.Name.Contains("QuickTime Sound"))
+                            {
+                                // Extract audio codec/format
+                                var audioFormatTag = directory.Tags.FirstOrDefault(t => 
+                                    t.Name.Contains("Format", StringComparison.OrdinalIgnoreCase) ||
+                                    t.Name.Contains("Audio Format", StringComparison.OrdinalIgnoreCase));
+                                if (audioFormatTag != null && !string.IsNullOrWhiteSpace(audioFormatTag.Description))
+                                {
+                                    fileParameters.AudioCodec = audioFormatTag.Description;
+                                }
+                            }
+                            
+                            // MP4/QuickTime general metadata for bitrate
+                            if (directory.Name.Contains("MP4") || directory.Name.Contains("QuickTime"))
+                            {
+                                var bitrateTag = directory.Tags.FirstOrDefault(t => 
+                                    t.Name.Contains("Bit Rate", StringComparison.OrdinalIgnoreCase) ||
+                                    t.Name.Contains("Bitrate", StringComparison.OrdinalIgnoreCase));
+                                if (bitrateTag != null && bitrateTag.Description != null)
+                                {
+                                    // Parse bitrate string like "1500 kbps" or "1500000 bps"
+                                    var bitrateStr = bitrateTag.Description.Split(' ')[0];
+                                    if (int.TryParse(bitrateStr, out int bitrate))
+                                    {
+                                        // Convert to kbps if in bps
+                                        if (bitrateTag.Description.Contains("bps") && !bitrateTag.Description.Contains("kbps"))
+                                        {
+                                            bitrate = bitrate / 1000;
+                                        }
+                                        fileParameters.Bitrate = bitrate;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Log($"Error extracting MP4 metadata from {file}: {ex.Message}");
+                        fileParameters = new FileParameters { IsVideo = true }; // Still mark as video even on error
+                    }
+                    
+                    break;
+                }
+            case FileType.AVI:
+                {
+                    try
+                    {
+                        fileParameters = new FileParameters();
+                        fileParameters.IsVideo = true;
+                        
+                        IEnumerable<Directory> directories = MetadataExtractor.ImageMetadataReader.ReadMetadata(stream);
+                        
+                        foreach (var directory in directories)
+                        {
+                            // AVI RIFF header info
+                            if (directory.Name.Contains("AVI") || directory.Name.Contains("RIFF"))
+                            {
+                                // Extract duration
+                                var durationTag = directory.Tags.FirstOrDefault(t => 
+                                    t.Name.Contains("Duration", StringComparison.OrdinalIgnoreCase));
+                                if (durationTag != null && durationTag.Description != null)
+                                {
+                                    if (TryParseDuration(durationTag.Description, out int durationMs))
+                                    {
+                                        fileParameters.DurationMs = durationMs;
+                                    }
+                                }
+                                
+                                // Extract frame rate
+                                var fpsTag = directory.Tags.FirstOrDefault(t => 
+                                    t.Name.Contains("Frame Rate", StringComparison.OrdinalIgnoreCase) ||
+                                    t.Name.Contains("Frames Per Second", StringComparison.OrdinalIgnoreCase));
+                                if (fpsTag != null && decimal.TryParse(fpsTag.Description?.Split(' ')[0], out decimal fps))
+                                {
+                                    fileParameters.FrameRate = fps;
+                                }
+                                
+                                // Extract video codec/compression
+                                var codecTag = directory.Tags.FirstOrDefault(t => 
+                                    t.Name.Contains("Compression", StringComparison.OrdinalIgnoreCase) ||
+                                    t.Name.Contains("Codec", StringComparison.OrdinalIgnoreCase));
+                                if (codecTag != null && !string.IsNullOrWhiteSpace(codecTag.Description))
+                                {
+                                    fileParameters.VideoCodec = codecTag.Description;
+                                }
+                                
+                                // Extract bitrate
+                                var bitrateTag = directory.Tags.FirstOrDefault(t => 
+                                    t.Name.Contains("Bit Rate", StringComparison.OrdinalIgnoreCase));
+                                if (bitrateTag != null && bitrateTag.Description != null)
+                                {
+                                    var bitrateStr = bitrateTag.Description.Split(' ')[0];
+                                    if (int.TryParse(bitrateStr, out int bitrate))
+                                    {
+                                        if (bitrateTag.Description.Contains("bps") && !bitrateTag.Description.Contains("kbps"))
+                                        {
+                                            bitrate = bitrate / 1000;
+                                        }
+                                        fileParameters.Bitrate = bitrate;
+                                    }
+                                }
+                            }
+                            
+                            // AVI audio stream info
+                            if (directory.Name.Contains("Audio"))
+                            {
+                                var audioFormatTag = directory.Tags.FirstOrDefault(t => 
+                                    t.Name.Contains("Format", StringComparison.OrdinalIgnoreCase));
+                                if (audioFormatTag != null && !string.IsNullOrWhiteSpace(audioFormatTag.Description))
+                                {
+                                    fileParameters.AudioCodec = audioFormatTag.Description;
+                                }
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Log($"Error extracting AVI metadata from {file}: {ex.Message}");
+                        fileParameters = new FileParameters { IsVideo = true };
+                    }
+                    
+                    break;
+                }
+            case FileType.WEBM:
+                {
+                    try
+                    {
+                        fileParameters = new FileParameters();
+                        fileParameters.IsVideo = true;
+                        
+                        // WebM uses similar metadata structure to MP4/QuickTime
+                        IEnumerable<Directory> directories = MetadataExtractor.ImageMetadataReader.ReadMetadata(stream);
+                        
+                        foreach (var directory in directories)
+                        {
+                            // Look for any video-related directories (WebM, Matroska, etc.)
+                            if (directory.Name.Contains("Video") || directory.Name.Contains("Track"))
+                            {
+                                // Extract duration
+                                var durationTag = directory.Tags.FirstOrDefault(t => 
+                                    t.Name.Contains("Duration", StringComparison.OrdinalIgnoreCase));
+                                if (durationTag != null && durationTag.Description != null)
+                                {
+                                    if (TryParseDuration(durationTag.Description, out int durationMs))
+                                    {
+                                        fileParameters.DurationMs = durationMs;
+                                    }
+                                }
+                                
+                                // Extract frame rate
+                                var fpsTag = directory.Tags.FirstOrDefault(t => 
+                                    t.Name.Contains("Frame Rate", StringComparison.OrdinalIgnoreCase));
+                                if (fpsTag != null && decimal.TryParse(fpsTag.Description?.Split(' ')[0], out decimal fps))
+                                {
+                                    fileParameters.FrameRate = fps;
+                                }
+                                
+                                // Extract video codec (VP8, VP9, AV1)
+                                var codecTag = directory.Tags.FirstOrDefault(t => 
+                                    t.Name.Contains("Codec", StringComparison.OrdinalIgnoreCase) ||
+                                    t.Name.Contains("Format", StringComparison.OrdinalIgnoreCase));
+                                if (codecTag != null && !string.IsNullOrWhiteSpace(codecTag.Description))
+                                {
+                                    fileParameters.VideoCodec = codecTag.Description;
+                                }
+                            }
+                            
+                            // Audio track info
+                            if (directory.Name.Contains("Audio"))
+                            {
+                                var audioFormatTag = directory.Tags.FirstOrDefault(t => 
+                                    t.Name.Contains("Format", StringComparison.OrdinalIgnoreCase) ||
+                                    t.Name.Contains("Codec", StringComparison.OrdinalIgnoreCase));
+                                if (audioFormatTag != null && !string.IsNullOrWhiteSpace(audioFormatTag.Description))
+                                {
+                                    fileParameters.AudioCodec = audioFormatTag.Description;
+                                }
+                            }
+                            
+                            // Overall bitrate
+                            var bitrateTag = directory.Tags.FirstOrDefault(t => 
+                                t.Name.Contains("Bit Rate", StringComparison.OrdinalIgnoreCase));
+                            if (bitrateTag != null && bitrateTag.Description != null)
+                            {
+                                var bitrateStr = bitrateTag.Description.Split(' ')[0];
+                                if (int.TryParse(bitrateStr, out int bitrate))
+                                {
+                                    if (bitrateTag.Description.Contains("bps") && !bitrateTag.Description.Contains("kbps"))
+                                    {
+                                        bitrate = bitrate / 1000;
+                                    }
+                                    fileParameters.Bitrate = bitrate;
+                                }
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Log($"Error extracting WEBM metadata from {file}: {ex.Message}");
+                        fileParameters = new FileParameters { IsVideo = true };
+                    }
+                    
                     break;
                 }
             case FileType.PNG:
@@ -1705,4 +1981,79 @@ public class Metadata
             Logger.Log($"Failed to extract searchable metadata: {ex.Message}");
         }
     }
+
+    /// <summary>
+    /// Attempts to parse a duration string into milliseconds.
+    /// Handles formats like "00:01:23.456", "83456 ms", "83.456 s", etc.
+    /// </summary>
+    private static bool TryParseDuration(string durationStr, out int durationMs)
+    {
+        durationMs = 0;
+        if (string.IsNullOrWhiteSpace(durationStr)) return false;
+
+        try
+        {
+            // Format: "XXX ms" or "XXX milliseconds"
+            if (durationStr.Contains("ms") || durationStr.Contains("millisecond"))
+            {
+                var numStr = durationStr.Split(new[] { ' ', 'm', 's' }, StringSplitOptions.RemoveEmptyEntries)[0];
+                if (int.TryParse(numStr, out int ms))
+                {
+                    durationMs = ms;
+                    return true;
+                }
+            }
+            
+            // Format: "XX.XXX s" or "XX.XXX seconds"
+            if (durationStr.Contains("s") && !durationStr.Contains("ms"))
+            {
+                var numStr = durationStr.Split(new[] { ' ', 's' }, StringSplitOptions.RemoveEmptyEntries)[0];
+                if (decimal.TryParse(numStr, NumberStyles.Any, CultureInfo.InvariantCulture, out decimal seconds))
+                {
+                    durationMs = (int)(seconds * 1000);
+                    return true;
+                }
+            }
+            
+            // Format: "HH:MM:SS" or "HH:MM:SS.mmm"
+            if (durationStr.Contains(":"))
+            {
+                var parts = durationStr.Split(':');
+                if (parts.Length >= 2)
+                {
+                    int hours = 0, minutes = 0;
+                    decimal seconds = 0;
+                    
+                    if (parts.Length == 3) // HH:MM:SS
+                    {
+                        if (!int.TryParse(parts[0], out hours)) return false;
+                        if (!int.TryParse(parts[1], out minutes)) return false;
+                        if (!decimal.TryParse(parts[2], NumberStyles.Any, CultureInfo.InvariantCulture, out seconds)) return false;
+                    }
+                    else if (parts.Length == 2) // MM:SS
+                    {
+                        if (!int.TryParse(parts[0], out minutes)) return false;
+                        if (!decimal.TryParse(parts[1], NumberStyles.Any, CultureInfo.InvariantCulture, out seconds)) return false;
+                    }
+                    
+                    durationMs = (int)((hours * 3600 + minutes * 60 + seconds) * 1000);
+                    return true;
+                }
+            }
+            
+            // Fallback: try parsing as plain number (assume milliseconds)
+            if (int.TryParse(durationStr, out int plainMs))
+            {
+                durationMs = plainMs;
+                return true;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"Error parsing duration '{durationStr}': {ex.Message}");
+        }
+        
+        return false;
+    }
 }
+

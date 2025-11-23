@@ -423,6 +423,12 @@
                                                                     <MenuItem Command="{Binding Source={StaticResource Proxy}, Path=Data.ImportSidecarsCommand}"
                                                                               CommandParameter="{Binding .}"
                                                                               Header="Import Sidecar .txt Files..."/>
+                                                                    <MenuItem Command="{Binding Source={StaticResource Proxy}, Path=Data.ExportMetadataCommand}"
+                                                                              CommandParameter="{Binding .}"
+                                                                              Header="Export Metadata to Files..."/>
+                                                                    <MenuItem Command="{Binding Source={StaticResource Proxy}, Path=Data.ConvertImagesCommand}"
+                                                                              CommandParameter="{Binding .}"
+                                                                              Header="Convert Images to WebP..."/>
                                                                 </ContextMenu>
                                                             </Grid.ContextMenu>
                                                             <Grid.Resources>

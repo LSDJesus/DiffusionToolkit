@@ -740,6 +740,8 @@ public class MainModel : BaseNotify
     public ICommand TagFolderWithBothCommand { get; set; }
     public ICommand CaptionFolderCommand { get; set; }
     public ICommand ImportSidecarsCommand { get; set; }
+    public ICommand ExportMetadataCommand { get; set; }
+    public ICommand ConvertImagesCommand { get; set; }
     
     public string ToastMessage
     {

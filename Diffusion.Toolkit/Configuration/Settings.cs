@@ -94,11 +94,18 @@ public class Settings : SettingsContainer, IScanOptions
     private string _wdV3LargeTagsPath;
     private float _wdV3LargeThreshold;
     private string _joyCaptionDefaultPrompt;
+    private string _databaseSchema;
+    private bool _autoWriteMetadata;
+    private bool _createMetadataBackup;
+    private bool _writeTagsToMetadata;
+    private bool _writeCaptionsToMetadata;
+    private bool _writeGenerationParamsToMetadata;
 
     public Settings()
     {
         NSFWTags = new List<string>() { "nsfw", "nude", "naked" };
-        FileExtensions = ".png, .jpg, .jpeg, .webp";
+        DatabaseSchema = "main"; // Default schema
+        FileExtensions = ".png, .jpg, .jpeg, .webp, .avif, .gif, .bmp, .tiff, .mp4, .avi, .webm";
         Theme = "System";
         PageSize = 100;
         ThumbnailSize = 128;
@@ -146,6 +153,20 @@ public class Settings : SettingsContainer, IScanOptions
         WDTagThreshold = 0.5f;
         WDV3LargeThreshold = 0.5f;
         EnableJoyTag = true;
+        
+        // Metadata writing defaults
+        AutoWriteMetadata = false; // Disabled by default for safety
+        CreateMetadataBackup = true;
+        WriteTagsToMetadata = true;
+        WriteCaptionsToMetadata = true;
+        WriteGenerationParamsToMetadata = true;
+        
+        // Metadata writing defaults
+        AutoWriteMetadata = false; // Disabled by default for safety
+        CreateMetadataBackup = true;
+        WriteTagsToMetadata = true;
+        WriteCaptionsToMetadata = true;
+        WriteGenerationParamsToMetadata = true;
         EnableWDTag = true;
         EnableWDV3Large = true;
         StoreTagConfidence = false;
@@ -650,6 +671,56 @@ public class Settings : SettingsContainer, IScanOptions
         set => UpdateValue(ref _joyCaptionDefaultPrompt, value);
     }
 
+    public string DatabaseSchema
+    {
+        get => _databaseSchema;
+        set => UpdateValue(ref _databaseSchema, value);
+    }
+
+    /// <summary>
+    /// Automatically write tags/captions to image metadata after operations
+    /// </summary>
+    public bool AutoWriteMetadata
+    {
+        get => _autoWriteMetadata;
+        set => UpdateValue(ref _autoWriteMetadata, value);
+    }
+
+    /// <summary>
+    /// Create .bak backup before modifying image metadata
+    /// </summary>
+    public bool CreateMetadataBackup
+    {
+        get => _createMetadataBackup;
+        set => UpdateValue(ref _createMetadataBackup, value);
+    }
+
+    /// <summary>
+    /// Include tags when writing metadata
+    /// </summary>
+    public bool WriteTagsToMetadata
+    {
+        get => _writeTagsToMetadata;
+        set => UpdateValue(ref _writeTagsToMetadata, value);
+    }
+
+    /// <summary>
+    /// Include captions when writing metadata
+    /// </summary>
+    public bool WriteCaptionsToMetadata
+    {
+        get => _writeCaptionsToMetadata;
+        set => UpdateValue(ref _writeCaptionsToMetadata, value);
+    }
+
+    /// <summary>
+    /// Include generation parameters (prompt, sampler, etc.) when writing metadata
+    /// </summary>
+    public bool WriteGenerationParamsToMetadata
+    {
+        get => _writeGenerationParamsToMetadata;
+        set => UpdateValue(ref _writeGenerationParamsToMetadata, value);
+    }
 }
 
 public class PreviewWindowState

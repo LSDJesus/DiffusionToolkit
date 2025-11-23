@@ -198,6 +198,22 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
                         ).ToList();
 
                         await dataStore.StoreImageTagsAsync(imageId, deduplicatedTags, "joytag+wdv3large");
+                        
+                        // Write tags to image metadata if enabled
+                        if (ServiceLocator.Settings?.AutoWriteMetadata == true && 
+                            ServiceLocator.Settings?.WriteTagsToMetadata == true)
+                        {
+                            var request = new Scanner.MetadataWriteRequest
+                            {
+                                Tags = deduplicatedTags.Select(t => new Scanner.TagWithConfidence 
+                                { 
+                                    Tag = t.Tag, 
+                                    Confidence = t.Confidence 
+                                }).ToList(),
+                                CreateBackup = ServiceLocator.Settings?.CreateMetadataBackup ?? true
+                            };
+                            Scanner.MetadataWriter.WriteMetadata(image.Path, request);
+                        }
                     }, _cancellationTokenSource.Token);
                 }
                 else
@@ -212,6 +228,22 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
                             var tags = await ServiceLocator.JoyTagService!.TagImageAsync(image.Path);
                             var tagTuples = tags.Select(t => (t.Tag, t.Confidence)).ToList();
                             await dataStore.StoreImageTagsAsync(imageId, tagTuples, "joytag");
+                            
+                            // Write tags to image metadata if enabled
+                            if (ServiceLocator.Settings?.AutoWriteMetadata == true && 
+                                ServiceLocator.Settings?.WriteTagsToMetadata == true)
+                            {
+                                var request = new Scanner.MetadataWriteRequest
+                                {
+                                    Tags = tags.Select(t => new Scanner.TagWithConfidence 
+                                    { 
+                                        Tag = t.Tag, 
+                                        Confidence = t.Confidence 
+                                    }).ToList(),
+                                    CreateBackup = ServiceLocator.Settings?.CreateMetadataBackup ?? true
+                                };
+                                Scanner.MetadataWriter.WriteMetadata(image.Path, request);
+                            }
                         }, _cancellationTokenSource.Token));
                     }
 
@@ -222,6 +254,22 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
                             var tags = await ServiceLocator.WDTagService!.TagImageAsync(image.Path);
                             var tagTuples = tags.Select(t => (t.Tag, t.Confidence)).ToList();
                             await dataStore.StoreImageTagsAsync(imageId, tagTuples, "wdv3large");
+                            
+                            // Write tags to image metadata if enabled
+                            if (ServiceLocator.Settings?.AutoWriteMetadata == true && 
+                                ServiceLocator.Settings?.WriteTagsToMetadata == true)
+                            {
+                                var request = new Scanner.MetadataWriteRequest
+                                {
+                                    Tags = tags.Select(t => new Scanner.TagWithConfidence 
+                                    { 
+                                        Tag = t.Tag, 
+                                        Confidence = t.Confidence 
+                                    }).ToList(),
+                                    CreateBackup = ServiceLocator.Settings?.CreateMetadataBackup ?? true
+                                };
+                                Scanner.MetadataWriter.WriteMetadata(image.Path, request);
+                            }
                         }, _cancellationTokenSource.Token));
                     }
 
@@ -259,6 +307,18 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
                             
                             await dataStore.StoreCaptionAsync(imageId, result.Caption, "joycaption", 
                                 result.PromptUsed, result.TokenCount, (float)result.GenerationTimeMs);
+                            
+                            // Write caption to image metadata if enabled
+                            if (ServiceLocator.Settings?.AutoWriteMetadata == true && 
+                                ServiceLocator.Settings?.WriteCaptionsToMetadata == true)
+                            {
+                                var request = new Scanner.MetadataWriteRequest
+                                {
+                                    Caption = result.Caption,
+                                    CreateBackup = ServiceLocator.Settings?.CreateMetadataBackup ?? true
+                                };
+                                Scanner.MetadataWriter.WriteMetadata(image.Path, request);
+                            }
                         }, _cancellationTokenSource.Token));
                     }
 
@@ -300,6 +360,18 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
                         
                         await dataStore.StoreCaptionAsync(imageId, result.Caption, "joycaption", 
                             result.PromptUsed, result.TokenCount, (float)result.GenerationTimeMs);
+                        
+                        // Write caption to image metadata if enabled
+                        if (ServiceLocator.Settings?.AutoWriteMetadata == true && 
+                            ServiceLocator.Settings?.WriteCaptionsToMetadata == true)
+                        {
+                            var request = new Scanner.MetadataWriteRequest
+                            {
+                                Caption = result.Caption,
+                                CreateBackup = ServiceLocator.Settings?.CreateMetadataBackup ?? true
+                            };
+                            Scanner.MetadataWriter.WriteMetadata(image.Path, request);
+                        }
                     }, _cancellationTokenSource.Token);
                 }
 

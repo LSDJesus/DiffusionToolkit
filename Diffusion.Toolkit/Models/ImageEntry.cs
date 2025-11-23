@@ -35,6 +35,7 @@ public class ImageEntry : BaseNotify
     private int _count;
     private long _size;
     private string _sizeFormatted;
+    private bool _isVideo;
 
     public ImageEntry(long batchId)
     {
@@ -202,6 +203,12 @@ public class ImageEntry : BaseNotify
         set => SetField(ref _size, value);
     }
 
+    public bool IsVideo
+    {
+        get => _isVideo;
+        set => SetField(ref _isVideo, value);
+    }
+
     public void Clear()
     {
         BatchId = 0;
@@ -228,5 +235,6 @@ public class ImageEntry : BaseNotify
         IsWatched = false;
         Count = 0;
         Size = 0;
+        IsVideo = false;
     }
 }

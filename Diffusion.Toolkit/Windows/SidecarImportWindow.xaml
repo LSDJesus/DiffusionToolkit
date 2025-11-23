@@ -40,25 +40,32 @@
         <!-- Format Selection -->
         <GroupBox Grid.Row="2" Header="Sidecar File Format" Padding="10" Margin="0,0,0,20">
             <StackPanel>
+                <TextBlock Text=".txt Sidecar Formats" FontWeight="Bold" Margin="0,0,0,5"/>
+                
                 <RadioButton x:Name="FormatCommaDelimited" Content="Comma-delimited tags (e.g., 1girl, blue_eyes, long_hair)" 
                              GroupName="Format" IsChecked="True" Margin="0,5" FontSize="13"/>
-                <TextBlock Text="Tags will be stored with source = 'sidecar' and confidence = 1.0" 
+                <TextBlock Text="Tags will be stored with source based on folder path and confidence = 1.0" 
                            Margin="25,0,0,5" Opacity="0.7" FontSize="11"/>
                 
-                <RadioButton x:Name="FormatCommaWithConfidence" Content="Comma-delimited tags with confidence (e.g., cat:0.95, dog:0.88)" 
+                <RadioButton x:Name="FormatCommaWithConfidence" Content="Tags with confidence (e.g., cat:0.95, dog:0.88)" 
                              GroupName="Format" Margin="0,10,0,5" FontSize="13"/>
                 <TextBlock Text="Format: tag:confidence or tag (confidence). Confidence scores will be preserved." 
                            Margin="25,0,0,5" Opacity="0.7" FontSize="11"/>
                 
-                <RadioButton x:Name="FormatPrompt" Content="Generation prompt (store in prompt field, not as tags)" 
+                <RadioButton x:Name="FormatPrompt" Content="Generation prompt (store in image.prompt field)" 
                              GroupName="Format" Margin="0,10,0,5" FontSize="13"/>
-                <TextBlock Text="Will update the image's prompt field instead of adding tags" 
-                           Margin="25,0,0,5" Opacity="0.7" FontSize="11"/>
+                <TextBlock Text="Best for JPEG files without embedded metadata - stores full prompt text" 
+                           Margin="25,0,0,10" Opacity="0.7" FontSize="11"/>
                 
-                <RadioButton x:Name="FormatCaption" Content="Image caption/description (store as caption)" 
-                             GroupName="Format" Margin="0,10,0,5" FontSize="13"/>
-                <TextBlock Text="Will be stored in the image_captions table with source = 'sidecar'" 
-                           Margin="25,0,0,5" Opacity="0.7" FontSize="11"/>
+                <Separator Margin="0,10"/>
+                <TextBlock Text=".json Sidecar Format" FontWeight="Bold" Margin="0,10,0,5"/>
+                
+                <RadioButton x:Name="FormatDanbooruJson" Content="Danbooru JSON metadata (tags + rating)" 
+                             GroupName="Format" Margin="0,5" FontSize="13"/>
+                <TextBlock Text="Parses Danbooru-style JSON: tags, rating, score, artist, character, copyright" 
+                           Margin="25,0,0,10" Opacity="0.7" FontSize="11"/>
+                
+                <Separator Margin="0,10"/>
                 
                 <RadioButton x:Name="FormatOther" Content="Other (store as-is in generated_tags field)" 
                              GroupName="Format" Margin="0,10,0,5" FontSize="13"/>
@@ -85,8 +92,11 @@
         <StackPanel Grid.Row="3" VerticalAlignment="Center" 
                     Visibility="{Binding IsProcessing, Converter={StaticResource InverseBoolToVisibilityConverter}}">
             <TextBlock TextAlignment="Center" FontSize="12" Opacity="0.7" TextWrapping="Wrap" Margin="20">
-                Select the format that matches your sidecar files. All .txt files in this folder (and subfolders) will be imported according to the selected format.
+                Select the format that matches your sidecar files. All .txt/.json files in this folder (and subfolders) will be imported according to the selected format.
             </TextBlock>
+            <CheckBox x:Name="ArchiveSidecarsCheckBox" Content="Archive sidecar files after import (moves to 'archive' subfolder)" 
+                      HorizontalAlignment="Center" Margin="0,10,0,0" IsChecked="True"
+                      ToolTip="Moves successfully imported sidecar files to an 'archive' folder instead of deleting them"/>
         </StackPanel>
 
         <!-- Buttons -->

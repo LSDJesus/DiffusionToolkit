@@ -13,9 +13,19 @@ public partial class PostgreSQLDataStore : IDisposable
     private readonly string _connectionString;
     private readonly NpgsqlDataSource _dataSource;
     private readonly object _lock = new object();
+    private string _currentSchema = "main";
 
     public string DatabasePath => _connectionString;
     public bool RescanRequired { get; set; }
+    
+    /// <summary>
+    /// Gets or sets the current database schema to use for all operations
+    /// </summary>
+    public string CurrentSchema
+    {
+        get => _currentSchema;
+        set => _currentSchema = value ?? "main";
+    }
 
     public PostgreSQLDataStore(string connectionString)
     {
@@ -68,6 +78,14 @@ public partial class PostgreSQLDataStore : IDisposable
     public NpgsqlConnection OpenConnection()
     {
         return _dataSource.OpenConnection();
+    }
+    
+    /// <summary>
+    /// Gets the schema-qualified table name (e.g., "main.image" or "partitioned.image")
+    /// </summary>
+    public string Table(string tableName)
+    {
+        return $"{_currentSchema}.{tableName}";
     }
 
     /// <summary>

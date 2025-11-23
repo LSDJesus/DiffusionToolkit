@@ -1392,7 +1392,8 @@ namespace Diffusion.Toolkit.Pages
                     EntryType = EntryType.File,
                     AlbumCount = file.AlbumCount,
                     Dispatcher = Dispatcher,
-                    HasError = file.HasError
+                    HasError = file.HasError,
+                    IsVideo = file.IsVideo
                 };
 
                 images.Add(imageEntry);

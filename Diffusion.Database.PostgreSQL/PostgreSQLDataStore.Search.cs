@@ -128,7 +128,7 @@ public class UsedPrompt
 /// </summary>
 public partial class PostgreSQLDataStore
 {
-    private const string ViewColumns = "favorite, for_deletion, rating, aesthetic_score, created_date, nsfw, has_error";
+    private const string ViewColumns = "favorite, for_deletion, rating, aesthetic_score, created_date, nsfw, has_error, is_video";
     
     /// <summary>
     /// Convert positional bindings from QueryCombiner to named Dapper parameters and update query
@@ -144,7 +144,7 @@ public partial class PostgreSQLDataStore
         
         string whereClause = GetInitialWhereClause();
         
-        var query = $"SELECT model AS name, model_hash AS hash, COUNT(*) AS image_count FROM image {whereClause} GROUP BY model, model_hash";
+        var query = $"SELECT model AS name, model_hash AS hash, COUNT(*) AS image_count FROM {Table("image")} {whereClause} GROUP BY model, model_hash";
         
         var models = conn.Query<ModelView>(query);
         
@@ -155,7 +155,7 @@ public partial class PostgreSQLDataStore
     {
         using var conn = OpenConnection();
         
-        var query = "SELECT COUNT(*) FROM image";
+        var query = $"SELECT COUNT(*) FROM {Table("image")}";
         
         var count = conn.ExecuteScalar<int>(query + GetInitialWhereClause());
         
@@ -556,6 +556,7 @@ public class ImageView
     public bool NSFW { get => Nsfw; set => Nsfw = value; }  // Alias for backward compatibility
     public int AlbumCount { get; set; }
     public bool HasError { get; set; }
+    public bool IsVideo { get; set; }
 }
 
 // Note: Album class moved to Models/Album.cs to avoid duplication

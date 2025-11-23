@@ -18,6 +18,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
+using Dapper;
 using Diffusion.Database;
 using Diffusion.Database.PostgreSQL;
 using Diffusion.Toolkit.Configuration;
@@ -112,7 +113,28 @@ namespace Diffusion.Toolkit.Pages
 
             _model.Theme = _settings.Theme;
             _model.Culture = _settings.Culture ?? string.Empty;
+            
+            // Initialize schema selector
+            InitializeSchemaSelector();
+            
             _model.SetPristine();
+        }
+        
+        private void InitializeSchemaSelector()
+        {
+            var comboBox = FindName("SchemaComboBox") as ComboBox;
+            if (comboBox == null) return;
+            
+            // Set current schema selection
+            var currentSchema = _settings.DatabaseSchema ?? "main";
+            foreach (ComboBoxItem item in comboBox.Items)
+            {
+                if (item.Tag as string == currentSchema)
+                {
+                    comboBox.SelectedItem = item;
+                    break;
+                }
+            }
         }
 
         private void LoadCultures()
@@ -376,6 +398,78 @@ namespace Diffusion.Toolkit.Pages
                 _model.Status = _dataStore.GetStatus();
 
                 _model.SetPristine();
+            }
+        }
+
+        private void SchemaComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            var comboBox = (ComboBox)sender;
+            if (comboBox.SelectedItem is ComboBoxItem item && item.Tag is string schema)
+            {
+                _settings.DatabaseSchema = schema;
+                _dataStore.CurrentSchema = schema;
+                
+                // Refresh the search results to show images from new schema
+                ServiceLocator.SearchService?.RefreshResults();
+                
+                ServiceLocator.ToastService?.Toast($"Switched to '{item.Content}' collection", "Schema Changed");
+            }
+        }
+
+        private async void CreateSchema_Click(object sender, RoutedEventArgs e)
+        {
+            var schemaName = Microsoft.VisualBasic.Interaction.InputBox(
+                "Enter schema name (lowercase, no spaces):",
+                "Create New Schema",
+                "");
+            
+            if (string.IsNullOrWhiteSpace(schemaName))
+                return;
+                
+            schemaName = schemaName.ToLowerInvariant().Replace(" ", "_").Replace("-", "_");
+            
+            if (schemaName == "public" || schemaName == "pg_catalog" || schemaName == "information_schema")
+            {
+                MessageBox.Show("Cannot use reserved schema name.", "Invalid Input", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            
+            try
+            {
+                await using var conn = await _dataStore.OpenConnectionAsync();
+                
+                // Create schema
+                await conn.ExecuteAsync($"CREATE SCHEMA IF NOT EXISTS \"{schemaName}\"");
+                
+                // Copy table structure from main schema
+                var tables = new[] { "image", "image_tags", "folder", "album", "album_image", "saved_query", "image_captions" };
+                foreach (var table in tables)
+                {
+                    try
+                    {
+                        await conn.ExecuteAsync($"CREATE TABLE IF NOT EXISTS \"{schemaName}\".\"{table}\" (LIKE main.\"{table}\" INCLUDING ALL)");
+                    }
+                    catch
+                    {
+                        // Table might not exist in main schema yet, continue
+                    }
+                }
+                
+                // Add new schema to ComboBox
+                var comboBox = FindName("SchemaComboBox") as ComboBox;
+                if (comboBox != null)
+                {
+                    var newItem = new ComboBoxItem { Content = char.ToUpper(schemaName[0]) + schemaName.Substring(1), Tag = schemaName };
+                    comboBox.Items.Add(newItem);
+                    comboBox.SelectedItem = newItem;
+                }
+                
+                MessageBox.Show($"Schema '{schemaName}' created successfully!", "Success", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Failed to create schema: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                Logger.Log($"Schema creation error: {ex}");
             }
         }
 

@@ -157,6 +157,16 @@ namespace Diffusion.Toolkit
                 await ImportSidecarsFromFolder(folder);
             });
 
+            _model.ExportMetadataCommand = new AsyncCommand<FolderViewModel>(async (folder) =>
+            {
+                await ExportMetadataToFiles(folder);
+            });
+
+            _model.ConvertImagesCommand = new AsyncCommand<FolderViewModel>(async (folder) =>
+            {
+                await ConvertImagesToWebP(folder);
+            });
+
             await ServiceLocator.FolderService.LoadFolders();
 
         }
@@ -227,6 +237,35 @@ namespace Diffusion.Toolkit
                 // Refresh the search results to show imported tags
                 ServiceLocator.SearchService.RefreshResults();
             }
+        }
+
+        private async Task ExportMetadataToFiles(FolderViewModel folder)
+        {
+            if (folder == null) return;
+
+            // Open metadata export window
+            var window = new Diffusion.Toolkit.Windows.MetadataExportWindow(folder.Path, folder.Id)
+            {
+                Owner = this
+            };
+
+            window.ShowDialog();
+        }
+
+        private async Task ConvertImagesToWebP(FolderViewModel folder)
+        {
+            if (folder == null) return;
+
+            // Open image conversion window
+            var window = new Diffusion.Toolkit.Windows.ImageConversionWindow(folder.Path, folder.Id)
+            {
+                Owner = this
+            };
+
+            window.ShowDialog();
+
+            // Refresh the search results to show updated file paths
+            ServiceLocator.SearchService.RefreshResults();
         }
     }
 }

@@ -1,0 +1,169 @@
+<Window x:Class="Diffusion.Toolkit.Windows.ImageConversionWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        Title="Batch Image Conversion" 
+        Height="550" 
+        Width="600"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource BackgroundBrush}"
+        Foreground="{DynamicResource ForegroundBrush}"
+        ResizeMode="NoResize">
+    
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+    </Window.Resources>
+
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <TextBlock Grid.Row="0" 
+                   Text="Convert images to modern WebP format"
+                   FontSize="16" 
+                   FontWeight="SemiBold" 
+                   Margin="0,0,0,15"/>
+
+        <!-- Format Selection -->
+        <GroupBox Grid.Row="1" Header="Output Format" Margin="0,0,0,15">
+            <StackPanel Margin="10">
+                <RadioButton x:Name="WebPRadio" 
+                             Content="WebP Lossy (Smaller files, good quality)" 
+                             IsChecked="True" 
+                             Margin="0,5"/>
+                <RadioButton x:Name="LosslessRadio" 
+                             Content="WebP Lossless (Larger files, perfect quality)" 
+                             Margin="0,5"/>
+            </StackPanel>
+        </GroupBox>
+
+        <!-- Quality Settings -->
+        <GroupBox Grid.Row="2" Header="Quality Settings" Margin="0,0,0,15">
+            <Grid Margin="10">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Grid.Row="0" Grid.Column="0" 
+                           Text="Quality:" 
+                           VerticalAlignment="Center" 
+                           Margin="0,0,10,0"/>
+                <Slider Grid.Row="0" Grid.Column="1" 
+                        x:Name="QualitySlider"
+                        Minimum="50" 
+                        Maximum="100" 
+                        Value="85" 
+                        TickFrequency="5" 
+                        IsSnapToTickEnabled="True"
+                        VerticalAlignment="Center"/>
+                <TextBlock Grid.Row="0" Grid.Column="2" 
+                           Text="{Binding Value, ElementName=QualitySlider, StringFormat={}{0:F0}%}" 
+                           Width="40" 
+                           TextAlignment="Right"
+                           VerticalAlignment="Center"
+                           Margin="10,0,0,0"/>
+
+                <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3"
+                           Text="• 75-85: Recommended for most images (good balance)" 
+                           FontSize="11" 
+                           Opacity="0.7"
+                           Margin="0,5,0,2"/>
+                <TextBlock Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3"
+                           Text="• 90-100: Near-lossless (larger files, best for archival)" 
+                           FontSize="11" 
+                           Opacity="0.7"
+                           Margin="0,0,0,5"/>
+            </Grid>
+        </GroupBox>
+
+        <!-- Conversion Options -->
+        <GroupBox Grid.Row="3" Header="Options" Margin="0,0,0,15">
+            <StackPanel Margin="10">
+                <CheckBox x:Name="DeleteOriginalCheck" 
+                          Content="Delete original files after successful conversion" 
+                          Margin="0,5"/>
+                <CheckBox x:Name="PreserveMetadataCheck" 
+                          Content="Preserve image metadata (EXIF, PNG tEXt chunks)" 
+                          IsChecked="True"
+                          Margin="0,5"/>
+                <CheckBox x:Name="OnlyJpegCheck" 
+                          Content="Only convert JPEG/JPG files (skip PNG)" 
+                          Margin="0,5"/>
+                <TextBlock Text="⚠ Warning: Conversion is irreversible if originals are deleted!" 
+                           FontSize="11" 
+                           Foreground="Orange"
+                           Margin="0,10,0,0"
+                           Visibility="{Binding IsChecked, ElementName=DeleteOriginalCheck, Converter={StaticResource BoolToVis}}"/>
+            </StackPanel>
+        </GroupBox>
+
+        <!-- Progress Section -->
+        <GroupBox Grid.Row="4" Header="Progress" Visibility="Collapsed" x:Name="ProgressSection">
+            <StackPanel Margin="10">
+                <ProgressBar x:Name="ConversionProgress" 
+                             Height="25" 
+                             Minimum="0" 
+                             Maximum="100" 
+                             Margin="0,5"/>
+                <StackPanel Orientation="Horizontal" Margin="0,5">
+                    <TextBlock Text="Processed: "/>
+                    <TextBlock x:Name="ProcessedCountText" Text="0" FontWeight="Bold"/>
+                    <TextBlock Text=" / "/>
+                    <TextBlock x:Name="TotalCountText" Text="0"/>
+                    <TextBlock Text=" images"/>
+                </StackPanel>
+                <TextBlock x:Name="CurrentFileText" 
+                           Text="Ready..." 
+                           TextTrimming="CharacterEllipsis" 
+                           Margin="0,5"
+                           FontSize="11"
+                           Opacity="0.8"/>
+                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                    <TextBlock Text="Space saved: "/>
+                    <TextBlock x:Name="SpaceSavedText" Text="0 MB" FontWeight="Bold" Foreground="Green"/>
+                </StackPanel>
+            </StackPanel>
+        </GroupBox>
+
+        <!-- Summary Section (shown after completion) -->
+        <GroupBox Grid.Row="4" Header="Conversion Summary" Visibility="Collapsed" x:Name="SummarySection">
+            <StackPanel Margin="10">
+                <TextBlock x:Name="SummaryText" TextWrapping="Wrap" Margin="0,5"/>
+            </StackPanel>
+        </GroupBox>
+
+        <!-- Action Buttons -->
+        <StackPanel Grid.Row="5" 
+                    Orientation="Horizontal" 
+                    HorizontalAlignment="Right" 
+                    Margin="0,15,0,0">
+            <Button x:Name="ConvertButton" 
+                    Content="Start Conversion" 
+                    Width="120" 
+                    Height="30" 
+                    Margin="0,0,10,0"
+                    Click="Convert_Click"/>
+            <Button x:Name="CancelButton" 
+                    Content="Cancel" 
+                    Width="80" 
+                    Height="30"
+                    Click="Cancel_Click"/>
+        </StackPanel>
+    </Grid>
+</Window>

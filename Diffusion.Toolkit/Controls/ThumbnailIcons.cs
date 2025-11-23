@@ -20,6 +20,8 @@ public class ThumbnailIcons : FrameworkElement
     private static BitmapImage? _lightTrashIcon;
     private static BitmapImage? _darkHideIcon;
     private static BitmapImage? _lightHideIcon;
+    private static BitmapImage? _darkVideoIcon;
+    private static BitmapImage? _lightVideoIcon;
 
     private static Typeface _typeFace = new Typeface(new FontFamily("Arial"), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
     private static Typeface _typeFaceBoldCondensed = new Typeface(new FontFamily("Arial"), FontStyles.Normal, FontWeights.Bold, FontStretches.Condensed);
@@ -42,6 +44,7 @@ public class ThumbnailIcons : FrameworkElement
                     case nameof(ImageEntry.ForDeletion):
                     case nameof(ImageEntry.Favorite):
                     case nameof(ImageEntry.Rating):
+                    case nameof(ImageEntry.IsVideo):
                         var thumb = d as ThumbnailIcons;
                         thumb.InvalidateVisual();
                         break;
@@ -99,6 +102,26 @@ public class ThumbnailIcons : FrameworkElement
         var x = 0;
         var y = 0;
         const int xOffset = 22;
+
+        // Show video camera icon if this is a video file
+        if (Data.IsVideo)
+        {
+            var videoEmoji = "🎥";
+            var formattedText = new FormattedText(
+                videoEmoji, 
+                CultureInfo.CurrentCulture, 
+                FlowDirection.LeftToRight, 
+                _typeFace, 
+                18, 
+                Brushes.White, 
+                null, 
+                TextFormattingMode.Display, 
+                96);
+            
+            // Draw with slight shadow for visibility
+            drawingContext.DrawText(formattedText, new Point(x + 2, y + 3));
+            x += xOffset;
+        }
 
         //if (Data.ForDeletion)
         //{
