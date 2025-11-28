@@ -29,36 +29,67 @@ public class WatcherService : IDisposable
     private Task? _metadataScanWorker;
     private bool _isPaused;
     private bool _isDisposed;
+    private bool _isConnected;
 
     public bool IsPaused => _isPaused;
+    public bool IsConnected => _isConnected;
     public bool BackgroundMetadataEnabled { get; set; } = true;
 
     public event EventHandler<WatcherStatusEventArgs>? StatusChanged;
 
-    public WatcherService()
+    public WatcherService() : this(null)
     {
-        var connectionString = GetConnectionString();
-        _dataStore = new PostgreSQLDataStore(connectionString);
+    }
+
+    public WatcherService(string? connectionString)
+    {
+        try
+        {
+            connectionString ??= GetConnectionString();
+            _dataStore = new PostgreSQLDataStore(connectionString);
+            _isConnected = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"WatcherService failed to connect to database: {ex.Message}");
+            _dataStore = null!;
+            _isConnected = false;
+        }
     }
 
     public void Start()
     {
-        // Load watched folders from database
-        var folders = _dataStore.GetFolders().Where(f => f.IsRoot).ToList();
-        
-        foreach (var folder in folders)
+        if (!_isConnected || _dataStore == null)
         {
-            StartWatchingFolder(folder.Path);
+            Logger.Log("WatcherService cannot start: database not connected");
+            UpdateStatus("Database not connected", 0);
+            return;
         }
 
-        // Start worker threads
-        _quickScanWorker = Task.Run(QuickScanWorkerLoop, _cts.Token);
-        _metadataScanWorker = Task.Run(MetadataScanWorkerLoop, _cts.Token);
+        try
+        {
+            // Load watched folders from database
+            var folders = _dataStore.GetFolders().Where(f => f.IsRoot).ToList();
+            
+            foreach (var folder in folders)
+            {
+                StartWatchingFolder(folder.Path);
+            }
 
-        UpdateStatus($"Watching {folders.Count} folders", _quickScanQueue.Count);
-        
-        // Trigger initial scan
-        TriggerFullScan();
+            // Start worker threads
+            _quickScanWorker = Task.Run(QuickScanWorkerLoop, _cts.Token);
+            _metadataScanWorker = Task.Run(MetadataScanWorkerLoop, _cts.Token);
+
+            UpdateStatus($"Watching {folders.Count} folders", _quickScanQueue.Count);
+            
+            // Trigger initial scan
+            TriggerFullScan();
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"WatcherService.Start failed: {ex.Message}");
+            UpdateStatus($"Error: {ex.Message}", 0);
+        }
     }
 
     public void Stop()
@@ -72,7 +103,21 @@ public class WatcherService : IDisposable
         }
         _watchers.Clear();
 
-        Task.WaitAll(new[] { _quickScanWorker, _metadataScanWorker }.Where(t => t != null).ToArray()!);
+        var tasks = new[] { _quickScanWorker, _metadataScanWorker }
+            .Where(t => t != null && !t.IsCompleted)
+            .ToArray();
+        
+        if (tasks.Length > 0)
+        {
+            try
+            {
+                Task.WaitAll(tasks!, TimeSpan.FromSeconds(5));
+            }
+            catch (AggregateException)
+            {
+                // Tasks cancelled, expected
+            }
+        }
     }
 
     public void Pause()
@@ -377,8 +422,43 @@ public class WatcherService : IDisposable
 
     private string GetConnectionString()
     {
-        // TODO: Read from config or shared settings
-        return "Host=localhost;Port=5436;Database=diffusion_images;Username=diffusion;Password=diffusion_toolkit_secure_2025";
+        // Priority: Environment variable > File > Default
+        var envConnection = Environment.GetEnvironmentVariable("DIFFUSION_DB_CONNECTION");
+        if (!string.IsNullOrWhiteSpace(envConnection))
+            return envConnection;
+        
+        // Try connection file in app directory
+        var appDir = AppDomain.CurrentDomain.BaseDirectory;
+        var connFilePath = Path.Combine(appDir, "database.connection");
+        if (File.Exists(connFilePath))
+        {
+            try
+            {
+                var fileConn = File.ReadAllText(connFilePath).Trim();
+                if (!string.IsNullOrWhiteSpace(fileConn))
+                    return fileConn;
+            }
+            catch { /* Fall through */ }
+        }
+        
+        // Try AppData connection file
+        var appDataPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "DiffusionToolkit",
+            "database.connection");
+        if (File.Exists(appDataPath))
+        {
+            try
+            {
+                var fileConn = File.ReadAllText(appDataPath).Trim();
+                if (!string.IsNullOrWhiteSpace(fileConn))
+                    return fileConn;
+            }
+            catch { /* Fall through */ }
+        }
+        
+        // Default for local Docker
+        return AppInfo.DefaultConnectionString;
     }
 
     public void Dispose()

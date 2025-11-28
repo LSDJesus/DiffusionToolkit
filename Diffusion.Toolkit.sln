@@ -37,6 +37,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Diffusion.Watcher", "Diffus
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Diffusion.Scanner", "Diffusion.Scanner", "{758BAB1F-816E-DA70-0588-55CBB80C893F}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Diffusion.Tests", "Diffusion.Tests\Diffusion.Tests.csproj", "{BB1F350F-22E5-4782-BC25-783950560042}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -227,6 +229,18 @@ Global
 		{2EC8C769-DE35-4AE5-97C9-3E22139133F0}.Release|x64.Build.0 = Release|Any CPU
 		{2EC8C769-DE35-4AE5-97C9-3E22139133F0}.Release|x86.ActiveCfg = Release|Any CPU
 		{2EC8C769-DE35-4AE5-97C9-3E22139133F0}.Release|x86.Build.0 = Release|Any CPU
+		{BB1F350F-22E5-4782-BC25-783950560042}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BB1F350F-22E5-4782-BC25-783950560042}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BB1F350F-22E5-4782-BC25-783950560042}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{BB1F350F-22E5-4782-BC25-783950560042}.Debug|x64.Build.0 = Debug|Any CPU
+		{BB1F350F-22E5-4782-BC25-783950560042}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{BB1F350F-22E5-4782-BC25-783950560042}.Debug|x86.Build.0 = Debug|Any CPU
+		{BB1F350F-22E5-4782-BC25-783950560042}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BB1F350F-22E5-4782-BC25-783950560042}.Release|Any CPU.Build.0 = Release|Any CPU
+		{BB1F350F-22E5-4782-BC25-783950560042}.Release|x64.ActiveCfg = Release|Any CPU
+		{BB1F350F-22E5-4782-BC25-783950560042}.Release|x64.Build.0 = Release|Any CPU
+		{BB1F350F-22E5-4782-BC25-783950560042}.Release|x86.ActiveCfg = Release|Any CPU
+		{BB1F350F-22E5-4782-BC25-783950560042}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

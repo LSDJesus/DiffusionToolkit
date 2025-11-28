@@ -46,6 +46,7 @@
     <Window.Resources>
         <ResourceDictionary>
             <converters:BoolToVisibilityCollapsedConverter x:Key="boolToVisCol"></converters:BoolToVisibilityCollapsedConverter>
+            <converters:InverseBoolToVisibilityCollapsedConverter x:Key="inverseBoolToVisCol"></converters:InverseBoolToVisibilityCollapsedConverter>
             <converters:ThumbnailSizeCheckedConverter x:Key="thumbSizeChecked"></converters:ThumbnailSizeCheckedConverter>
             <converters:StringMatchConverter x:Key="StringMatchConverter"></converters:StringMatchConverter>
             <converters:PopoutIconConverter x:Key="PopoutIconConverter"></converters:PopoutIconConverter>
@@ -509,6 +510,34 @@
                     <ProgressBar Value="{Binding CurrentProgress}" Maximum="{Binding TotalProgress}" HorizontalAlignment="Stretch"></ProgressBar>
                     <Label VerticalContentAlignment="Center" Content="{Binding Status}"></Label>
                 </Grid>
+            </DockPanel>
+        </Grid>
+
+        <!-- Database Status Bar - visible when no task is running -->
+        <Grid Grid.Row="2" ColumnSpan="3" Visibility="{Binding HasPendingTask, Converter={StaticResource inverseBoolToVisCol}}" Height="22">
+            <DockPanel HorizontalAlignment="Stretch" Background="{DynamicResource PrimaryBrush}">
+                <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" Margin="10,0">
+                    <!-- Database connection indicator -->
+                    <fa:ImageAwesome Width="10" Height="10" Margin="0,0,5,0" VerticalAlignment="Center">
+                        <fa:ImageAwesome.Style>
+                            <Style TargetType="fa:ImageAwesome">
+                                <Setter Property="Icon" Value="Database"/>
+                                <Setter Property="Foreground" Value="LawnGreen"/>
+                                <Setter Property="ToolTip" Value="{Binding DatabaseStatus}"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsDatabaseConnected}" Value="False">
+                                        <Setter Property="Foreground" Value="Red"/>
+                                        <Setter Property="ToolTip" Value="Database not connected"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </fa:ImageAwesome.Style>
+                    </fa:ImageAwesome>
+                    <TextBlock Text="{Binding DatabaseStatus}" FontSize="10" Opacity="0.7" 
+                               Foreground="{DynamicResource ForegroundBrush}" VerticalAlignment="Center"/>
+                </StackPanel>
+                <TextBlock DockPanel.Dock="Left" Text="" Margin="10,0" FontSize="10" Opacity="0.5"
+                           Foreground="{DynamicResource ForegroundBrush}" VerticalAlignment="Center"/>
             </DockPanel>
         </Grid>
 

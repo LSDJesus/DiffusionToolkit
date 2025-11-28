@@ -160,13 +160,6 @@ public class Settings : SettingsContainer, IScanOptions
         WriteTagsToMetadata = true;
         WriteCaptionsToMetadata = true;
         WriteGenerationParamsToMetadata = true;
-        
-        // Metadata writing defaults
-        AutoWriteMetadata = false; // Disabled by default for safety
-        CreateMetadataBackup = true;
-        WriteTagsToMetadata = true;
-        WriteCaptionsToMetadata = true;
-        WriteGenerationParamsToMetadata = true;
         EnableWDTag = true;
         EnableWDV3Large = true;
         StoreTagConfidence = false;
@@ -675,6 +668,18 @@ public class Settings : SettingsContainer, IScanOptions
     {
         get => _databaseSchema;
         set => UpdateValue(ref _databaseSchema, value);
+    }
+
+    private string _databaseConnectionString;
+    
+    /// <summary>
+    /// PostgreSQL connection string. If empty, uses default from AppInfo.
+    /// Format: Host=localhost;Port=5436;Database=diffusion_images;Username=user;Password=pass
+    /// </summary>
+    public string DatabaseConnectionString
+    {
+        get => _databaseConnectionString;
+        set => UpdateValue(ref _databaseConnectionString, value);
     }
 
     /// <summary>

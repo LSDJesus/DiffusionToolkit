@@ -484,46 +484,18 @@ namespace Diffusion.Toolkit
 
         private async void OnLoaded(object sender, RoutedEventArgs e)
         {
-            // Initialize PostgreSQL connection (Docker: localhost:5436, credentials in docker-compose.yml)
-            var postgresConnectionString = AppInfo.PostgreSQLConnectionString;
-            
-            PostgreSQLDataStore? pgDataStore = null;
-            try
-            {
-                pgDataStore = new PostgreSQLDataStore(postgresConnectionString);
-                await pgDataStore.Create(() => null, _ => { });
-                
-                // Set active schema from settings
-                pgDataStore.CurrentSchema = ServiceLocator.Settings?.DatabaseSchema ?? "public";
-                
-                ServiceLocator.SetDataStore(pgDataStore); // Primary database
-                Logger.Log("✓ PostgreSQL connection established");
-            }
-            catch (Exception pgEx)
-            {
-                Logger.Log($"✗ PostgreSQL connection failed: {pgEx.Message}");
-                MessageBox.Show(this, 
-                    $"Failed to connect to PostgreSQL database.\n\nMake sure Docker is running with: docker-compose up -d\n\nError: {pgEx.Message}", 
-                    "Database Connection Error", 
-                    MessageBoxButton.OK, 
-                    MessageBoxImage.Error);
-                return;
-            }
-
-            // Keep SQLite for thumbnail caching only
-            var thumbnailDataStore = new DataStore(AppInfo.DatabasePath);
-            ServiceLocator.SetThumbnailDataStore(thumbnailDataStore);
-
-            var _showReleaseNotes = false;
-
+            // === PHASE 1: Load Settings First ===
+            // Settings must be loaded before database connection to get connection string and schema
             var isFirstTime = false;
             IReadOnlyList<string> newFolders = null;
+            var _showReleaseNotes = false;
 
             if (!_configuration.Exists())
             {
                 Logger.Log($"Opening Settings for first time");
 
                 _settings = new Settings();
+                isFirstTime = true;
 
                 UpdateTheme(_settings.Theme);
 
@@ -540,8 +512,6 @@ namespace Diffusion.Toolkit
                 }
 
                 ThumbnailCache.CreateInstance(_settings.PageSize * 5, _settings.PageSize * 2);
-
-                isFirstTime = true;
             }
             else
             {
@@ -567,9 +537,88 @@ namespace Diffusion.Toolkit
                     MessageBox.Show(this, "An error occured while loading configuration settings. The application will exit", "Startup failed!", MessageBoxButton.OK, MessageBoxImage.Error);
                     throw;
                 }
+            }
+            
+            // Make settings available globally BEFORE database initialization
+            ServiceLocator.SetSettings(_settings);
 
+            // === PHASE 2: Initialize PostgreSQL with Retry Logic ===
+            var postgresConnectionString = !string.IsNullOrWhiteSpace(_settings.DatabaseConnectionString) 
+                ? _settings.DatabaseConnectionString 
+                : AppInfo.PostgreSQLConnectionString;
+            
+            PostgreSQLDataStore? pgDataStore = null;
+            const int maxRetries = 3;
+            const int retryDelayMs = 2000;
+            
+            for (int attempt = 1; attempt <= maxRetries; attempt++)
+            {
+                try
+                {
+                    Logger.Log($"PostgreSQL connection attempt {attempt}/{maxRetries}...");
+                    pgDataStore = new PostgreSQLDataStore(postgresConnectionString);
+                    await pgDataStore.Create(() => null, _ => { });
+                    
+                    // Set active schema from settings (now properly loaded)
+                    pgDataStore.CurrentSchema = _settings.DatabaseSchema ?? "public";
+                    
+                    ServiceLocator.SetDataStore(pgDataStore);
+                    Logger.Log("✓ PostgreSQL connection established");
+                    
+                    // Update UI status
+                    if (ServiceLocator.MainModel != null)
+                    {
+                        ServiceLocator.MainModel.IsDatabaseConnected = true;
+                        ServiceLocator.MainModel.DatabaseStatus = $"Connected ({pgDataStore.GetStatus()})";
+                    }
+                    break;
+                }
+                catch (Exception pgEx)
+                {
+                    Logger.Log($"✗ PostgreSQL connection attempt {attempt} failed: {pgEx.Message}");
+                    
+                    // Update UI status on failure
+                    if (ServiceLocator.MainModel != null)
+                    {
+                        ServiceLocator.MainModel.IsDatabaseConnected = false;
+                        ServiceLocator.MainModel.DatabaseStatus = $"Failed (attempt {attempt}/{maxRetries})";
+                    }
+                    
+                    if (attempt == maxRetries)
+                    {
+                        var result = MessageBox.Show(this, 
+                            $"Failed to connect to PostgreSQL database after {maxRetries} attempts.\n\n" +
+                            $"Make sure Docker is running with: docker-compose up -d\n\n" +
+                            $"Connection: {postgresConnectionString.Split(';').FirstOrDefault()}\n\n" +
+                            $"Error: {pgEx.Message}\n\n" +
+                            $"Would you like to retry?", 
+                            "Database Connection Error", 
+                            MessageBoxButton.YesNo, 
+                            MessageBoxImage.Error);
+                        
+                        if (result == MessageBoxResult.Yes)
+                        {
+                            attempt = 0; // Reset retry counter
+                            continue;
+                        }
+                        
+                        // User cancelled - update status and exit
+                        if (ServiceLocator.MainModel != null)
+                        {
+                            ServiceLocator.MainModel.DatabaseStatus = "Not Connected";
+                        }
+                        return;
+                    }
+                    
+                    await Task.Delay(retryDelayMs);
+                }
             }
 
+            // Keep SQLite for thumbnail caching only
+            var thumbnailDataStore = new DataStore(AppInfo.DatabasePath);
+            ServiceLocator.SetThumbnailDataStore(thumbnailDataStore);
+
+            // === PHASE 3: Version Checks and UI Setup ===
             if (!SemanticVersion.TryParse(_settings.Version, out var semVer))
             {
                 semVer = SemanticVersion.Parse("v0.0.0");

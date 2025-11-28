@@ -102,6 +102,24 @@ public class MainModel : BaseNotify
         _selectedImages = new ObservableCollection<ImageEntry>();
         _queryOptions = new QueryOptions();
         _folders = new ObservableCollection<FolderViewModel>();
+        _databaseStatus = "Connecting...";
+        _isDatabaseConnected = false;
+    }
+
+    // Database connection status
+    private string _databaseStatus;
+    private bool _isDatabaseConnected;
+
+    public string DatabaseStatus
+    {
+        get => _databaseStatus;
+        set => SetField(ref _databaseStatus, value);
+    }
+
+    public bool IsDatabaseConnected
+    {
+        get => _isDatabaseConnected;
+        set => SetField(ref _isDatabaseConnected, value);
     }
 
     public QueryOptions QueryOptions

@@ -14,7 +14,7 @@
     <PackageReference Include="Microsoft.ML.Tokenizers" Version="0.22.0" />
     
     <!-- For image processing with ONNX -->
-    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.8" />
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.11" />
     
     <!-- System.Numerics.Tensors for tensor operations -->
     <PackageReference Include="System.Numerics.Tensors" Version="9.0.0" />
