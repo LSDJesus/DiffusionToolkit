@@ -331,7 +331,11 @@ public class WatcherService : IDisposable
             if (fileInfoList.Any())
             {
                 using var conn = _dataStore.OpenConnection();
-                var rootFolderCache = new Dictionary<string, DBModels.Folder>();
+                
+                // Pre-populate folder cache to avoid queries during COPY operation
+                var rootFolderCache = conn.Query<DBModels.Folder>("SELECT id, parent_id, root_folder_id, path, image_count, scanned_date, unavailable, archived, excluded, is_root FROM folder")
+                    .ToDictionary(f => f.Path, f => f);
+                
                 _dataStore.QuickAddImages(conn, fileInfoList, rootFolderCache, _cts.Token);
             }
         });

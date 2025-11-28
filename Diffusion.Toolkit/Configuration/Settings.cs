@@ -104,7 +104,7 @@ public class Settings : SettingsContainer, IScanOptions
     public Settings()
     {
         NSFWTags = new List<string>() { "nsfw", "nude", "naked" };
-        DatabaseSchema = "main"; // Default schema
+        DatabaseSchema = "public"; // PostgreSQL default schema
         FileExtensions = ".png, .jpg, .jpeg, .webp, .avif, .gif, .bmp, .tiff, .mp4, .avi, .webm";
         Theme = "System";
         PageSize = 100;

@@ -494,7 +494,7 @@ namespace Diffusion.Toolkit
                 await pgDataStore.Create(() => null, _ => { });
                 
                 // Set active schema from settings
-                pgDataStore.CurrentSchema = ServiceLocator.Settings?.DatabaseSchema ?? "main";
+                pgDataStore.CurrentSchema = ServiceLocator.Settings?.DatabaseSchema ?? "public";
                 
                 ServiceLocator.SetDataStore(pgDataStore); // Primary database
                 Logger.Log("✓ PostgreSQL connection established");

@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Dapper;
 using Diffusion.Common;
 using Diffusion.Database;
 using Diffusion.Database.PostgreSQL;
@@ -273,7 +274,6 @@ public class ScanningService
 
         return await Task.Run(() =>
         {
-            var folderCache = new Dictionary<string, Folder>();
             var fileInfoList = new List<(string path, long fileSize, DateTime createdDate, DateTime modifiedDate)>();
 
             // Gather basic file info (very fast - no metadata parsing)
@@ -304,6 +304,11 @@ public class ScanningService
 
             // Bulk insert into database
             using var conn = _dataStore.OpenConnection();
+            
+            // Pre-populate folder cache to avoid queries during COPY operation
+            var folderCache = conn.Query<Folder>("SELECT id, parent_id, root_folder_id, path, image_count, scanned_date, unavailable, archived, excluded, is_root FROM folder")
+                .ToDictionary(f => f.Path, f => f);
+            
             var added = _dataStore.QuickAddImages(conn, fileInfoList, folderCache, cancellationToken);
             
             Logger.Log($"Quick scan complete: {added} files indexed out of {fileInfoList.Count} candidates");

@@ -14,17 +14,17 @@ public static class QueryCombiner
 
         if (options.HideNSFW)
         {
-            whereClauses.Add($"({imageAlias}.NSFW = 0 OR {imageAlias}.NSFW IS NULL)");
+            whereClauses.Add($"({imageAlias}.nsfw = 0 OR {imageAlias}.nsfw IS NULL)");
         }
 
         if (options.SearchView != SearchView.Deleted && options.HideDeleted)
         {
-            whereClauses.Add($"({imageAlias}.ForDeletion = 0)");
+            whereClauses.Add($"({imageAlias}.for_deletion = 0)");
         }
 
         if (options.HideUnavailable)
         {
-            whereClauses.Add($"({imageAlias}.Unavailable = 0)");
+            whereClauses.Add($"({imageAlias}.unavailable = 0)");
         }
 
         var whereExpression = string.Join(" AND ", whereClauses);
@@ -167,10 +167,10 @@ public static class QueryCombiner
         switch (options.SearchView)
         {
             case SearchView.Favorites:
-                filters.Add($"SELECT m1.Id FROM Image m1 WHERE m1.Favorite = 1");
+                filters.Add($"SELECT m1.id FROM image m1 WHERE m1.favorite = 1");
                 break;
             case SearchView.Deleted:
-                filters.Add($"SELECT m1.Id FROM Image m1 WHERE m1.ForDeletion = 1");
+                filters.Add($"SELECT m1.id FROM image m1 WHERE m1.for_deletion = 1");
                 break;
         }
 

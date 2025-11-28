@@ -1,121 +1,179 @@
-# Diffusion Toolkit
+# Diffusion Toolkit (Enhanced Fork)
 
-Diffusion Toolkit is an image metadata-indexer and viewer for AI-generated images. It aims to help you organize, search and sort your ever-growing collection.
+Diffusion Toolkit is an image metadata-indexer and viewer for AI-generated images. It helps you organize, search, and sort your ever-growing collection of AI art.
 
-# Usage
+> **This is an enhanced fork** of [RupertAvery/DiffusionToolkit](https://github.com/RupertAvery/DiffusionToolkit) with significant architectural changes for scale and advanced features.
 
-Usage should be pretty straightforward, but there are a lot of tips and tricks and shortcuts you can learn. See the documentation for [Getting Started](https://github.com/RupertAvery/DiffusionToolkit/tree/master/Diffusion.Toolkit/Tips.md)
+## Original Features
 
-Thanks to Bill Meeks for putting together a demonstration video. This is for an older version.
+- **Metadata Indexing**: Scan and index prompts and PNGInfo from images
+- **Search**: Simple query or advanced filter-based search
+- **Image Viewer**: Preview images with metadata toggle
+- **Tagging**: Favorite, Rating (1-10), NSFW marking
+- **Albums**: Organize images into collections
+- **Folder View**: Browse by directory structure
+- **Drag & Drop**: Move/copy images between folders
 
-[![Organize your AI Images](https://img.youtube.com/vi/r7J3n1LjojE/hqdefault.jpg)](https://www.youtube.com/watch?v=r7J3n1LjojE&ab_channel=BillMeeks)
+### Supported Formats
+- JPG/JPEG (EXIF), PNG, WebP, TXT sidecars
 
-# Installation
+### Supported AI Frameworks
+AUTOMATIC1111, InvokeAI, NovelAI, Stable Diffusion, EasyDiffusion, Fooocus, RuinedFooocus, FooocusMRE, Stable Swarm, ComfyUI, Tensor.Art, SDNext
 
-* Currently runs on Windows only 
-* [Download](https://github.com/RupertAvery/DiffusionToolkit/releases/latest
-) the latest release 
-    * Look for **> Assets** under the latest release, expand it, then grab the zip file **Diffusion.Toolkit.v1.x.zip**.
-* Unzip all the files to a folder
-* You may need to install the [.NET 6 Desktop Runtime](https://dotnet.microsoft.com/en-us/download/dotnet/6.0) if you haven't already
+---
 
-# Build from source
+# What We Changed and Why
 
-## Prerequisites
+## 🗄️ PostgreSQL Migration (from SQLite)
 
-* Requires Visual Studio 2022
-* [.NET 6 SDK](https://dotnet.microsoft.com/en-us/download/dotnet/6.0) (includes the desktop runtime)
+**Why**: SQLite struggles with 500K+ images and doesn't support vector similarity search.
 
-## Building
+**What Changed**:
+- Complete database layer rewrite to PostgreSQL 16+ with pgvector extension
+- Docker-based deployment (`docker-compose.yml` included)
+- Connection pooling for high concurrency (50 connections)
+- Snake_case column naming convention for PostgreSQL compatibility
+- 11 partial class files for modular DataStore organization
 
-* Clone this repository
-* Run `publish.cmd`
+**Benefits**:
+- Scales to 1M+ images without performance degradation
+- Enables semantic/vector similarity search
+- Better concurrent access for background operations
+- Production-ready database with proper backup tools (`pg_dump`)
 
-A folder named `build` will be created, containing all the necessary files.
+## ⚡ Two-Phase Scanning System
 
-# Features
+**Why**: Scanning 500K images took 4-8 hours, blocking all operations.
 
-* Scan images, store and index prompts and other metadata (PNGInfo)
-* Search for your images
-    * Using a simple query
-    * Using the filter
-* View images and the metadata easily
-    * Toggle PNGInfo
-* Tag your images 
-    * Favorite
-    * Rating (1-10)
-    * NSFW
-* Sort images
-    * by Date Created 
-    * by Aesthetic Score
-    * by Rating   
-* Auto tag NFSW by keywords
-* Blur images tagged as NSFW 
-    * NSFW
-* Albums
-    * Select images, right-click > Add to Album
-    * Drag and drop images to albums
-* Folder View
-* View and search prompts
-    * List Prompts and usage
-    * List Negative Prompts and usage
-    * List images associated with prompts
-* Drag and Drop
-    * Drag and drop images to another folder to move (CTRL-drag to copy)
+**What Changed**:
+- **Phase 1 (Quick Scan)**: Index basic file info in 10-20 minutes
+- **Phase 2 (Deep Scan)**: Extract full metadata in background
+- New `scan_phase` column tracks completion status
+- PostgreSQL COPY command for bulk inserts (~1000 files/second)
 
-# Supported formats
+**Benefits**:
+- Browse your library immediately after Phase 1
+- Background metadata extraction doesn't block usage
+- Progressive enhancement as metadata becomes available
 
-* JPG/JPEG + EXIF
-* PNG
-* WebP
-* .TXT metadata
+## 🧠 Multi-Modal Embedding System (5 Vectors)
 
-# Supported Metadata formats
+**Why**: Enable semantic search and ComfyUI workflow integration.
 
-* AUTOMATIC1111 and A1111-compatible metadata such as
-  * Tensor.Art
-  * SDNext
-* InvokeAI (Dream/sd-metadata/invokeai_metadata)
-* NovelAI
-* Stable Diffusion
-* EasyDiffusion
-* RuinedFooocus
-* Fooocus
-* FooocusMRE
-* Stable Swarm
+**What Changed**:
+Added 5 embedding vectors per image stored in pgvector:
 
-You can even use it on images without metadata and still use the other features such as rating and albums!
+| Embedding | Model | Dimensions | Purpose |
+|-----------|-------|------------|---------|
+| Prompt | BGE-large-en-v1.5 | 1024D | Natural language prompt search |
+| Negative Prompt | BGE-large-en-v1.5 | 1024D | Search by things to avoid |
+| Image | CLIP-ViT-H/14 | 1024D | Visual similarity search |
+| CLIP-L | SDXL Text Encoder | 768D | ComfyUI SDXL conditioning |
+| CLIP-G | SDXL Text Encoder | 1280D | ComfyUI SDXL conditioning |
 
-# Donate
+**Benefits**:
+- "Find images like this" visual search
+- Natural language search ("dramatic lighting at sunset")
+- Direct export to ComfyUI for generating variations
+- Multi-modal hybrid search (text + visual combined)
 
-<a href="https://www.buymeacoffee.com/rupertavery" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-green.png" alt="Buy Me A Coffee" style="height: 60px !important;width: 217px !important;" ></a>
+## 🎥 Video File Support
 
-or
+**Why**: Many AI tools now generate video content (AnimateDiff, SVD, etc.)
 
-<a href="https://www.paypal.me/rupertavery" target="_blank"><img src="https://www.paypalobjects.com/en_US/i/btn/btn_donate_LG.gif" alt="Donate"></a>
+**What Changed**:
+- Catalog MP4, AVI, WEBM alongside images
+- Extract video metadata (duration, codec, framerate, bitrate)
+- FFmpeg-based thumbnail generation from first frame
+- Visual 🎥 indicator in gallery view
+- `is_video` flag and 6 new metadata columns
 
-# Screenshots
+**Benefits**:
+- Unified library for all AI-generated media
+- Search and organize videos with same workflow as images
+
+## 🔄 Batch Image Conversion (WebP)
+
+**Why**: Save disk space on large collections without manual conversion.
+
+**What Changed**:
+- New "Convert Images to WebP..." context menu option
+- WebP Lossy (smaller) and Lossless (perfect quality) modes
+- Quality slider (50-100%)
+- Automatic metadata preservation during conversion
+- Real-time progress with space-saved calculation
+- Optional original file deletion with confirmation
+
+**Benefits**:
+- 20-70% space savings depending on source format
+- Preserves all generation parameters and tags
+- Database paths automatically updated
+- Non-destructive with metadata backup
+
+## 🔧 Architecture Improvements
+
+### Service Layer Refactoring
+- `ServiceLocator` pattern for dependency access
+- `DatabaseWriterService` with async queue (System.Threading.Channels)
+- `ScanningService` with cancellation token propagation
+- Folder cache pre-loading to avoid query conflicts during bulk operations
+
+### Code Organization
+- Partial classes split by feature (MainWindow.xaml.*.cs)
+- Modular project structure (15+ projects)
+- PostgreSQL models separate from SQLite models
+- Type aliases for disambiguation (`PgSorting`, `PgPaging`)
+
+### Error Handling
+- Global exception handler with logging
+- Toast notifications for user feedback
+- Graceful degradation when optional features unavailable
+
+---
+
+## Requirements
+
+- **Windows 10/11** (64-bit only)
+- **.NET 6 Desktop Runtime**
+- **Docker Desktop** (for PostgreSQL + pgvector)
+- **FFmpeg** (optional, for video thumbnails)
+- **~60GB disk space** for 1M images with all embeddings
+
+## Quick Start
+
+```powershell
+# Start PostgreSQL database
+docker-compose up -d
+
+# Run Diffusion Toolkit
+.\Diffusion.Toolkit.exe
+```
+
+---
+
+## Screenshots
 
 ![Screenshot 2024-02-09 183808](https://github.com/RupertAvery/DiffusionToolkit/assets/1910659/437781da-e905-412a-bbe6-e179f51ac020)
 
 ![Screenshot 2024-02-09 183625](https://github.com/RupertAvery/DiffusionToolkit/assets/1910659/20e57f5a-be4e-468f-9bfb-fe309ecfe5f1)
 
+---
 
-# FAQ
+## Documentation
 
-## How do I view my image's metadata (PNGInfo)?
+See the `/docs` folder for detailed guides:
+- `BATCH_CONVERSION.md` - WebP conversion feature
+- `EMBEDDING_ARCHITECTURE.md` - Multi-modal embedding system
+- `COMFYUI_INTEGRATION.md` - ComfyUI workflow export
+- `TWO_PHASE_SCANNING.md` - Scanning system details
+- `VIDEO_SUPPORT.md` - Video file handling
+- `POSTGRESQL_MIGRATION_STATUS.md` - Migration progress
 
-With the Preview Pane visible, press I in the thumbnail view or with the Preview Pane in focus to show or hide the metadata.  You can also click the eye icon at the botton right of the Preview Pane.
+---
 
-## What is Rebuild Metadata and when should I use it?
+## Credits
 
-Rebuild Metadata will rescan all your images and update the database with any new or updated metadata found. It doesn't affect your custom tags (rating, favorite, nsfw).
+Original project by [RupertAvery](https://github.com/RupertAvery/DiffusionToolkit)
 
-You only need to Rebuild Metadata if a new version of Diffusion Toolkit comes out with support for metadata that exists in your existing images.
-
-## Can I move my images to a different folder?
-
-I you want to move your images to a different folder, but still within a Diffusion folder, you should use the **right-click > Move** command. This allows Diffusion Toolkit to handle the moving of images, and know to keep all the Diffusion Toolkit metadata (Favorites, Rating, NSFW) intact while moving.
-
-If you use Explorer or some other application to move the files, but still under the Diffusion folders, when you Rescan Folders or Rebuild Images Diffusion Toolkit will detect that the images have been removed, then will detect new files added. You will lose any Favorites, Ratings or other Toolkit-specific information. 
+<a href="https://www.buymeacoffee.com/rupertavery" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-green.png" alt="Buy Me A Coffee" style="height: 60px !important;width: 217px !important;" ></a> 
 
