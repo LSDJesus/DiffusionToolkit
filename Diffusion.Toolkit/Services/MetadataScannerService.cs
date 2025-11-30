@@ -37,7 +37,8 @@ public class MetadataScannerService
 
         if (!dt.IsStarted)
         {
-            dt.Task.ContinueWith(d =>
+            // Fire-and-forget: continuation runs asynchronously after database write completes
+            _ = dt.Task.ContinueWith(d =>
             {
                 var message = new List<string>();
                 if (d.Result.Added > 0)
@@ -78,7 +79,8 @@ public class MetadataScannerService
 
         if (!mt.IsStarted)
         {
-            mt.Task.ContinueWith(d =>
+            // Fire-and-forget: continuation runs asynchronously after metadata scan completes
+            _ = mt.Task.ContinueWith(d =>
             {
                 scanCompletionEvent?.OnMetadataCompleted?.Invoke();
                 ServiceLocator.DatabaseWriterService.Complete();
@@ -111,14 +113,16 @@ public class MetadataScannerService
     {
         if (!_queueRunning)
         {
-            Task.Run(async () => await ProcessQueueTaskAsync(cancellationToken));
+            // Fire-and-forget: background task for processing queue
+            _ = Task.Run(async () => await ProcessQueueTaskAsync(cancellationToken));
             _queueRunning = true;
         }
     }
 
     public async Task QueueAsync(string path, CancellationToken cancellationToken)
     {
-        ServiceLocator.DatabaseWriterService.StartQueueAsync(cancellationToken);
+        // Fire-and-forget: database writer starts asynchronously
+        _ = ServiceLocator.DatabaseWriterService.StartQueueAsync(cancellationToken);
         StartQueue(cancellationToken);
 
         await _queueChannel.Writer.WriteAsync(new FileScanJob() { Path = path });
@@ -197,18 +201,22 @@ public class MetadataScannerService
 
                     count++;
 
-                    var hashMatches = ServiceLocator.DataStore.GetImageIdByHash(fileParameters.Hash);
-
-                    if (hashMatches.Any())
+                    // Only check for hash matches if hash is not null
+                    if (fileParameters.Hash != null)
                     {
-                        var moved = hashMatches.FirstOrDefault(d => !File.Exists(d.Path));
+                        var hashMatches = ServiceLocator.DataStore.GetImageIdByHash(fileParameters.Hash);
 
-                        if (moved != null)
+                        if (hashMatches.Any())
                         {
-                            ServiceLocator.DataStore.UpdateImagePath(moved.Id, job.Path);
+                            var moved = hashMatches.FirstOrDefault(d => !File.Exists(d.Path));
 
-                            await ServiceLocator.DatabaseWriterService.QueueUpdateAsync(fileParameters, _settings.StoreMetadata, _settings.StoreWorkflow);
-                            continue;
+                            if (moved != null)
+                            {
+                                ServiceLocator.DataStore.UpdateImagePath(moved.Id, job.Path);
+
+                                await ServiceLocator.DatabaseWriterService.QueueUpdateAsync(fileParameters, _settings.StoreMetadata, _settings.StoreWorkflow);
+                                continue;
+                            }
                         }
                     }
 

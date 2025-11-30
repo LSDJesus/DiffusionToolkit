@@ -1,5 +1,6 @@
 using Npgsql;
 using Dapper;
+using Diffusion.Common;
 using Diffusion.Database.PostgreSQL.Models;
 
 namespace Diffusion.Database.PostgreSQL;
@@ -11,6 +12,22 @@ namespace Diffusion.Database.PostgreSQL;
 public partial class PostgreSQLDataStore
 {
     /// <summary>
+    /// All columns for ImageEntity EXCLUDING vector columns - used for vector search results.
+    /// Note: This duplicates ImageEntityColumns from Search.cs but is needed for this partial class.
+    /// </summary>
+    private const string VectorSearchImageColumns = @"
+        id, root_folder_id, folder_id, path, file_name, prompt, negative_prompt, steps, sampler, cfg_scale, 
+        seed, width, height, model_hash, model, batch_size, batch_pos, created_date, modified_date, 
+        custom_tags, rating, favorite, for_deletion, nsfw, unavailable, aesthetic_score, hyper_network, 
+        hyper_network_strength, clip_skip, ensd, file_size, no_metadata, workflow, workflow_id, has_error, 
+        hash, viewed_date, touched_date, prompt_embedding_id, negative_prompt_embedding_id, image_embedding_id,
+        metadata_hash, embedding_source_id, is_embedding_representative, needs_visual_embedding, is_upscaled, 
+        base_image_id, generated_tags, loras, vae, refiner_model, refiner_switch, upscaler, upscale_factor, 
+        hires_steps, hires_upscaler, hires_upscale, denoising_strength, controlnets, ip_adapter, 
+        ip_adapter_strength, wildcards_used, generation_time_seconds, scheduler, duration_ms, video_codec, 
+        audio_codec, frame_rate, bitrate, is_video, created_at";
+
+    /// <summary>
     /// Find images with similar prompts using semantic similarity
     /// </summary>
     public async Task<List<ImageEntity>> SearchByPromptSimilarityAsync(
@@ -18,18 +35,20 @@ public partial class PostgreSQLDataStore
         float threshold = 0.85f, 
         int limit = 50)
     {
-        await using var conn = await OpenConnectionAsync();
+        ArgumentNullException.ThrowIfNull(promptEmbedding);
+        
+        await using var conn = await OpenConnectionAsync().ConfigureAwait(false);
 
         var vector = $"[{string.Join(",", promptEmbedding)}]";
-        var query = @"
-            SELECT * FROM image
+        var query = $@"
+            SELECT {VectorSearchImageColumns} FROM image
             WHERE prompt_embedding IS NOT NULL
             AND 1 - (prompt_embedding <=> @embedding::vector) >= @threshold
             ORDER BY prompt_embedding <=> @embedding::vector ASC
             LIMIT @limit;";
 
         var images = await conn.QueryAsync<ImageEntity>(query, 
-            new { embedding = vector, threshold, limit });
+            new { embedding = vector, threshold, limit }).ConfigureAwait(false);
 
         return images.ToList();
     }
@@ -42,18 +61,20 @@ public partial class PostgreSQLDataStore
         float threshold = 0.85f,
         int limit = 50)
     {
-        await using var conn = await OpenConnectionAsync();
+        ArgumentNullException.ThrowIfNull(negativePromptEmbedding);
+        
+        await using var conn = await OpenConnectionAsync().ConfigureAwait(false);
 
         var vector = $"[{string.Join(",", negativePromptEmbedding)}]";
-        var query = @"
-            SELECT * FROM image
+        var query = $@"
+            SELECT {VectorSearchImageColumns} FROM image
             WHERE negative_prompt_embedding IS NOT NULL
             AND 1 - (negative_prompt_embedding <=> @embedding::vector) >= @threshold
             ORDER BY negative_prompt_embedding <=> @embedding::vector ASC
             LIMIT @limit;";
 
         var images = await conn.QueryAsync<ImageEntity>(query,
-            new { embedding = vector, threshold, limit });
+            new { embedding = vector, threshold, limit }).ConfigureAwait(false);
 
         return images.ToList();
     }
@@ -66,10 +87,15 @@ public partial class PostgreSQLDataStore
         float threshold = 0.75f,
         int limit = 50)
     {
-        await using var conn = await OpenConnectionAsync();
+        await using var conn = await OpenConnectionAsync().ConfigureAwait(false);
 
-        var query = @"
-            SELECT i2.* FROM image i1
+        // Prefix all columns with i2. for the joined table
+        var i2Columns = VectorSearchImageColumns.Replace("\n", "").Split(',')
+            .Select(c => $"i2.{c.Trim()}")
+            .Aggregate((a, b) => $"{a}, {b}");
+
+        var query = $@"
+            SELECT {i2Columns} FROM image i1
             JOIN image i2 ON i1.id != i2.id
             WHERE i1.id = @imageId
             AND i1.image_embedding IS NOT NULL
@@ -79,7 +105,7 @@ public partial class PostgreSQLDataStore
             LIMIT @limit;";
 
         var images = await conn.QueryAsync<ImageEntity>(query,
-            new { imageId, threshold, limit });
+            new { imageId, threshold, limit }).ConfigureAwait(false);
 
         return images.ToList();
     }
@@ -92,57 +118,62 @@ public partial class PostgreSQLDataStore
         float threshold = 0.70f,
         int limit = 50)
     {
-        await using var conn = await OpenConnectionAsync();
+        ArgumentNullException.ThrowIfNull(textEmbedding);
+        
+        await using var conn = await OpenConnectionAsync().ConfigureAwait(false);
 
         var vector = $"[{string.Join(",", textEmbedding)}]";
-        var query = @"
-            SELECT * FROM image
+        var query = $@"
+            SELECT {VectorSearchImageColumns} FROM image
             WHERE image_embedding IS NOT NULL
             AND 1 - (image_embedding <=> @embedding::vector) >= @threshold
             ORDER BY image_embedding <=> @embedding::vector ASC
             LIMIT @limit;";
 
         var images = await conn.QueryAsync<ImageEntity>(query,
-            new { embedding = vector, threshold, limit });
+            new { embedding = vector, threshold, limit }).ConfigureAwait(false);
 
         return images.ToList();
     }
 
     /// <summary>
     /// Batch similarity search: find similar images to a set of images
-    /// Used for auto-tagging and clustering
+    /// Uses single query with ANY for better performance
     /// </summary>
     public async Task<List<(int ImageId, int SimilarImageId, float Similarity)>> BatchSimilaritySearchAsync(
         List<int> imageIds,
         float threshold = 0.75f,
         int topKPerImage = 10)
     {
-        await using var conn = await OpenConnectionAsync();
+        ArgumentNullException.ThrowIfNull(imageIds);
+        
+        if (imageIds.Count == 0) return new List<(int, int, float)>();
 
-        var results = new List<(int, int, float)>();
+        await using var conn = await OpenConnectionAsync().ConfigureAwait(false);
 
-        foreach (var imageId in imageIds)
-        {
-            var query = @"
-                SELECT i1.id AS ImageId,
-                       i2.id AS SimilarImageId,
-                       (1 - (i1.image_embedding <=> i2.image_embedding)) AS Similarity
+        // Use a single query with LATERAL join for better performance
+        var query = @"
+            SELECT x.image_id AS ImageId, x.similar_id AS SimilarImageId, x.similarity AS Similarity
+            FROM unnest(@imageIds) AS source(id)
+            CROSS JOIN LATERAL (
+                SELECT 
+                    source.id AS image_id,
+                    i2.id AS similar_id,
+                    (1 - (i1.image_embedding <=> i2.image_embedding)) AS similarity
                 FROM image i1
                 JOIN image i2 ON i1.id != i2.id
-                WHERE i1.id = @imageId
+                WHERE i1.id = source.id
                 AND i1.image_embedding IS NOT NULL
                 AND i2.image_embedding IS NOT NULL
                 AND 1 - (i1.image_embedding <=> i2.image_embedding) >= @threshold
-                ORDER BY Similarity DESC
-                LIMIT @topK;";
+                ORDER BY similarity DESC
+                LIMIT @topK
+            ) x;";
 
-            var rows = await conn.QueryAsync<(int, int, float)>(query,
-                new { imageId, threshold, topK = topKPerImage });
+        var rows = await conn.QueryAsync<(int ImageId, int SimilarImageId, float Similarity)>(query,
+            new { imageIds = imageIds.ToArray(), threshold, topK = topKPerImage }).ConfigureAwait(false);
 
-            results.AddRange(rows);
-        }
-
-        return results;
+        return rows.ToList();
     }
 
     /// <summary>
@@ -153,7 +184,7 @@ public partial class PostgreSQLDataStore
         float threshold = 0.75f,
         int topK = 5)
     {
-        await using var conn = await OpenConnectionAsync();
+        await using var conn = await OpenConnectionAsync().ConfigureAwait(false);
 
         var query = @"
             SELECT i2.id AS ImageId,
@@ -170,7 +201,7 @@ public partial class PostgreSQLDataStore
             LIMIT @topK;";
 
         var suggestions = await conn.QueryAsync<(int, string, float)>(query,
-            new { imageId, threshold, topK });
+            new { imageId, threshold, topK }).ConfigureAwait(false);
 
         return suggestions.ToList();
     }
@@ -180,7 +211,7 @@ public partial class PostgreSQLDataStore
     /// </summary>
     public async Task<EmbeddingCoverageStats> GetEmbeddingCoverageAsync()
     {
-        await using var conn = await OpenConnectionAsync();
+        await using var conn = await OpenConnectionAsync().ConfigureAwait(false);
 
         var query = @"
             SELECT 
@@ -190,77 +221,96 @@ public partial class PostgreSQLDataStore
                 COUNT(CASE WHEN image_embedding IS NOT NULL THEN 1 END) AS ImageEmbeddings
             FROM image;";
 
-        var stats = await conn.QueryFirstAsync<EmbeddingCoverageStats>(query);
+        var stats = await conn.QueryFirstAsync<EmbeddingCoverageStats>(query).ConfigureAwait(false);
         return stats;
     }
 
     /// <summary>
-    /// Update image embeddings
+    /// Update image embeddings (fully async version)
     /// </summary>
     public async Task UpdateImageEmbeddingsAsync(
         int imageId,
-        float[] promptEmbedding,
-        float[] negativePromptEmbedding,
-        float[] imageEmbedding)
+        float[]? promptEmbedding,
+        float[]? negativePromptEmbedding,
+        float[]? imageEmbedding)
     {
-        lock (_lock)
+        await using var conn = await OpenConnectionAsync().ConfigureAwait(false);
+
+        var promptVector = promptEmbedding != null ? $"[{string.Join(",", promptEmbedding)}]" : null;
+        var negPromptVector = negativePromptEmbedding != null ? $"[{string.Join(",", negativePromptEmbedding)}]" : null;
+        var imageVector = imageEmbedding != null ? $"[{string.Join(",", imageEmbedding)}]" : null;
+
+        var query = @"
+            UPDATE image
+            SET prompt_embedding = @promptEmbedding::vector,
+                negative_prompt_embedding = @negPromptEmbedding::vector,
+                image_embedding = @imageEmbedding::vector,
+                touched_date = NOW()
+            WHERE id = @imageId;";
+
+        await conn.ExecuteAsync(query, new
         {
-            using var conn = OpenConnection();
-
-            var promptVector = promptEmbedding != null ? $"[{string.Join(",", promptEmbedding)}]" : null;
-            var negPromptVector = negativePromptEmbedding != null ? $"[{string.Join(",", negativePromptEmbedding)}]" : null;
-            var imageVector = imageEmbedding != null ? $"[{string.Join(",", imageEmbedding)}]" : null;
-
-            var query = @"
-                UPDATE image
-                SET prompt_embedding = @promptEmbedding::vector,
-                    negative_prompt_embedding = @negPromptEmbedding::vector,
-                    image_embedding = @imageEmbedding::vector,
-                    touched_date = NOW()
-                WHERE id = @imageId;";
-
-            conn.Execute(query, new
-            {
-                imageId,
-                promptEmbedding = promptVector,
-                negPromptEmbedding = negPromptVector,
-                imageEmbedding = imageVector
-            });
-        }
+            imageId,
+            promptEmbedding = promptVector,
+            negPromptEmbedding = negPromptVector,
+            imageEmbedding = imageVector
+        }).ConfigureAwait(false);
     }
 
     /// <summary>
-    /// Batch update embeddings for performance
+    /// Batch update embeddings for performance using COPY for maximum throughput
     /// </summary>
     public async Task UpdateImageEmbeddingsBatchAsync(
-        List<(int ImageId, float[] Prompt, float[] NegativePrompt, float[] Image)> embeddings)
+        List<(int ImageId, float[]? Prompt, float[]? NegativePrompt, float[]? Image)> embeddings)
     {
-        lock (_lock)
+        ArgumentNullException.ThrowIfNull(embeddings);
+        
+        if (embeddings.Count == 0) return;
+
+        await using var conn = await OpenConnectionAsync().ConfigureAwait(false);
+
+        // Use a transaction for consistency
+        await using var transaction = await conn.BeginTransactionAsync().ConfigureAwait(false);
+        
+        try
         {
-            using var conn = OpenConnection();
-
-            foreach (var (imageId, promptEmb, negPromptEmb, imageEmb) in embeddings)
+            // Use batched updates with a single parameterized query per batch
+            const int batchSize = DatabaseConfiguration.BatchSize;
+            
+            for (int i = 0; i < embeddings.Count; i += batchSize)
             {
-                var promptVector = promptEmb != null ? $"[{string.Join(",", promptEmb)}]" : null;
-                var negPromptVector = negPromptEmb != null ? $"[{string.Join(",", negPromptEmb)}]" : null;
-                var imageVector = imageEmb != null ? $"[{string.Join(",", imageEmb)}]" : null;
-
-                var query = @"
-                    UPDATE image
-                    SET prompt_embedding = @promptEmbedding::vector,
-                        negative_prompt_embedding = @negPromptEmbedding::vector,
-                        image_embedding = @imageEmbedding::vector,
-                        touched_date = NOW()
-                    WHERE id = @imageId;";
-
-                conn.Execute(query, new
+                var batch = embeddings.Skip(i).Take(batchSize);
+                
+                foreach (var (imageId, promptEmb, negPromptEmb, imageEmb) in batch)
                 {
-                    imageId,
-                    promptEmbedding = promptVector,
-                    negPromptEmbedding = negPromptVector,
-                    imageEmbedding = imageVector
-                });
+                    var promptVector = promptEmb != null ? $"[{string.Join(",", promptEmb)}]" : null;
+                    var negPromptVector = negPromptEmb != null ? $"[{string.Join(",", negPromptEmb)}]" : null;
+                    var imageVector = imageEmb != null ? $"[{string.Join(",", imageEmb)}]" : null;
+
+                    await conn.ExecuteAsync(@"
+                        UPDATE image
+                        SET prompt_embedding = @promptEmbedding::vector,
+                            negative_prompt_embedding = @negPromptEmbedding::vector,
+                            image_embedding = @imageEmbedding::vector,
+                            touched_date = NOW()
+                        WHERE id = @imageId;",
+                        new
+                        {
+                            imageId,
+                            promptEmbedding = promptVector,
+                            negPromptEmbedding = negPromptVector,
+                            imageEmbedding = imageVector
+                        },
+                        transaction).ConfigureAwait(false);
+                }
             }
+
+            await transaction.CommitAsync().ConfigureAwait(false);
+        }
+        catch
+        {
+            await transaction.RollbackAsync().ConfigureAwait(false);
+            throw;
         }
     }
 }

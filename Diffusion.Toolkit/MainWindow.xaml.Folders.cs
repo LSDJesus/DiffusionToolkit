@@ -21,7 +21,8 @@ namespace Diffusion.Toolkit
 
             _model.RescanFolderCommand = new RelayCommand<FolderViewModel>((folder) =>
             {
-                ServiceLocator.ScanningService.ScanFolder(folder, true);
+                // Fire-and-forget: intentionally not awaited as it runs in background with progress tracking
+                _ = ServiceLocator.ScanningService.ScanFolder(folder, true);
             });
 
             _model.RefreshFolderCommand = new RelayCommand<FolderViewModel>((folder) =>
@@ -31,7 +32,8 @@ namespace Diffusion.Toolkit
 
             _model.ScanFolderCommand = new RelayCommand<FolderViewModel>((folder) =>
             {
-                ServiceLocator.ScanningService.ScanFolder(folder, false);
+                // Fire-and-forget: intentionally not awaited as it runs in background with progress tracking
+                _ = ServiceLocator.ScanningService.ScanFolder(folder, false);
             });
 
             _model.CreateFolderCommand = new AsyncCommand<FolderViewModel>(async (o) =>

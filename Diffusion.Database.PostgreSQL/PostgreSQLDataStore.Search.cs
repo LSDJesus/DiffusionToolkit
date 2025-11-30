@@ -128,7 +128,24 @@ public class UsedPrompt
 /// </summary>
 public partial class PostgreSQLDataStore
 {
-    private const string ViewColumns = "favorite, for_deletion, rating, aesthetic_score, created_date, nsfw, has_error, is_video";
+    // Note: is_video column doesn't exist in the PostgreSQL schema yet
+    private const string ViewColumns = "favorite, for_deletion, rating, aesthetic_score, created_date, nsfw, has_error";
+    
+    /// <summary>
+    /// All columns for ImageEntity EXCLUDING vector columns (prompt_embedding, negative_prompt_embedding, 
+    /// image_embedding, clip_l_embedding, clip_g_embedding) which cannot be read by Dapper without custom handlers.
+    /// Note: Video columns (duration_ms, video_codec, audio_codec, frame_rate, bitrate, is_video) are not yet in migrations.
+    /// </summary>
+    private const string ImageEntityColumns = @"
+        id, root_folder_id, folder_id, path, file_name, prompt, negative_prompt, steps, sampler, cfg_scale, 
+        seed, width, height, model_hash, model, batch_size, batch_pos, created_date, modified_date, 
+        custom_tags, rating, favorite, for_deletion, nsfw, unavailable, aesthetic_score, hyper_network, 
+        hyper_network_strength, clip_skip, ensd, file_size, no_metadata, workflow, workflow_id, has_error, 
+        hash, viewed_date, touched_date, prompt_embedding_id, negative_prompt_embedding_id, image_embedding_id,
+        metadata_hash, embedding_source_id, is_embedding_representative, needs_visual_embedding, is_upscaled, 
+        base_image_id, generated_tags, loras, vae, refiner_model, refiner_switch, upscaler, upscale_factor, 
+        hires_steps, hires_upscaler, hires_upscale, denoising_strength, controlnets, ip_adapter, 
+        ip_adapter_strength, wildcards_used, generation_time_seconds, scheduler, created_at";
     
     /// <summary>
     /// Convert positional bindings from QueryCombiner to named Dapper parameters and update query
@@ -144,7 +161,10 @@ public partial class PostgreSQLDataStore
         
         string whereClause = GetInitialWhereClause();
         
-        var query = $"SELECT model AS name, model_hash AS hash, COUNT(*) AS image_count FROM {Table("image")} {whereClause} GROUP BY model, model_hash";
+        var tableName = Table("image");
+        Logger.Log($"GetImageModels: _currentSchema = '{_currentSchema}', Table('image') = '{tableName}' (instance: {GetHashCode()})");
+        
+        var query = $"SELECT model AS name, model_hash AS hash, COUNT(*) AS image_count FROM {tableName} {whereClause} GROUP BY model, model_hash";
         
         var models = conn.Query<ModelView>(query);
         
@@ -166,7 +186,7 @@ public partial class PostgreSQLDataStore
     {
         using var conn = OpenConnection();
 
-        var q = QueryCombiner.Parse(queryOptions);
+        var q = PostgreSQLQueryCombiner.Parse(queryOptions);
 
         var (convertedSql, parameters) = ConvertBindingsToNamedParameters(q.Query, q.Bindings);
 
@@ -224,9 +244,9 @@ public partial class PostgreSQLDataStore
     {
         using var conn = OpenConnection();
         
-        var q = QueryCombiner.Parse(options);
+        var q = PostgreSQLQueryCombiner.Parse(options);
         
-        var whereClause = QueryCombiner.GetInitialWhereClause("main", options);
+        var whereClause = PostgreSQLQueryCombiner.GetInitialWhereClause("main", options);
         
         // Convert subquery first
         var (convertedSubQuery, parameters) = ConvertBindingsToNamedParameters(q.Query, q.Bindings);
@@ -261,9 +281,9 @@ public partial class PostgreSQLDataStore
     {
         using var conn = OpenConnection();
 
-        var q = QueryCombiner.ParseEx(options);
+        var q = PostgreSQLQueryCombiner.ParseEx(options);
 
-        var whereClause = QueryCombiner.GetInitialWhereClause("main", options);
+        var whereClause = PostgreSQLQueryCombiner.GetInitialWhereClause("main", options);
 
         var (convertedSubQuery, parameters) = ConvertBindingsToNamedParameters(q.Query, q.Bindings);
 
@@ -283,7 +303,7 @@ public partial class PostgreSQLDataStore
         using var conn = OpenConnection();
         
         return conn.QueryFirstOrDefault<ImageEntity>(
-            "SELECT * FROM image WHERE id = @id", 
+            $"SELECT {ImageEntityColumns} FROM image WHERE id = @id", 
             new { id });
     }
 
@@ -336,7 +356,7 @@ public partial class PostgreSQLDataStore
     {
         using var conn = OpenConnection();
         
-        var query = "SELECT * FROM image";
+        var query = $"SELECT {ImageEntityColumns} FROM image";
         
         var images = conn.Query<ImageEntity>(query + GetInitialWhereClause());
         
@@ -376,9 +396,9 @@ public partial class PostgreSQLDataStore
     {
         using var conn = OpenConnection();
         
-        var q = QueryCombiner.Parse(queryOptions);
+        var q = PostgreSQLQueryCombiner.Parse(queryOptions);
         
-        var whereClause = QueryCombiner.GetInitialWhereClause("main", queryOptions);
+        var whereClause = PostgreSQLQueryCombiner.GetInitialWhereClause("main", queryOptions);
         
         // Convert subquery first
         var (convertedSubQuery, parameters) = ConvertBindingsToNamedParameters(q.Query, q.Bindings);
@@ -413,11 +433,12 @@ public partial class PostgreSQLDataStore
 
     public IEnumerable<ImageView> SearchEx(QueryOptions options, Sorting sorting, Paging? paging = null)
     {
+        Logger.Log($"SearchEx called - Folder={options.Folder}, paging={paging?.PageSize}/{paging?.Offset}");
         using var conn = OpenConnection();
         
-        var q = QueryCombiner.ParseEx(options);
+        var q = PostgreSQLQueryCombiner.ParseEx(options);
         
-        var whereClause = QueryCombiner.GetInitialWhereClause("main", options);
+        var whereClause = PostgreSQLQueryCombiner.GetInitialWhereClause("main", options);
         
         // Convert subquery first
         var (convertedSubQuery, parameters) = ConvertBindingsToNamedParameters(q.Query, q.Bindings);
@@ -445,7 +466,9 @@ public partial class PostgreSQLDataStore
             parameters.Add("offset", paging.Offset);
         }
         
-        var images = conn.Query<ImageView>(sql, parameters);
+        Logger.Log($"SearchEx SQL: {sql}");
+        var images = conn.Query<ImageView>(sql, parameters).ToList();
+        Logger.Log($"SearchEx returned {images.Count} images");
         
         return images;
     }
@@ -454,9 +477,9 @@ public partial class PostgreSQLDataStore
     {
         using var conn = OpenConnection();
         
-        var q = QueryCombiner.Filter(filter, options);
+        var q = PostgreSQLQueryCombiner.Filter(filter, options);
         
-        var whereClause = QueryCombiner.GetInitialWhereClause("main", options);
+        var whereClause = PostgreSQLQueryCombiner.GetInitialWhereClause("main", options);
         
         // Convert subquery first
         var (convertedSubQuery, parameters) = ConvertBindingsToNamedParameters(q.Query, q.Bindings);

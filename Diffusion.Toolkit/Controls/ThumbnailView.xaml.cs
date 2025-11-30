@@ -634,7 +634,8 @@ namespace Diffusion.Toolkit.Controls
 
                     Model.SelectedImageEntry = null;
                     //ThumbnailListView.SelectedIndex = -1;
-                    Task.Run(async () =>
+                    // Fire-and-forget: background task for removing images
+                    _ = Task.Run(async () =>
                     {
                         if (await ServiceLocator.ProgressService.TryStartTask())
                         {
@@ -852,6 +853,53 @@ namespace Diffusion.Toolkit.Controls
                         $"Successfully tagged {selectedImages.Count} image(s)", 
                         "Tagging Complete");
                 }
+            }
+        }
+
+        private async void FindVariants_OnClick(object sender, RoutedEventArgs e)
+        {
+            var selectedImage = ThumbnailListView.SelectedItems.Cast<ImageEntry>()
+                .FirstOrDefault(img => img.Id > 0);
+
+            if (selectedImage == null)
+            {
+                MessageBox.Show("No image selected.", "Find Variants", 
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            try
+            {
+                // Find variants of this image (same seed/model/prompt)
+                var variants = await _dataStore.FindWorkflowVariantsAsync(selectedImage.Id);
+                
+                if (variants.Count <= 1)
+                {
+                    ServiceLocator.ToastService?.Toast(
+                        "No variants found for this image",
+                        "Find Variants");
+                    return;
+                }
+
+                // Show variant information
+                var sizes = variants.OrderByDescending(v => v.Width * v.Height).ToList();
+                var largest = sizes.First();
+                var smallest = sizes.Last();
+                
+                var upscaleFactor = smallest.Width > 0 ? (double)largest.Width / smallest.Width : 1.0;
+                
+                var message = $"Found {variants.Count} variants:\n\n" +
+                              $"Smallest: {smallest.Width}×{smallest.Height}\n" +
+                              $"Largest: {largest.Width}×{largest.Height}\n" +
+                              $"Upscale Factor: {upscaleFactor:F1}x";
+                
+                MessageBox.Show(message, "Workflow Variants Found", 
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error finding variants: {ex.Message}", "Error", 
+                    MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 

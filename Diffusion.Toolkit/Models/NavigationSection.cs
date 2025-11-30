@@ -8,15 +8,18 @@ public class NavigationSection : BaseNotify
     private AccordionState _modelState;
     private AccordionState _albumState;
     private AccordionState _queryState;
+    private AccordionState _modelLibraryState;
     private bool _showFolders;
     private bool _showModels;
     private bool _showAlbums;
     private bool _showQueries;
+    private bool _showModelLibrary;
     private FoldersSection? _foldersSection;
     private double _folderHeight;
     private double _albumHeight;
     private double _modelHeight;
     private double _queryHeight;
+    private double _modelLibraryHeight;
 
     public NavigationSection()
     {
@@ -94,6 +97,24 @@ public class NavigationSection : BaseNotify
     {
         get => _queryHeight;
         set => SetField(ref _queryHeight, value);
+    }
+
+    public bool ShowModelLibrary
+    {
+        get => _showModelLibrary;
+        set => SetField(ref _showModelLibrary, value);
+    }
+
+    public AccordionState ModelLibraryState
+    {
+        get => _modelLibraryState;
+        set => SetField(ref _modelLibraryState, value);
+    }
+
+    public double ModelLibraryHeight
+    {
+        get => _modelLibraryHeight;
+        set => SetField(ref _modelLibraryHeight, value);
     }
 
     public FoldersSection FoldersSection

@@ -116,7 +116,8 @@ public class ThumbnailPanel : FrameworkElement
             //_thumbViews[i].X = 0;
             //_thumbViews[i].Y = 0;
             var i1 = i;
-            ServiceLocator.ThumbnailService.QueueAsync(new ThumbnailJob()
+            // Fire-and-forget: intentionally not awaited as thumbnails load asynchronously
+            _ = ServiceLocator.ThumbnailService.QueueAsync(new ThumbnailJob()
             {
                 Width = 256,
                 Height = 256,

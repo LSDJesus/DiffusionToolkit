@@ -26,15 +26,21 @@ public static class MetadataWriter
     {
         try
         {
+            Logger.Log($"MetadataWriter.WriteMetadata called for: {filePath}");
+            Logger.Log($"  Tags: {request.Tags?.Count ?? 0}, Caption: {!string.IsNullOrEmpty(request.Caption)}, CreateBackup: {request.CreateBackup}");
+            
             var ext = Path.GetExtension(filePath).ToLowerInvariant();
             
-            return ext switch
+            var result = ext switch
             {
                 ".png" => WritePngMetadata(filePath, request),
                 ".jpg" or ".jpeg" => WriteJpegMetadata(filePath, request),
                 ".webp" => WriteWebpMetadata(filePath, request),
                 _ => false // Unsupported format
             };
+            
+            Logger.Log($"  Write result: {result}");
+            return result;
         }
         catch (Exception ex)
         {

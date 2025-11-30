@@ -16,7 +16,7 @@ public partial class PostgreSQLDataStore
     /// </summary>
     public async Task RemoveImageAsync(int id)
     {
-        await RemoveImagesAsync(new[] { id });
+        await RemoveImagesAsync(new[] { id }).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -33,6 +33,8 @@ public partial class PostgreSQLDataStore
     /// </summary>
     public void RemoveImages(IEnumerable<int> ids)
     {
+        ArgumentNullException.ThrowIfNull(ids);
+        
         var idArray = ids.ToArray();
         if (idArray.Length == 0) return;
 
@@ -81,7 +83,7 @@ public partial class PostgreSQLDataStore
         catch (Exception ex)
         {
             transaction.Rollback();
-            Logger.Log($"Failed to remove images: {ex.Message}");
+            Logger.LogError($"Failed to remove {idArray.Length} images", ex);
             throw;
         }
     }
@@ -91,52 +93,54 @@ public partial class PostgreSQLDataStore
     /// </summary>
     public async Task RemoveImagesAsync(IEnumerable<int> ids)
     {
+        ArgumentNullException.ThrowIfNull(ids);
+        
         var idArray = ids.ToArray();
         if (idArray.Length == 0) return;
 
-        await using var conn = await OpenConnectionAsync();
-        await using var transaction = await conn.BeginTransactionAsync();
+        await using var conn = await OpenConnectionAsync().ConfigureAwait(false);
+        await using var transaction = await conn.BeginTransactionAsync().ConfigureAwait(false);
 
         try
         {
             // Create temporary table for IDs
             await conn.ExecuteAsync(@"
                 CREATE TEMP TABLE temp_deleted_ids (id INTEGER) ON COMMIT DROP;
-                ", transaction: transaction);
+                ", transaction: transaction).ConfigureAwait(false);
 
             // Insert IDs to delete
             await conn.ExecuteAsync("INSERT INTO temp_deleted_ids (id) VALUES (@Id)", 
                 idArray.Select(id => new { Id = id }), 
-                transaction: transaction);
+                transaction: transaction).ConfigureAwait(false);
 
             // Delete cascade
             await conn.ExecuteAsync(@"
                 DELETE FROM node_property 
                 WHERE node_id IN (
                     SELECT id FROM node WHERE image_id IN (SELECT id FROM temp_deleted_ids)
-                );", transaction: transaction);
+                );", transaction: transaction).ConfigureAwait(false);
 
             await conn.ExecuteAsync(@"
                 DELETE FROM node 
                 WHERE image_id IN (SELECT id FROM temp_deleted_ids);", 
-                transaction: transaction);
+                transaction: transaction).ConfigureAwait(false);
 
             await conn.ExecuteAsync(@"
                 DELETE FROM album_image 
                 WHERE image_id IN (SELECT id FROM temp_deleted_ids);", 
-                transaction: transaction);
+                transaction: transaction).ConfigureAwait(false);
 
             await conn.ExecuteAsync(@"
                 DELETE FROM image 
                 WHERE id IN (SELECT id FROM temp_deleted_ids);", 
-                transaction: transaction);
+                transaction: transaction).ConfigureAwait(false);
 
-            await transaction.CommitAsync();
+            await transaction.CommitAsync().ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            await transaction.RollbackAsync();
-            Logger.Log($"Failed to remove images: {ex.Message}");
+            await transaction.RollbackAsync().ConfigureAwait(false);
+            Logger.LogError($"Failed to remove {idArray.Length} images", ex);
             throw;
         }
     }
@@ -162,10 +166,10 @@ public partial class PostgreSQLDataStore
     /// </summary>
     public async Task<IEnumerable<ImagePath>> GetImagesTaggedForDeletionAsync()
     {
-        await using var conn = await OpenConnectionAsync();
+        await using var conn = await OpenConnectionAsync().ConfigureAwait(false);
         
         return await conn.QueryAsync<ImagePath>(
-            "SELECT id, path FROM image WHERE for_deletion = true ORDER BY id");
+            "SELECT id, path FROM image WHERE for_deletion = true ORDER BY id").ConfigureAwait(false);
     }
 
     /// <summary>
@@ -173,6 +177,9 @@ public partial class PostgreSQLDataStore
     /// </summary>
     public void MoveImage(int id, string newPath, Dictionary<string, Folder> folderCache)
     {
+        ArgumentNullException.ThrowIfNull(newPath);
+        ArgumentNullException.ThrowIfNull(folderCache);
+        
         lock (_lock)
         {
             using var conn = OpenConnection();
@@ -181,7 +188,7 @@ public partial class PostgreSQLDataStore
             
             if (string.IsNullOrEmpty(dirName) || !EnsureFolderExists(conn, dirName, folderCache, out var folderId))
             {
-                Logger.Log($"Root folder not found for {dirName}");
+                Logger.LogWarn($"Root folder not found for {StringUtility.TruncatePath(dirName)}");
                 return;
             }
 
@@ -196,11 +203,15 @@ public partial class PostgreSQLDataStore
     /// </summary>
     public void MoveImage(NpgsqlConnection conn, int id, string newPath, Dictionary<string, Folder> folderCache)
     {
+        ArgumentNullException.ThrowIfNull(conn);
+        ArgumentNullException.ThrowIfNull(newPath);
+        ArgumentNullException.ThrowIfNull(folderCache);
+        
         var dirName = Path.GetDirectoryName(newPath);
         
         if (string.IsNullOrEmpty(dirName) || !EnsureFolderExists(conn, dirName, folderCache, out var folderId))
         {
-            Logger.Log($"Root folder not found for {dirName}");
+            Logger.LogWarn($"Root folder not found for {StringUtility.TruncatePath(dirName)}");
             return;
         }
 
@@ -217,6 +228,8 @@ public partial class PostgreSQLDataStore
     /// </summary>
     public IReadOnlyCollection<HashMatch> GetImageIdByHash(string hash)
     {
+        ArgumentNullException.ThrowIfNull(hash);
+        
         using var conn = OpenConnection();
         
         return conn.Query<HashMatch>(
@@ -229,11 +242,13 @@ public partial class PostgreSQLDataStore
     /// </summary>
     public async Task<IReadOnlyCollection<HashMatch>> GetImageIdByHashAsync(string hash)
     {
-        await using var conn = await OpenConnectionAsync();
+        ArgumentNullException.ThrowIfNull(hash);
+        
+        await using var conn = await OpenConnectionAsync().ConfigureAwait(false);
         
         var results = await conn.QueryAsync<HashMatch>(
             "SELECT id, path FROM image WHERE hash = @Hash",
-            new { Hash = hash });
+            new { Hash = hash }).ConfigureAwait(false);
         
         return results.ToList();
     }
@@ -243,6 +258,8 @@ public partial class PostgreSQLDataStore
     /// </summary>
     public int UpdateImagePath(int id, string path)
     {
+        ArgumentNullException.ThrowIfNull(path);
+        
         lock (_lock)
         {
             using var conn = OpenConnection();
@@ -257,11 +274,13 @@ public partial class PostgreSQLDataStore
     /// </summary>
     public async Task<int> UpdateImagePathAsync(int id, string path)
     {
-        await using var conn = await OpenConnectionAsync();
+        ArgumentNullException.ThrowIfNull(path);
+        
+        await using var conn = await OpenConnectionAsync().ConfigureAwait(false);
         
         return await conn.ExecuteAsync(
             "UPDATE image SET path = @Path WHERE id = @Id",
-            new { Path = path, Id = id });
+            new { Path = path, Id = id }).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -269,6 +288,8 @@ public partial class PostgreSQLDataStore
     /// </summary>
     public bool ImageExists(string path)
     {
+        ArgumentNullException.ThrowIfNull(path);
+        
         using var conn = OpenConnection();
         
         var count = conn.ExecuteScalar<int>(
@@ -283,11 +304,13 @@ public partial class PostgreSQLDataStore
     /// </summary>
     public async Task<bool> ImageExistsAsync(string path)
     {
-        await using var conn = await OpenConnectionAsync();
+        ArgumentNullException.ThrowIfNull(path);
+        
+        await using var conn = await OpenConnectionAsync().ConfigureAwait(false);
         
         var count = await conn.ExecuteScalarAsync<int>(
             "SELECT COUNT(1) FROM image WHERE path = @Path",
-            new { Path = path });
+            new { Path = path }).ConfigureAwait(false);
 
         return count > 0;
     }
@@ -311,6 +334,7 @@ public partial class PostgreSQLDataStore
     /// </summary>
     public int UpdateViewed(IReadOnlyCollection<UpdateViewed> views)
     {
+        ArgumentNullException.ThrowIfNull(views);
         if (views.Count == 0) return 0;
 
         lock (_lock)
@@ -348,7 +372,7 @@ public partial class PostgreSQLDataStore
             catch (Exception ex)
             {
                 transaction.Rollback();
-                Logger.Log($"Failed to update viewed dates: {ex.Message}");
+                Logger.LogError($"Failed to update {views.Count} viewed dates", ex);
                 throw;
             }
         }
@@ -359,6 +383,9 @@ public partial class PostgreSQLDataStore
     /// </summary>
     public int UpdateImageFilename(int id, string path, string filename)
     {
+        ArgumentNullException.ThrowIfNull(path);
+        ArgumentNullException.ThrowIfNull(filename);
+        
         lock (_lock)
         {
             using var conn = OpenConnection();
@@ -373,11 +400,14 @@ public partial class PostgreSQLDataStore
     /// </summary>
     public async Task<int> UpdateImageFilenameAsync(int id, string path, string filename)
     {
-        await using var conn = await OpenConnectionAsync();
+        ArgumentNullException.ThrowIfNull(path);
+        ArgumentNullException.ThrowIfNull(filename);
+        
+        await using var conn = await OpenConnectionAsync().ConfigureAwait(false);
         
         return await conn.ExecuteAsync(
             "UPDATE image SET path = @Path, file_name = @FileName WHERE id = @Id",
-            new { Path = path, FileName = filename, Id = id });
+            new { Path = path, FileName = filename, Id = id }).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -405,6 +435,8 @@ public partial class PostgreSQLDataStore
     /// </summary>
     public IEnumerable<ImagePath> GetAllPathImages(string path)
     {
+        ArgumentNullException.ThrowIfNull(path);
+        
         using var conn = OpenConnection();
         
         var images = conn.Query<ImagePath>(
@@ -422,6 +454,8 @@ public partial class PostgreSQLDataStore
     /// </summary>
     public int CountAllPathImages(string path)
     {
+        ArgumentNullException.ThrowIfNull(path);
+        
         using var conn = OpenConnection();
         
         return conn.ExecuteScalar<int>(
@@ -486,6 +520,8 @@ public partial class PostgreSQLDataStore
     /// </summary>
     public IEnumerable<ImagePath> GetImagePaths(IEnumerable<int> ids)
     {
+        ArgumentNullException.ThrowIfNull(ids);
+        
         var idArray = ids.ToArray();
         if (idArray.Length == 0) yield break;
 
@@ -506,6 +542,9 @@ public partial class PostgreSQLDataStore
     /// </summary>
     public void UpdateImageFolderId(int id, string path, Dictionary<string, Folder> folderCache)
     {
+        ArgumentNullException.ThrowIfNull(path);
+        ArgumentNullException.ThrowIfNull(folderCache);
+        
         lock (_lock)
         {
             using var conn = OpenConnection();
@@ -514,7 +553,7 @@ public partial class PostgreSQLDataStore
             
             if (string.IsNullOrEmpty(dirName) || !EnsureFolderExists(conn, dirName, folderCache, out var folderId))
             {
-                Logger.Log($"Root folder not found for {dirName}");
+                Logger.LogWarn($"Root folder not found for {StringUtility.TruncatePath(dirName)}");
                 return;
             }
 

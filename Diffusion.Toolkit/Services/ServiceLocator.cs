@@ -40,20 +40,14 @@ public class ServiceLocator
     private static DatabaseWriterService? _databaseWriterService;
     private static MetadataScannerService? _metadataScannerService;
     private static FolderService? _folderService;
-    private static MessageService? _messageServuce;
     private static ProgressService? _progressService;
     private static DataStore? _thumbnailDataStore; // SQLite for thumbnail caching only
     private static PostgreSQLDataStore? _dataStore; // Primary PostgreSQL database
-
-    private static NavigationService? _navigationService;
 
     //private static ScanService? _scanManager;
     private static Settings? _settings;
     private static PreviewService? _previewService;
     private static ThumbnailNavigationService? _thumbnailNavigationService;
-    private static SearchService? _searchService;
-    private static ThumbnailCache? _thumbnailCache;
-    private static ThumbnailService? _thumbnailLoader;
     private static TaggingService? _taggingService;
     private static NotificationService? _notificationService;
     private static ScanningService? _scanningService;
@@ -61,12 +55,13 @@ public class ServiceLocator
     private static JoyTagService? _joyTagService;
     private static WDTagService? _wdTagService;
     private static JoyCaptionService? _joyCaptionService;
+    private static ModelResourceService? _modelResourceService;
 
     public static PostgreSQLDataStore? DataStore => _dataStore; // Primary PostgreSQL database
     public static DataStore? ThumbnailDataStore => _thumbnailDataStore; // SQLite for thumbnails only
     public static Settings? Settings => _settings;
-    public static ToastService ToastService { get; set; }
-    public static Dispatcher Dispatcher { get; set; }
+    public static ToastService? ToastService { get; set; }
+    public static Dispatcher? Dispatcher { get; set; }
 
     public static void SetDataStore(PostgreSQLDataStore dataStore)
     {
@@ -117,6 +112,11 @@ public class ServiceLocator
     public static ScanningService ScanningService
     {
         get { return _scanningService ??= new ScanningService(); }
+    }
+
+    public static ModelResourceService ModelResourceService
+    {
+        get { return _modelResourceService ??= new ModelResourceService(); }
     }
 
     public static MainModel? MainModel { get; set; }

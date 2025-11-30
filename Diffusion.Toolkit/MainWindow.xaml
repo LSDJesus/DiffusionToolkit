@@ -386,6 +386,7 @@
                 <MenuItem Header="{lex:Loc Menu.View.Models}" IsChecked="{Binding Settings.NavigationSection.ShowModels}" Command="{Binding ToggleVisibilityCommand}" CommandParameter="Navigation.Models"/>
                 <MenuItem Header="{lex:Loc Menu.View.Albums}" IsChecked="{Binding Settings.NavigationSection.ShowAlbums}" Command="{Binding ToggleVisibilityCommand}" CommandParameter="Navigation.Albums"/>
                 <MenuItem Header="{lex:Loc Menu.View.Queries}" IsChecked="{Binding Settings.NavigationSection.ShowQueries}" Command="{Binding ToggleVisibilityCommand}" CommandParameter="Navigation.Queries"/>
+                <MenuItem Header="{lex:Loc Menu.View.ModelLibrary}" IsChecked="{Binding Settings.NavigationSection.ShowModelLibrary}" Command="{Binding ToggleVisibilityCommand}" CommandParameter="Navigation.ModelLibrary"/>
                 <Separator/>
                 <MenuItem Header="{lex:Loc Menu.View.FitToPreview}" IsChecked="{Binding FitToPreview}" Command="{Binding ToggleFitToPreview}"  InputGestureText="Ctrl+Shift+F"/>
                 <MenuItem Header="{lex:Loc Menu.View.ActualSize}" IsChecked="{Binding ActualSize}" Command="{Binding ToggleActualSize}"  InputGestureText="Ctrl+Shift+A"/>
@@ -429,6 +430,8 @@
                     <MenuItem Header="{lex:Loc Menu.Tools.Folders.CleanRemovedFolders}" Command="{Binding CleanRemovedFoldersCommand}"/>
                 </MenuItem>
                 <MenuItem Header="{lex:Loc Menu.Tools.UnavailableFiles}" Command="{Binding UnavailableFilesCommand}"></MenuItem>
+                <Separator></Separator>
+                <MenuItem Header="{lex:Loc Menu.Tools.DuplicateDetection}" Click="DuplicateDetection_OnClick"/>
             </MenuItem>
             <MenuItem Header="{lex:Loc Menu.Help}">
                 <!--<MenuItem Header="{lex:Loc Menu.Help.About}" Command="{Binding AboutCommand}"/>-->

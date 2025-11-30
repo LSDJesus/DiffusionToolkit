@@ -118,7 +118,7 @@ namespace Diffusion.Toolkit
 
                 _model.ReloadHashes = new AsyncCommand<object>(async (o) =>
                 {
-                    LoadModels();
+                    await LoadModelsAsync();
                     await _messagePopupManager.Show("Models have been reloaded", "Diffusion Toolkit", PopupButtons.OK);
                 });
 
@@ -251,7 +251,8 @@ namespace Diffusion.Toolkit
                     }
                 }
 
-                Task.Run(async () =>
+                // Fire-and-forget: background task for scanning unavailable images
+                _ = Task.Run(async () =>
                 {
                     if (await ServiceLocator.ProgressService.TryStartTask())
                     {
@@ -297,6 +298,9 @@ namespace Diffusion.Toolkit
                     break;
                 case "Navigation.Queries":
                     _model.Settings.NavigationSection.ShowQueries = !_model.Settings.NavigationSection.ShowQueries;
+                    break;
+                case "Navigation.ModelLibrary":
+                    _model.Settings.NavigationSection.ShowModelLibrary = !_model.Settings.NavigationSection.ShowModelLibrary;
                     break;
             }
         }
@@ -557,10 +561,20 @@ namespace Diffusion.Toolkit
                 {
                     Logger.Log($"PostgreSQL connection attempt {attempt}/{maxRetries}...");
                     pgDataStore = new PostgreSQLDataStore(postgresConnectionString);
+                    
+                    // Set active schema from settings BEFORE Create() so migrations use correct schema
+                    // Default to "public" which is the PostgreSQL default
+                    pgDataStore.CurrentSchema = _settings.DatabaseSchema ?? "public";
+                    
                     await pgDataStore.Create(() => null, _ => { });
                     
-                    // Set active schema from settings (now properly loaded)
-                    pgDataStore.CurrentSchema = _settings.DatabaseSchema ?? "public";
+                    // Sync settings with actual schema (Create() may have detected fallback)
+                    // This prevents the Settings page from resetting it back to the wrong value
+                    if (_settings.DatabaseSchema != pgDataStore.CurrentSchema)
+                    {
+                        Logger.Log($"Syncing settings schema: '{_settings.DatabaseSchema}' -> '{pgDataStore.CurrentSchema}'");
+                        _settings.DatabaseSchema = pgDataStore.CurrentSchema;
+                    }
                     
                     ServiceLocator.SetDataStore(pgDataStore);
                     Logger.Log("✓ PostgreSQL connection established");
@@ -731,7 +745,8 @@ namespace Diffusion.Toolkit
                 {
                     Dispatcher.Invoke(() =>
                     {
-                        ((MessagePopupHandle)handle).CloseAsync();
+                        // Fire-and-forget: intentionally not awaited - popup close is best-effort
+                        _ = ((MessagePopupHandle)handle).CloseAsync();
                         //ServiceLocator.MessageService.CloseHandle((MessagePopupHandle)handle);
                     });
                 }
@@ -1098,120 +1113,139 @@ namespace Diffusion.Toolkit
 
         private ICollection<Model> _modelsCollection;
         private Prompts _prompts;
+        private bool _isLoadingModels = false;
 
         private void LoadModels()
         {
-            if (!string.IsNullOrEmpty(_settings.ModelRootPath) && Directory.Exists(_settings.ModelRootPath))
-            {
-                _modelsCollection = ModelScanner.Scan(_settings.ModelRootPath).ToList();
-            }
-            else
-            {
-                _modelsCollection = new List<Model>();
-            }
+            // Fire and forget - non-blocking model loading
+            _ = LoadModelsAsync();
+        }
 
-            if (!string.IsNullOrEmpty(_settings.HashCache))
+        private async Task LoadModelsAsync()
+        {
+            // Prevent concurrent model loading
+            if (_isLoadingModels)
+                return;
+
+            _isLoadingModels = true;
+
+            try
             {
-                try
+                // Run the heavy file I/O operations on a background thread
+                var (modelsCollection, otherModels) = await Task.Run(() =>
                 {
-                    string text = File.ReadAllText(_settings.HashCache);
-
-                    // Fix unquoted "NaN" strings, which sometimes show up in SafeTensor metadata.
-                    text = text.Replace("NaN", "null");
-
-                    var hashes = JsonSerializer.Deserialize<Hashes>(text);
-                    var modelLookup = _modelsCollection.ToDictionary(m => m.Path);
-
-                    var index = "checkpoint/".Length;
-
-                    foreach (var hash in hashes.hashes)
+                    ICollection<Model> models;
+                    if (!string.IsNullOrEmpty(_settings.ModelRootPath) && Directory.Exists(_settings.ModelRootPath))
                     {
-                        if (index < hash.Key.Length)
-                        {
-                            var path = hash.Key.Substring(index);
-
-                            if (modelLookup.TryGetValue(path, out var model))
-                            {
-                                model.SHA256 = hash.Value.sha256;
-                            }
-                            else
-                            {
-                                _modelsCollection.Add(new Model()
-                                {
-                                    Filename = Path.GetFileNameWithoutExtension(path),
-                                    Path = path,
-                                    SHA256 = hash.Value.sha256,
-                                    IsLocal = true
-                                });
-
-                            }
-                        }
+                        models = ModelScanner.Scan(_settings.ModelRootPath).ToList();
                     }
-                }
-                catch (Exception e)
-                {
-                    MessageBox.Show($"Error loading JSON file '{_settings.HashCache}':\n{e.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Information);
-                }
-
-                //foreach (var model in _modelsCollection.ToList())
-                //{
-                //    if (hashes.hashes.TryGetValue("checkpoint/" + model.Path, out var hash))
-                //    {
-                //        model.SHA256 = hash.sha256;
-                //    }
-                //}
-            }
-
-            var otherModels = new List<Model>();
-
-            if (File.Exists("models.json"))
-            {
-                var json = File.ReadAllText(Path.Combine(AppDir, "models.json"));
-
-                var options = new JsonSerializerOptions()
-                {
-                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-                    Converters = { new JsonStringEnumConverter() }
-                };
-
-                try
-                {
-                    var civitAiModels = JsonSerializer.Deserialize<LiteModelCollection>(json, options);
-
-                    foreach (var model in civitAiModels.Models)
+                    else
                     {
-                        foreach (var modelVersion in model.ModelVersions)
-                        {
-                            foreach (var versionFile in modelVersion.Files)
-                            {
-                                otherModels.Add(new Model()
-                                {
-                                    Filename = Path.GetFileNameWithoutExtension(versionFile.Name),
-                                    Hash = versionFile.Hashes.AutoV1,
-                                    SHA256 = versionFile.Hashes.SHA256,
-                                });
-                            }
-                        }
-
+                        models = new List<Model>();
                     }
 
-                }
-                catch (Exception ex)
+                    // Load hash cache
+                    if (!string.IsNullOrEmpty(_settings.HashCache) && File.Exists(_settings.HashCache))
+                    {
+                        try
+                        {
+                            string text = File.ReadAllText(_settings.HashCache);
+
+                            // Fix unquoted "NaN" strings, which sometimes show up in SafeTensor metadata.
+                            text = text.Replace("NaN", "null");
+
+                            var hashes = JsonSerializer.Deserialize<Hashes>(text);
+                            var modelLookup = models.ToDictionary(m => m.Path);
+
+                            var index = "checkpoint/".Length;
+
+                            foreach (var hash in hashes.hashes)
+                            {
+                                if (index < hash.Key.Length)
+                                {
+                                    var path = hash.Key.Substring(index);
+
+                                    if (modelLookup.TryGetValue(path, out var model))
+                                    {
+                                        model.SHA256 = hash.Value.sha256;
+                                    }
+                                    else
+                                    {
+                                        models.Add(new Model()
+                                        {
+                                            Filename = Path.GetFileNameWithoutExtension(path),
+                                            Path = path,
+                                            SHA256 = hash.Value.sha256,
+                                            IsLocal = true
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                        catch (Exception e)
+                        {
+                            // Log error but don't block - will show message on UI thread
+                            Logger.Log($"Error loading hash cache: {e.Message}");
+                        }
+                    }
+
+                    // Load other models from models.json
+                    var others = new List<Model>();
+                    var modelsJsonPath = Path.Combine(AppDir, "models.json");
+                    if (File.Exists(modelsJsonPath))
+                    {
+                        try
+                        {
+                            var json = File.ReadAllText(modelsJsonPath);
+
+                            var options = new JsonSerializerOptions()
+                            {
+                                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                                Converters = { new JsonStringEnumConverter() }
+                            };
+
+                            var civitAiModels = JsonSerializer.Deserialize<LiteModelCollection>(json, options);
+
+                            foreach (var model in civitAiModels.Models)
+                            {
+                                foreach (var modelVersion in model.ModelVersions)
+                                {
+                                    foreach (var versionFile in modelVersion.Files)
+                                    {
+                                        others.Add(new Model()
+                                        {
+                                            Filename = Path.GetFileNameWithoutExtension(versionFile.Name),
+                                            Hash = versionFile.Hashes.AutoV1,
+                                            SHA256 = versionFile.Hashes.SHA256,
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Logger.Log(ex.Message);
+                        }
+                    }
+
+                    return (models, others);
+                });
+
+                _modelsCollection = modelsCollection;
+                _allModels = _modelsCollection.Concat(otherModels).ToList();
+
+                // Update UI on dispatcher thread
+                await Dispatcher.InvokeAsync(() =>
                 {
-                    Logger.Log(ex.Message);
-                }
-
-
+                    _search.SetModels(_allModels);
+                    _models.SetModels(_modelsCollection);
+                    QueryBuilder.SetModels(_allModels);
+                });
             }
-
-            _allModels = _modelsCollection.Concat(otherModels).ToList();
-
-
-
-            _search.SetModels(_allModels);
-            _models.SetModels(_modelsCollection);
-
-            QueryBuilder.SetModels(_allModels);
+            finally
+            {
+                _isLoadingModels = false;
+            }
         }
 
         private ICollection<Model> _allModels = new List<Model>();

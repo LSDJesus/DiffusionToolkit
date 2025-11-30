@@ -8,14 +8,17 @@ public class NavigationSectionSettings : SettingsContainer
     private AccordionState _modelState;
     private AccordionState _albumState;
     private AccordionState _queryState;
+    private AccordionState _modelLibraryState;
     private bool _showFolders;
     private bool _showModels;
     private bool _showAlbums;
     private bool _showQueries;
+    private bool _showModelLibrary;
     private double _folderHeight;
     private double _modelHeight;
     private double _albumHeight;
     private double _queryHeight;
+    private double _modelLibraryHeight;
     private bool _showSection;
 
     public NavigationSectionSettings()
@@ -23,6 +26,7 @@ public class NavigationSectionSettings : SettingsContainer
         FolderHeight = Double.PositiveInfinity;
         ModelHeight = Double.PositiveInfinity;
         AlbumHeight = Double.PositiveInfinity;
+        ModelLibraryHeight = Double.PositiveInfinity;
     }
 
     public NavigationSectionSettings(bool initialize)
@@ -33,6 +37,7 @@ public class NavigationSectionSettings : SettingsContainer
             ShowModels = true;
             ShowAlbums = true;
             ShowQueries = true;
+            ShowModelLibrary = true;
         }
     }
 
@@ -85,6 +90,18 @@ public class NavigationSectionSettings : SettingsContainer
         set => UpdateValue(ref _queryHeight, value);
     }
 
+    public AccordionState ModelLibraryState
+    {
+        get => _modelLibraryState;
+        set => UpdateValue(ref _modelLibraryState, value);
+    }
+
+    public double ModelLibraryHeight
+    {
+        get => _modelLibraryHeight;
+        set => UpdateValue(ref _modelLibraryHeight, value);
+    }
+
     public bool ShowFolders
     {
         get => _showFolders;
@@ -125,7 +142,17 @@ public class NavigationSectionSettings : SettingsContainer
         }
     }
 
-    private bool HasVisibilePanels => _showFolders || _showModels || _showAlbums || _showQueries;
+    public bool ShowModelLibrary
+    {
+        get => _showModelLibrary;
+        set
+        {
+            UpdateValue(ref _showModelLibrary, value);
+            UpdateShowSection();
+        }
+    }
+
+    private bool HasVisibilePanels => _showFolders || _showModels || _showAlbums || _showQueries || _showModelLibrary;
 
     private void UpdateShowSection()
     {

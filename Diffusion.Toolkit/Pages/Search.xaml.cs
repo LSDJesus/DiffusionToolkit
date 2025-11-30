@@ -550,13 +550,16 @@ namespace Diffusion.Toolkit.Pages
             _model.NavigationSection.ModelHeight = _settings.NavigationSection.ModelHeight;
             _model.NavigationSection.AlbumHeight = _settings.NavigationSection.AlbumHeight;
             _model.NavigationSection.QueryState = _settings.NavigationSection.QueryState;
+            _model.NavigationSection.ModelLibraryState = _settings.NavigationSection.ModelLibraryState;
+            _model.NavigationSection.ModelLibraryHeight = _settings.NavigationSection.ModelLibraryHeight;
 
             //_model.NavigationSection.ShowFolders = _settings.NavigationSection.ShowFolders;
             //_model.NavigationSection.ShowModels = _settings.NavigationSection.ShowModels;
             //_model.NavigationSection.ShowAlbums = _settings.NavigationSection.ShowAlbums;
-            this.Loaded += (sender, args) =>
+            this.Loaded += async (sender, args) =>
             {
                 SetAccordionResizeableState();
+                await InitializeModelLibraryAsync();
             };
 
             SetNavigationVisible(_model.MainModel.Settings.NavigationSection.ShowSection);
@@ -752,14 +755,17 @@ namespace Diffusion.Toolkit.Pages
 
         public void SearchImages(QueryOptions? queryOptions, bool focus = false)
         {
+            Logger.Log($"SearchImages called - checking RootFolders");
             if (!ServiceLocator.FolderService.RootFolders.Any())
             {
+                Logger.Log($"SearchImages: No RootFolders found - returning early");
                 _model.HasNoImagePaths = true;
                 //MessageBox.Show(GetLocalizedText("Messages.Errors.NoImagePaths"), GetLocalizedText("Messages.Captions.Error"),
                 //    MessageBoxButton.OK, MessageBoxImage.Warning);
                 ClearResults();
                 return;
             }
+            Logger.Log($"SearchImages: Found {ServiceLocator.FolderService.RootFolders.Count()} RootFolders");
 
             _model.HasNoImagePaths = false;
 
@@ -873,6 +879,7 @@ namespace Diffusion.Toolkit.Pages
 
                 Task.Run(() =>
                 {
+                    Logger.Log($"SearchImages: Task.Run started - QueryOptions.Folder={QueryOptions.Folder}, Query={QueryOptions.Query}");
 
                     if (!string.IsNullOrEmpty(QueryOptions.Query))
                     {
@@ -895,7 +902,17 @@ namespace Diffusion.Toolkit.Pages
                         _currentModeSettings.LastQuery = QueryOptions.Query;
                     }
 
-                    (count, size) = ServiceLocator.DataStore.CountAndFileSizeEx(QueryOptions);
+                    Logger.Log($"SearchImages: Calling CountAndFileSizeEx...");
+                    try
+                    {
+                        (count, size) = ServiceLocator.DataStore.CountAndFileSizeEx(QueryOptions);
+                        Logger.Log($"SearchImages: CountAndFileSizeEx returned count={count}, size={size}");
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Log($"SearchImages ERROR in CountAndFileSizeEx: {ex.Message}\r\n{ex.StackTrace}");
+                        throw;
+                    }
 
 
 
@@ -1352,6 +1369,7 @@ namespace Diffusion.Toolkit.Pages
 
         private List<ImageEntry> GetSearchResults(long rId)
         {
+            Logger.Log($"GetSearchResults called - Page={_model.Page}, SortBy={_model.SortBy}");
             // Guard against negative offset when Page is 0 (empty results)
             var page = Math.Max(1, _model.Page);
             
@@ -1401,6 +1419,7 @@ namespace Diffusion.Toolkit.Pages
                 count++;
             }
 
+            Logger.Log($"GetSearchResults returning {images.Count} images");
             return images;
 
         }

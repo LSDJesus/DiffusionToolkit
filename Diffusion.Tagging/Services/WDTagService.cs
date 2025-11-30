@@ -34,12 +34,27 @@ public class WDTagService : IDisposable
         if (_isInitialized)
             return;
 
-        // Create session options with GPU support
-        var sessionOptions = new SessionOptions();
-        sessionOptions.AppendExecutionProvider_CUDA(0);
-        sessionOptions.AppendExecutionProvider_CPU();
-
-        _session = new InferenceSession(_modelPath, sessionOptions);
+        // Create session options with GPU support, fallback to CPU if CUDA fails
+        var sessionOptions = new SessionOptions
+        {
+            GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL
+        };
+        
+        // Try GPU first, fallback to CPU if it fails
+        try
+        {
+            sessionOptions.AppendExecutionProvider_CUDA(0);
+            _session = new InferenceSession(_modelPath, sessionOptions);
+        }
+        catch
+        {
+            // CUDA not available, fallback to CPU-only
+            sessionOptions = new SessionOptions
+            {
+                GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL
+            };
+            _session = new InferenceSession(_modelPath, sessionOptions);
+        }
 
         await LoadTagsAsync();
 

@@ -221,6 +221,12 @@ public class ThumbnailService
                                 thumbnail = GetThumbnailImmediate(job.Data.Path, job.Data.Width, job.Data.Height, Size);
                             }
                         }
+                        else if (job.Data.EntryType == EntryType.Model)
+                        {
+                            // Model thumbnails should already be cached during scanning
+                            // If not found, use default model icon
+                            thumbnail = GetDefaultModelThumbnailImmediate();
+                        }
                         else
                         {
                             thumbnail = GetDefaultThumbnailImmediate();
@@ -252,6 +258,19 @@ public class ThumbnailService
                             continue;
                         }
                         thumbnail = GetThumbnailImmediate(job.Data.Path, job.Data.Width, job.Data.Height, Size);
+                    }
+                    else if (job.Data.EntryType == EntryType.Model)
+                    {
+                        // Model thumbnails should already be cached during scanning
+                        // Try to get from cache, otherwise use default
+                        if (ThumbnailCache.Instance.TryGetThumbnail(job.Data.Path, Size, out var cachedThumb) && cachedThumb is BitmapImage bmp)
+                        {
+                            thumbnail = bmp;
+                        }
+                        else
+                        {
+                            thumbnail = GetDefaultModelThumbnailImmediate();
+                        }
                     }
                     else
                     {
@@ -390,6 +409,16 @@ public class ThumbnailService
         bitmap.EndInit();
         bitmap.Freeze();
         return bitmap;
+    }
+
+    /// <summary>
+    /// Get a default thumbnail for model resources without a preview
+    /// </summary>
+    private BitmapImage GetDefaultModelThumbnailImmediate()
+    {
+        // For now, use the same default as folders
+        // TODO: Add a specific model icon resource
+        return GetDefaultThumbnailImmediate();
     }
 
     /// <summary>

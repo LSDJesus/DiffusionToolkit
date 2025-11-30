@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using Diffusion.Common;
 using Diffusion.Database.Models;
 using Diffusion.Database.PostgreSQL;
 using Diffusion.Toolkit.Services;
@@ -197,9 +198,11 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
                             (Tag: kvp.Key, Confidence: kvp.Value.Average())
                         ).ToList();
 
+                        Logger.Log($"Tagging combined (JoyTag+WDTag): {deduplicatedTags.Count} tags for image {imageId}");
                         await dataStore.StoreImageTagsAsync(imageId, deduplicatedTags, "joytag+wdv3large");
                         
                         // Write tags to image metadata if enabled
+                        Logger.Log($"AutoWriteMetadata={ServiceLocator.Settings?.AutoWriteMetadata}, WriteTagsToMetadata={ServiceLocator.Settings?.WriteTagsToMetadata}");
                         if (ServiceLocator.Settings?.AutoWriteMetadata == true && 
                             ServiceLocator.Settings?.WriteTagsToMetadata == true)
                         {
@@ -226,10 +229,12 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
                         tasks.Add(Task.Run(async () =>
                         {
                             var tags = await ServiceLocator.JoyTagService!.TagImageAsync(image.Path);
+                            Logger.Log($"JoyTag: {tags.Count} tags for image {imageId}");
                             var tagTuples = tags.Select(t => (t.Tag, t.Confidence)).ToList();
                             await dataStore.StoreImageTagsAsync(imageId, tagTuples, "joytag");
                             
                             // Write tags to image metadata if enabled
+                            Logger.Log($"AutoWriteMetadata={ServiceLocator.Settings?.AutoWriteMetadata}, WriteTagsToMetadata={ServiceLocator.Settings?.WriteTagsToMetadata}");
                             if (ServiceLocator.Settings?.AutoWriteMetadata == true && 
                                 ServiceLocator.Settings?.WriteTagsToMetadata == true)
                             {

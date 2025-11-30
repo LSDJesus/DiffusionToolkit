@@ -164,7 +164,8 @@ public class ScanningService
                         }
                         ServiceLocator.FolderService.RefreshData();
                         ServiceLocator.SearchService.RefreshResults();
-                        ServiceLocator.FolderService.LoadFolders();
+                        // Fire-and-forget: folder refresh runs asynchronously in background
+                        _ = ServiceLocator.FolderService.LoadFolders();
                     }
                 },
                 cancellationToken);
@@ -180,6 +181,7 @@ public class ScanningService
 
     public async Task ScanWatchedFolders(bool updateImages, bool reportIfNone, CancellationToken cancellationToken)
     {
+        Logger.Log($"ScanWatchedFolders called - updateImages={updateImages}, reportIfNone={reportIfNone}");
         bool foldersUnavailable = false;
         bool foldersRestored = false;
 
@@ -226,15 +228,21 @@ public class ScanningService
                 }
             }
 
+            Logger.Log($"ScanWatchedFolders: Gathered {filesToScan.Count} files to scan, updateImages={updateImages}");
+
             // Phase 1: Quick scan - add basic file info rapidly (only for new files)
             if (!updateImages)
             {
+                Logger.Log($"ScanWatchedFolders: Entering QUICK SCAN path with {filesToScan.Count} files");
                 var addedCount = await QuickScanFiles(filesToScan, cancellationToken);
 
                 if (addedCount > 0)
                 {
                     Logger.Log($"Quick scan complete: {addedCount} new files indexed. Use 'Rebuild' to extract full metadata.");
                     ServiceLocator.ToastService.Toast($"{addedCount} images quick-scanned. Use Rebuild for full metadata extraction.", "Quick Scan Complete");
+                    
+                    // Refresh UI immediately after quick scan so images appear right away
+                    ServiceLocator.SearchService.RefreshResults();
                 }
                 else
                 {

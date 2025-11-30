@@ -9,11 +9,13 @@ namespace Diffusion.Database.PostgreSQL;
 public class PostgreSQLMigrations
 {
     private readonly NpgsqlConnection _connection;
-    private const int CurrentVersion = 12;
+    private readonly string _schema;
+    private const int CurrentVersion = 13;
 
-    public PostgreSQLMigrations(NpgsqlConnection connection)
+    public PostgreSQLMigrations(NpgsqlConnection connection, string schema = "public")
     {
         _connection = connection;
+        _schema = schema;
     }
 
     public async Task UpdateAsync()
@@ -43,6 +45,7 @@ public class PostgreSQLMigrations
         if (currentVersion < 10) await ApplyV10Async();
         if (currentVersion < 11) await ApplyV11Async();
         if (currentVersion < 12) await ApplyV12Async();
+        if (currentVersion < 13) await ApplyV13Async();
 
         // Only insert version if migrations were applied
         if (currentVersion < CurrentVersion)
@@ -826,6 +829,115 @@ public class PostgreSQLMigrations
             
             -- Update all existing images to DeepScan (they already have metadata)
             UPDATE image SET scan_phase = 1 WHERE scan_phase = 0 OR scan_phase IS NULL;
+        ";
+
+        await _connection.ExecuteAsync(sql);
+    }
+
+    private async Task ApplyV13Async()
+    {
+        // Model Resource Library - unified table for checkpoints, LoRAs, embeddings, VAEs, etc.
+        // Integrates with Civitai API for metadata enrichment
+        var sql = @"
+            -- Unified model resource library
+            CREATE TABLE IF NOT EXISTS model_resource (
+                id SERIAL PRIMARY KEY,
+                
+                -- File identification
+                file_path TEXT NOT NULL UNIQUE,
+                file_name TEXT NOT NULL,
+                file_hash TEXT,                          -- SHA256 or AutoV2 hash for Civitai lookup
+                file_size BIGINT,
+                
+                -- Resource classification
+                resource_type TEXT NOT NULL,             -- 'checkpoint', 'lora', 'embedding', 'vae', 'controlnet', 'upscaler', 'unet', 'clip', 'diffusion_model'
+                base_model TEXT,                         -- 'SDXL', 'Pony', 'Illustrious', 'SD1.5', 'Flux', 'SD3'
+                
+                -- Local metadata (from safetensors __metadata__ or .json sidecar)
+                local_metadata JSONB,
+                
+                -- Preview image flag (actual image stored in SQLite thumbnail cache)
+                has_preview_image BOOLEAN DEFAULT FALSE,
+                
+                -- Civitai enrichment (fetched via hash lookup)
+                civitai_id INT,
+                civitai_version_id INT,
+                civitai_name TEXT,
+                civitai_description TEXT,
+                civitai_tags TEXT[],
+                civitai_nsfw BOOLEAN DEFAULT FALSE,
+                civitai_trained_words TEXT[],            -- Trigger words for LoRAs
+                civitai_base_model TEXT,                 -- Civitai's base model classification
+                civitai_metadata JSONB,                  -- Full Civitai response cache
+                
+                -- Embeddings for similarity search (LoRAs/embeddings with CLIP vectors)
+                clip_l_embedding vector(768),
+                clip_g_embedding vector(1280),
+                
+                -- Status tracking
+                unavailable BOOLEAN DEFAULT FALSE,       -- File no longer exists
+                scanned_at TIMESTAMP DEFAULT NOW(),
+                civitai_fetched_at TIMESTAMP,
+                created_at TIMESTAMP DEFAULT NOW()
+            );
+
+            -- Add has_preview_image column if it doesn't exist (migration for existing databases)
+            DO $$ 
+            BEGIN 
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                               WHERE table_name = 'model_resource' AND column_name = 'has_preview_image') 
+                THEN 
+                    ALTER TABLE model_resource ADD COLUMN has_preview_image BOOLEAN DEFAULT FALSE;
+                END IF; 
+            END $$;
+
+            -- Indexes for model resource lookups
+            CREATE INDEX IF NOT EXISTS idx_model_resource_hash ON model_resource(file_hash);
+            CREATE INDEX IF NOT EXISTS idx_model_resource_type ON model_resource(resource_type);
+            CREATE INDEX IF NOT EXISTS idx_model_resource_base_model ON model_resource(base_model);
+            CREATE INDEX IF NOT EXISTS idx_model_resource_civitai_id ON model_resource(civitai_id);
+            CREATE INDEX IF NOT EXISTS idx_model_resource_name ON model_resource(file_name);
+            CREATE INDEX IF NOT EXISTS idx_model_resource_unavailable ON model_resource(unavailable);
+            
+            -- Vector indexes for LoRA/embedding similarity
+            CREATE INDEX IF NOT EXISTS idx_model_resource_clip_l ON model_resource 
+                USING ivfflat (clip_l_embedding vector_cosine_ops) WITH (lists = 50)
+                WHERE clip_l_embedding IS NOT NULL;
+            CREATE INDEX IF NOT EXISTS idx_model_resource_clip_g ON model_resource 
+                USING ivfflat (clip_g_embedding vector_cosine_ops) WITH (lists = 50)
+                WHERE clip_g_embedding IS NOT NULL;
+
+            -- Image-to-resource junction table (tracks which resources were used in each image)
+            CREATE TABLE IF NOT EXISTS image_resource (
+                id SERIAL PRIMARY KEY,
+                image_id INT NOT NULL REFERENCES image(id) ON DELETE CASCADE,
+                resource_id INT REFERENCES model_resource(id) ON DELETE SET NULL,
+                
+                -- Resource reference (preserved even if resource file deleted)
+                resource_name TEXT NOT NULL,             -- 'BadPonyHD', 'my_lora', 'SDXL_base'
+                resource_type TEXT NOT NULL,             -- 'lora', 'embedding', 'checkpoint', 'vae'
+                strength DECIMAL(5,3),                   -- For LoRAs: weight value
+                
+                created_at TIMESTAMP DEFAULT NOW(),
+                UNIQUE(image_id, resource_name, resource_type)
+            );
+
+            -- Indexes for image-resource queries
+            CREATE INDEX IF NOT EXISTS idx_image_resource_image ON image_resource(image_id);
+            CREATE INDEX IF NOT EXISTS idx_image_resource_resource ON image_resource(resource_id);
+            CREATE INDEX IF NOT EXISTS idx_image_resource_name ON image_resource(resource_name);
+            CREATE INDEX IF NOT EXISTS idx_image_resource_type ON image_resource(resource_type);
+            
+            -- Model folder configuration table
+            CREATE TABLE IF NOT EXISTS model_folder (
+                id SERIAL PRIMARY KEY,
+                path TEXT NOT NULL UNIQUE,
+                resource_type TEXT NOT NULL,             -- Default type for this folder
+                recursive BOOLEAN DEFAULT TRUE,
+                enabled BOOLEAN DEFAULT TRUE,
+                last_scanned TIMESTAMP,
+                created_at TIMESTAMP DEFAULT NOW()
+            );
         ";
 
         await _connection.ExecuteAsync(sql);

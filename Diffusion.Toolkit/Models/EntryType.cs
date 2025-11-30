@@ -7,4 +7,5 @@ public enum EntryType
     RootFolder,
     SpecialFolder,
     Separator,
+    Model,  // Model resource (LoRA, checkpoint, embedding, etc.)
 }

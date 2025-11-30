@@ -1,4 +1,4 @@
-# Diffusion Toolkit (Enhanced Fork)
+# Diffusion Toolkit (Enhanced Fork) v1.9.1
 
 Diffusion Toolkit is an image metadata-indexer and viewer for AI-generated images. It helps you organize, search, and sort your ever-growing collection of AI art.
 
@@ -15,7 +15,9 @@ Diffusion Toolkit is an image metadata-indexer and viewer for AI-generated image
 - **Drag & Drop**: Move/copy images between folders
 
 ### Supported Formats
-- JPG/JPEG (EXIF), PNG, WebP, TXT sidecars
+- **Images**: JPG/JPEG (EXIF), PNG, WebP, AVIF, GIF, BMP, TIFF
+- **Video**: MP4, AVI, WebM (with FFmpeg for thumbnails)
+- **Sidecars**: TXT metadata files
 
 ### Supported AI Frameworks
 AUTOMATIC1111, InvokeAI, NovelAI, Stable Diffusion, EasyDiffusion, Fooocus, RuinedFooocus, FooocusMRE, Stable Swarm, ComfyUI, Tensor.Art, SDNext
@@ -32,6 +34,7 @@ AUTOMATIC1111, InvokeAI, NovelAI, Stable Diffusion, EasyDiffusion, Fooocus, Ruin
 - Complete database layer rewrite to PostgreSQL 16+ with pgvector extension
 - Docker-based deployment (`docker-compose.yml` included)
 - Connection pooling for high concurrency (50 connections)
+- Thread-safe caching to prevent connection pool exhaustion
 - Snake_case column naming convention for PostgreSQL compatibility
 - 11 partial class files for modular DataStore organization
 
@@ -56,6 +59,25 @@ AUTOMATIC1111, InvokeAI, NovelAI, Stable Diffusion, EasyDiffusion, Fooocus, Ruin
 - Background metadata extraction doesn't block usage
 - Progressive enhancement as metadata becomes available
 
+## 🏷️ AI Auto-Tagging & Captioning (NEW)
+
+**Why**: Manually tagging thousands of images is impractical.
+
+**What Changed**:
+- **JoyTag**: Fast booru-style tag prediction using ONNX Runtime
+- **WDv3 Large**: High-accuracy anime/illustration tagging
+- **JoyCaption**: Natural language image descriptions via LLamaSharp
+- GPU acceleration with CUDA 12.x and cuDNN 9.x support
+- Configurable confidence thresholds
+- Batch processing with progress tracking
+- Tags stored in PostgreSQL and optionally written to image metadata
+
+**Benefits**:
+- Automatic tag generation for searchability
+- Natural language captions for semantic search
+- GPU-accelerated inference (10-50 images/second)
+- No external API required - runs locally
+
 ## 🧠 Multi-Modal Embedding System (5 Vectors)
 
 **Why**: Enable semantic search and ComfyUI workflow integration.
@@ -76,21 +98,6 @@ Added 5 embedding vectors per image stored in pgvector:
 - Natural language search ("dramatic lighting at sunset")
 - Direct export to ComfyUI for generating variations
 - Multi-modal hybrid search (text + visual combined)
-
-## 🎥 Video File Support
-
-**Why**: Many AI tools now generate video content (AnimateDiff, SVD, etc.)
-
-**What Changed**:
-- Catalog MP4, AVI, WEBM alongside images
-- Extract video metadata (duration, codec, framerate, bitrate)
-- FFmpeg-based thumbnail generation from first frame
-- Visual 🎥 indicator in gallery view
-- `is_video` flag and 6 new metadata columns
-
-**Benefits**:
-- Unified library for all AI-generated media
-- Search and organize videos with same workflow as images
 
 ## 🔄 Batch Image Conversion (WebP)
 
@@ -117,6 +124,7 @@ Added 5 embedding vectors per image stored in pgvector:
 - `DatabaseWriterService` with async queue (System.Threading.Channels)
 - `ScanningService` with cancellation token propagation
 - Folder cache pre-loading to avoid query conflicts during bulk operations
+- Thread-safe lazy initialization for FileSystemWatcher handlers
 
 ### Code Organization
 - Partial classes split by feature (MainWindow.xaml.*.cs)
@@ -128,16 +136,32 @@ Added 5 embedding vectors per image stored in pgvector:
 - Global exception handler with logging
 - Toast notifications for user feedback
 - Graceful degradation when optional features unavailable
+- Diagnostic logging for troubleshooting
 
 ---
 
 ## Requirements
 
 - **Windows 10/11** (64-bit only)
-- **.NET 6 Desktop Runtime**
+- **.NET 6 Desktop Runtime** (or .NET 10 for latest builds)
 - **Docker Desktop** (for PostgreSQL + pgvector)
+- **CUDA 12.x + cuDNN 9.x** (optional, for GPU-accelerated tagging)
 - **FFmpeg** (optional, for video thumbnails)
 - **~60GB disk space** for 1M images with all embeddings
+
+### GPU Acceleration Setup
+
+For JoyTag, WDv3, and JoyCaption GPU acceleration:
+1. Install CUDA Toolkit 12.x
+2. Install cuDNN v9.x
+3. Set environment variables:
+   ```
+   CUDA_HOME=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.x
+   Add to PATH: %CUDA_HOME%\bin
+   Add to PATH: C:\Program Files\NVIDIA\CUDNN\v9.x\bin
+   ```
+
+See `docs/ONNX_GPU_SETUP.md` for detailed instructions.
 
 ## Quick Start
 
@@ -162,12 +186,36 @@ docker-compose up -d
 ## Documentation
 
 See the `/docs` folder for detailed guides:
+
+### Core Features
 - `BATCH_CONVERSION.md` - WebP conversion feature
-- `EMBEDDING_ARCHITECTURE.md` - Multi-modal embedding system
-- `COMFYUI_INTEGRATION.md` - ComfyUI workflow export
+- `VIDEO_SUPPORT.md` - Video file support with FFmpeg thumbnails
 - `TWO_PHASE_SCANNING.md` - Scanning system details
-- `VIDEO_SUPPORT.md` - Video file handling
+- `SIDECAR_AND_METADATA_EXTRACTION.md` - Metadata handling
+
+### AI & Embeddings
+- `EMBEDDING_ARCHITECTURE.md` - Multi-modal embedding system
+- `EMBEDDING_SYSTEM_STATUS.md` - Current implementation status
+- `JOYCAPTION_INTEGRATION_GUIDE.md` - JoyCaption setup
+- `ONNX_GPU_SETUP.md` - GPU acceleration configuration
+- `TEXTUAL_EMBEDDING_LIBRARY.md` - Embedding model details
+
+### Integration
+- `COMFYUI_INTEGRATION.md` - ComfyUI workflow export
+
+### Database
+- `README.PostgreSQL.md` - PostgreSQL setup guide
 - `POSTGRESQL_MIGRATION_STATUS.md` - Migration progress
+
+---
+
+## Roadmap
+
+- [x] Video file support (MP4, WebM, AVI) - ✅ **Complete**
+- [x] FFmpeg thumbnail generation for videos - ✅ **Complete**
+- [x] Duplicate detection using image embeddings - ✅ **Complete**
+- [ ] Batch metadata editing
+- [ ] Plugin system for custom metadata extractors
 
 ---
 

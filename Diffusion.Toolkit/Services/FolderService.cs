@@ -44,6 +44,8 @@ namespace Diffusion.Toolkit.Services
 
     public class FolderService
     {
+        private readonly object _cacheLock = new object();
+        
         private string GetLocalizedText(string key)
         {
             return (string)JsonLocalizationProvider.Instance.GetLocalizedObject(key, null, CultureInfo.InvariantCulture);
@@ -217,9 +219,31 @@ namespace Diffusion.Toolkit.Services
         {
             get
             {
-                return _excludedOrArchivedFolderPaths ?? (_excludedOrArchivedFolderPaths = ServiceLocator.DataStore
-                    .GetExcludedFolders().Concat(ServiceLocator.DataStore.GetArchivedFolders()).Select(d => d.Path)
-                    .ToHashSet());
+                // Double-check locking pattern for thread-safe lazy initialization
+                var cache = _excludedOrArchivedFolderPaths;
+                if (cache != null)
+                    return cache;
+                    
+                lock (_cacheLock)
+                {
+                    // Check again after acquiring lock
+                    if (_excludedOrArchivedFolderPaths != null)
+                        return _excludedOrArchivedFolderPaths;
+                        
+                    try
+                    {
+                        _excludedOrArchivedFolderPaths = ServiceLocator.DataStore
+                            .GetExcludedFolders().Concat(ServiceLocator.DataStore.GetArchivedFolders()).Select(d => d.Path)
+                            .ToHashSet();
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Log($"Error loading ExcludedOrArchivedFolderPaths: {ex.Message}");
+                        // Return empty set on error to prevent repeated failures
+                        _excludedOrArchivedFolderPaths = new HashSet<string>();
+                    }
+                    return _excludedOrArchivedFolderPaths;
+                }
             }
         }
 
@@ -750,6 +774,71 @@ namespace Diffusion.Toolkit.Services
         }
 
         private readonly List<FileSystemWatcher> _watchers = new List<FileSystemWatcher>();
+        
+        // Debouncing for FileSystemWatcher events to prevent connection pool exhaustion
+        // Events are collected and processed in batches after a quiet period
+        private readonly HashSet<string> _pendingWatcherFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private readonly object _watcherDebounceLock = new object();
+        private Timer? _watcherDebounceTimer;
+        private const int WatcherDebounceMs = 1000; // Wait 1 second of quiet before processing
+        
+        // Semaphore to limit concurrent scan operations
+        private readonly SemaphoreSlim _scanSemaphore = new SemaphoreSlim(10, 10); // Max 10 concurrent scans
+        
+        private void QueueWatcherFile(string filePath)
+        {
+            lock (_watcherDebounceLock)
+            {
+                _pendingWatcherFiles.Add(filePath);
+                
+                // Reset the debounce timer
+                _watcherDebounceTimer?.Dispose();
+                _watcherDebounceTimer = new Timer(ProcessPendingWatcherFiles, null, WatcherDebounceMs, Timeout.Infinite);
+            }
+        }
+        
+        private void ProcessPendingWatcherFiles(object? state)
+        {
+            List<string> filesToProcess;
+            
+            lock (_watcherDebounceLock)
+            {
+                if (_pendingWatcherFiles.Count == 0)
+                    return;
+                    
+                filesToProcess = _pendingWatcherFiles.ToList();
+                _pendingWatcherFiles.Clear();
+                _watcherDebounceTimer?.Dispose();
+                _watcherDebounceTimer = null;
+            }
+            
+            Logger.Log($"Processing {filesToProcess.Count} debounced file watcher events");
+            
+            // Process files with throttled parallelism
+            ServiceLocator.ProgressService.StartTask().ContinueWith(async t =>
+            {
+                foreach (var filePath in filesToProcess)
+                {
+                    try
+                    {
+                        // Wait for a semaphore slot (limits concurrent DB operations)
+                        await _scanSemaphore.WaitAsync();
+                        try
+                        {
+                            await ServiceLocator.MetadataScannerService.QueueAsync(filePath, CancellationToken.None);
+                        }
+                        finally
+                        {
+                            _scanSemaphore.Release();
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Log($"Error queueing file {filePath}: {ex.Message}");
+                    }
+                }
+            });
+        }
 
         public void CreateWatchers()
         {
@@ -787,6 +876,21 @@ namespace Diffusion.Toolkit.Services
                 {
                     return;
                 }
+                
+                // Skip common temporary files that trigger many events
+                var fileName = Path.GetFileName(e.FullPath);
+                if (fileName.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase) ||
+                    fileName.EndsWith(".partial", StringComparison.OrdinalIgnoreCase) ||
+                    fileName.StartsWith("~", StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+                
+                // Check if file/directory still exists (may have been deleted already)
+                if (!File.Exists(e.FullPath) && !Directory.Exists(e.FullPath))
+                {
+                    return;
+                }
 
                 FileAttributes attr = File.GetAttributes(e.FullPath);
 
@@ -817,10 +921,8 @@ namespace Diffusion.Toolkit.Services
                     {
                         if (!IsExcludedOrArchived(Path.GetDirectoryName(e.FullPath)))
                         {
-                            ServiceLocator.ProgressService.StartTask().ContinueWith(t =>
-                            {
-                                _ = ServiceLocator.MetadataScannerService.QueueAsync(e.FullPath, CancellationToken.None);
-                            });
+                            // Use debouncing to batch rapid file creation events
+                            QueueWatcherFile(e.FullPath);
                         }
                     }
                 }
@@ -836,6 +938,12 @@ namespace Diffusion.Toolkit.Services
         {
             try
             {
+                // Check if file/directory still exists
+                if (!File.Exists(e.FullPath) && !Directory.Exists(e.FullPath))
+                {
+                    return;
+                }
+                
                 FileAttributes attr = File.GetAttributes(e.FullPath);
 
                 if ((attr & FileAttributes.Directory) == FileAttributes.Directory)
@@ -858,7 +966,8 @@ namespace Diffusion.Toolkit.Services
                     {
                         if (!IsExcludedOrArchivedFile(e.FullPath))
                         {
-                            ServiceLocator.ProgressService.StartTask().ContinueWith(t => { _ = ServiceLocator.MetadataScannerService.QueueAsync(e.FullPath, ServiceLocator.ProgressService.CancellationToken); });
+                            // Use debouncing to batch rapid file events
+                            QueueWatcherFile(e.FullPath);
                         }
                     }
                 }

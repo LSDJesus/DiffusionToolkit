@@ -235,9 +235,35 @@ public partial class PostgreSQLDataStore
         var fileList = files.ToList();
         if (fileList.Count == 0) return 0;
 
-        // Pre-load ALL folder and root_folder mappings to avoid per-file queries
+        // PHASE 1: Ensure all folders exist BEFORE starting COPY
+        // PostgreSQL doesn't allow mixing COPY with regular queries on same connection
+        var uniqueFolderPaths = fileList
+            .Select(f => Path.GetDirectoryName(f.path))
+            .Where(p => !string.IsNullOrEmpty(p))
+            .Distinct()
+            .ToList();
+
+        Logger.Log($"QuickAddImages: Pre-creating {uniqueFolderPaths.Count} folders before COPY...");
+        
+        foreach (var folderPath in uniqueFolderPaths)
+        {
+            if (cancellationToken.IsCancellationRequested) break;
+            EnsureFolderExists(conn, folderPath!, folderCache, out _);
+        }
+
+        // Pre-load ALL folder and root_folder mappings AFTER folders are created
         var allFolders = conn.Query<(int id, int root_folder_id)>("SELECT id, root_folder_id FROM folder")
             .ToDictionary(f => f.id, f => f.root_folder_id);
+
+        // Build a path-to-folder lookup from the cache
+        var pathToFolderInfo = new Dictionary<string, (int folderId, int rootFolderId)>();
+        foreach (var kvp in folderCache)
+        {
+            if (allFolders.TryGetValue(kvp.Value.Id, out var rootFolderId))
+            {
+                pathToFolderInfo[kvp.Key] = (kvp.Value.Id, rootFolderId);
+            }
+        }
 
         // Create a temporary table to stage the data
         var tempTableName = $"temp_quick_import_{Guid.NewGuid():N}";
@@ -256,7 +282,8 @@ public partial class PostgreSQLDataStore
                     root_folder_id INT
                 )");
 
-            // Use COPY for blazing fast bulk insert into temp table
+            // PHASE 2: Use COPY for blazing fast bulk insert into temp table
+            // All folder lookups are now from in-memory cache only
             using (var writer = conn.BeginBinaryImport($"COPY {tempTableName} (path, file_name, file_size, created_date, modified_date, folder_id, root_folder_id) FROM STDIN (FORMAT BINARY)"))
             {
                 foreach (var (path, fileSize, createdDate, modifiedDate) in fileList)
@@ -266,15 +293,10 @@ public partial class PostgreSQLDataStore
                     var dirName = Path.GetDirectoryName(path);
                     var fileName = Path.GetFileName(path);
 
-                    if (!EnsureFolderExists(conn, dirName ?? "", folderCache, out var folderId))
+                    // Use pre-cached folder info (no DB queries during COPY!)
+                    if (dirName == null || !pathToFolderInfo.TryGetValue(dirName, out var folderInfo))
                     {
-                        continue;
-                    }
-
-                    // Use pre-loaded cache
-                    if (!allFolders.TryGetValue(folderId, out var rootFolderId))
-                    {
-                        Logger.Log($"Warning: folder_id {folderId} not found in cache");
+                        // Folder wasn't found - skip this file
                         continue;
                     }
 
@@ -282,10 +304,11 @@ public partial class PostgreSQLDataStore
                     writer.Write(path, NpgsqlTypes.NpgsqlDbType.Text);
                     writer.Write(fileName, NpgsqlTypes.NpgsqlDbType.Text);
                     writer.Write(fileSize, NpgsqlTypes.NpgsqlDbType.Bigint);
-                    writer.Write(createdDate, NpgsqlTypes.NpgsqlDbType.Timestamp);
-                    writer.Write(modifiedDate, NpgsqlTypes.NpgsqlDbType.Timestamp);
-                    writer.Write(folderId, NpgsqlTypes.NpgsqlDbType.Integer);
-                    writer.Write(rootFolderId, NpgsqlTypes.NpgsqlDbType.Integer);
+                    // Convert to Unspecified kind to avoid PostgreSQL timestamp without time zone error
+                    writer.Write(DateTime.SpecifyKind(createdDate, DateTimeKind.Unspecified), NpgsqlTypes.NpgsqlDbType.Timestamp);
+                    writer.Write(DateTime.SpecifyKind(modifiedDate, DateTimeKind.Unspecified), NpgsqlTypes.NpgsqlDbType.Timestamp);
+                    writer.Write(folderInfo.folderId, NpgsqlTypes.NpgsqlDbType.Integer);
+                    writer.Write(folderInfo.rootFolderId, NpgsqlTypes.NpgsqlDbType.Integer);
                 }
 
                 writer.Complete();
@@ -308,6 +331,8 @@ public partial class PostgreSQLDataStore
 
             // Clean up temp table
             conn.Execute($"DROP TABLE IF EXISTS {tempTableName}");
+            
+            Logger.Log($"QuickAddImages: Inserted {inserted} images");
 
             return inserted;
         }

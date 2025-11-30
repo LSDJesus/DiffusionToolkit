@@ -755,6 +755,82 @@
                                         </ItemsControl>
                                     </controls:AccordionControl>
 
+                                    <!-- Model Library Section -->
+                                    <controls:AccordionControl 
+                                        HeaderBackground="#80000000"  Margin="0,0,0,5"
+                                        Header="{lex:Loc Search.Navigation.ModelLibrary}"
+                                        Visibility="{Binding DataContext.MainModel.Settings.NavigationSection.ShowModelLibrary, Converter={StaticResource boolToVisCol}, ElementName=NavigationThumbnailGrid}"
+                                        State="{Binding DataContext.NavigationSection.ModelLibraryState, ElementName=NavigationThumbnailGrid, Mode=TwoWay}"  
+                                        CanResize="True"
+                                        >
+                                        <controls:AccordionControl.ButtonAreaContent>
+                                            <Grid Background="{x:Null}">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition />
+                                                    <ColumnDefinition Width="26"/>
+                                                    <ColumnDefinition Width="26"/>
+                                                </Grid.ColumnDefinitions>
+                                                <Button Grid.Column="1" Style="{StaticResource BorderlessButton}" 
+                                                        ToolTip="Scan for new models" 
+                                                        Command="{Binding MainModel.ScanModelsCommand}">
+                                                    <fa:FontAwesome Icon="Refresh"></fa:FontAwesome>
+                                                </Button>
+                                                <Button Grid.Column="2" Style="{StaticResource BorderlessButton}" 
+                                                        ToolTip="Refresh model library" 
+                                                        Command="{Binding MainModel.RefreshModelLibraryCommand}">
+                                                    <fa:FontAwesome Icon="FolderOpen"></fa:FontAwesome>
+                                                </Button>
+                                            </Grid>
+                                        </controls:AccordionControl.ButtonAreaContent>
+
+                                        <ItemsControl ItemsSource="{Binding Path=MainModel.ModelLibraryFolders}" PreviewMouseWheel="UIElement_OnPreviewMouseWheel">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Grid Background="Transparent" HorizontalAlignment="Stretch" Margin="2,0,2,0">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="{Binding Depth, Converter={StaticResource FolderDepthConverter}}"/>
+                                                            <ColumnDefinition/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <Button Grid.Column="1" Style="{StaticResource SmallButton}" 
+                                                                Tag="{Binding .}"
+                                                                ToolTip="{Binding Path}"
+                                                                Click="ModelLibraryFolder_OnClick">
+                                                            <Button.Template>
+                                                                <ControlTemplate TargetType="{x:Type Button}">
+                                                                    <Grid>
+                                                                        <Grid.Style>
+                                                                            <Style TargetType="Grid">
+                                                                                <Setter Property="Background" Value="{Binding Background, RelativeSource={RelativeSource AncestorType={x:Type Button}}}"/>
+                                                                                <Style.Triggers>
+                                                                                    <DataTrigger Binding="{Binding IsSelected}" Value="true">
+                                                                                        <Setter Property="Background" Value="{StaticResource HighlightBrush}"></Setter>
+                                                                                    </DataTrigger>
+                                                                                </Style.Triggers>
+                                                                            </Style>
+                                                                        </Grid.Style>
+                                                                        <Grid.ColumnDefinitions>
+                                                                            <ColumnDefinition Width="24"/>
+                                                                            <ColumnDefinition Width="*"/>
+                                                                            <ColumnDefinition Width="50"/>
+                                                                        </Grid.ColumnDefinitions>
+                                                                        <fa:FontAwesome Icon="{Binding Icon}" FontSize="14" VerticalAlignment="Center" HorizontalAlignment="Center" Foreground="{StaticResource SecondaryForegroundBrush}"/>
+                                                                        <Label FontFamily="Calibri" FontWeight="Light" FontSize="14" Padding="4" Grid.Column="1" Content="{Binding Name}"/>
+                                                                        <Label FontFamily="Calibri" FontWeight="Light" FontSize="12" Padding="4" Grid.Column="2" Content="{Binding ModelCount}" HorizontalAlignment="Right" Foreground="{StaticResource SecondaryForegroundBrush}"/>
+                                                                    </Grid>
+                                                                </ControlTemplate>
+                                                            </Button.Template>
+                                                        </Button>
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                    <StackPanel Orientation="Vertical"/>
+                                                </ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                        </ItemsControl>
+                                    </controls:AccordionControl>
+
                                 </StackPanel>
 
                             </ScrollViewer>

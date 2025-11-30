@@ -1,4 +1,5 @@
 using Dapper;
+using Diffusion.Common;
 using Diffusion.Database.PostgreSQL.Models;
 using System.Collections.Generic;
 using System.Linq;
@@ -32,8 +33,8 @@ public partial class PostgreSQLDataStore
             sql += $" LIMIT {limit.Value}";
         }
         
-        await using var conn = await OpenConnectionAsync();
-        var results = await conn.QueryAsync<(string? Prompt, string? NegativePrompt)>(sql);
+        await using var conn = await OpenConnectionAsync().ConfigureAwait(false);
+        var results = await conn.QueryAsync<(string? Prompt, string? NegativePrompt)>(sql).ConfigureAwait(false);
         return results.ToList();
     }
     
@@ -43,8 +44,8 @@ public partial class PostgreSQLDataStore
     public async Task<int> GetTotalImageCountAsync(CancellationToken cancellationToken = default)
     {
         var sql = "SELECT COUNT(*) FROM image;";
-        await using var conn = await OpenConnectionAsync();
-        return await conn.ExecuteScalarAsync<int>(sql);
+        await using var conn = await OpenConnectionAsync().ConfigureAwait(false);
+        return await conn.ExecuteScalarAsync<int>(sql).ConfigureAwait(false);
     }
     
     /// <summary>
@@ -68,8 +69,8 @@ public partial class PostgreSQLDataStore
             )
             WHERE metadata_hash IS NULL;";
         
-        await using var conn = await OpenConnectionAsync();
-        await conn.ExecuteAsync(sql);
+        await using var conn = await OpenConnectionAsync().ConfigureAwait(false);
+        await conn.ExecuteAsync(sql).ConfigureAwait(false);
     }
     
     /// <summary>
@@ -106,8 +107,8 @@ public partial class PostgreSQLDataStore
             WHERE rn = 1
             ORDER BY id;";
         
-        await using var conn = await OpenConnectionAsync();
-        var results = await conn.QueryAsync<RepresentativeImage>(sql);
+        await using var conn = await OpenConnectionAsync().ConfigureAwait(false);
+        var results = await conn.QueryAsync<RepresentativeImage>(sql).ConfigureAwait(false);
         return results.ToList();
     }
     
@@ -124,8 +125,8 @@ public partial class PostgreSQLDataStore
             WHERE id = @imageId 
               AND (prompt_embedding IS NULL OR image_embedding IS NULL);";
         
-        await using var conn = await OpenConnectionAsync();
-        var count = await conn.ExecuteScalarAsync<int>(sql, new { imageId });
+        await using var conn = await OpenConnectionAsync().ConfigureAwait(false);
+        var count = await conn.ExecuteScalarAsync<int>(sql, new { imageId }).ConfigureAwait(false);
         return count > 0;
     }
     
@@ -154,7 +155,7 @@ public partial class PostgreSQLDataStore
                 END
             WHERE id = @imageId;";
         
-        await using var conn = await OpenConnectionAsync();
+        await using var conn = await OpenConnectionAsync().ConfigureAwait(false);
         await conn.ExecuteAsync(sql, new
         {
             imageId,
@@ -163,7 +164,7 @@ public partial class PostgreSQLDataStore
             clipGEmbedding,
             imageEmbedding,
             isRepresentative
-        });
+        }).ConfigureAwait(false);
     }
     
     /// <summary>
@@ -198,8 +199,8 @@ public partial class PostgreSQLDataStore
               AND target.id != rep.id
               AND target.is_embedding_representative = FALSE;";
         
-        await using var conn = await OpenConnectionAsync();
-        await conn.ExecuteAsync(sql);
+        await using var conn = await OpenConnectionAsync().ConfigureAwait(false);
+        await conn.ExecuteAsync(sql).ConfigureAwait(false);
     }
     
     /// <summary>
@@ -220,7 +221,7 @@ public partial class PostgreSQLDataStore
                   WHERE source.id = image.embedding_source_id
               );";
         
-        await using var conn = await OpenConnectionAsync();
-        await conn.ExecuteAsync(sql);
+        await using var conn = await OpenConnectionAsync().ConfigureAwait(false);
+        await conn.ExecuteAsync(sql).ConfigureAwait(false);
     }
 }

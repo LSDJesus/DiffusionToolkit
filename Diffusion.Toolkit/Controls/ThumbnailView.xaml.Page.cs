@@ -163,7 +163,8 @@ namespace Diffusion.Toolkit.Controls
         {
             if (sender is FrameworkElement { DataContext: ImageEntry { EntryType: EntryType.RootFolder } rootFolder })
             {
-                ServiceLocator.FolderService.ShowRemoveRootFolderDialog(new FolderViewModel()
+                // Fire-and-forget: dialog shows and handles completion internally
+                _ = ServiceLocator.FolderService.ShowRemoveRootFolderDialog(new FolderViewModel()
                 {
                     Id = rootFolder.Id,
                     Path = rootFolder.Path,

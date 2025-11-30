@@ -1,4 +1,5 @@
 using Dapper;
+using Diffusion.Common;
 using Diffusion.Database.PostgreSQL.Models;
 using System;
 using System.Collections.Generic;
@@ -36,8 +37,8 @@ public partial class PostgreSQLDataStore
               )
             ON CONFLICT (image_id) WHERE status IN ('pending', 'processing') DO NOTHING;";
         
-        await using var conn = await OpenConnectionAsync();
-        var count = await conn.ExecuteAsync(sql, new { folderId, priority });
+        await using var conn = await OpenConnectionAsync().ConfigureAwait(false);
+        var count = await conn.ExecuteAsync(sql, new { folderId, priority }).ConfigureAwait(false);
         return count;
     }
     
@@ -69,8 +70,8 @@ public partial class PostgreSQLDataStore
               )
             ON CONFLICT (image_id) WHERE status IN ('pending', 'processing') DO NOTHING;";
         
-        await using var conn = await OpenConnectionAsync();
-        var count = await conn.ExecuteAsync(sql, new { folderId, priority });
+        await using var conn = await OpenConnectionAsync().ConfigureAwait(false);
+        var count = await conn.ExecuteAsync(sql, new { folderId, priority }).ConfigureAwait(false);
         return count;
     }
     
@@ -82,6 +83,8 @@ public partial class PostgreSQLDataStore
         int priority = 0,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(imageIds);
+        
         var sql = @"
             INSERT INTO embedding_queue (image_id, folder_id, priority, status, queued_at)
             SELECT id, folder_id, @priority, 'pending', NOW()
@@ -95,8 +98,8 @@ public partial class PostgreSQLDataStore
               )
             ON CONFLICT (image_id) WHERE status IN ('pending', 'processing') DO NOTHING;";
         
-        await using var conn = await OpenConnectionAsync();
-        var count = await conn.ExecuteAsync(sql, new { imageIds = imageIds.ToArray(), priority });
+        await using var conn = await OpenConnectionAsync().ConfigureAwait(false);
+        var count = await conn.ExecuteAsync(sql, new { imageIds = imageIds.ToArray(), priority }).ConfigureAwait(false);
         return count;
     }
     
@@ -105,13 +108,13 @@ public partial class PostgreSQLDataStore
     /// Marks them as 'processing'
     /// </summary>
     public async Task<List<EmbeddingQueueItem>> GetNextEmbeddingBatchAsync(
-        int batchSize = 32,
+        int batchSize = DatabaseConfiguration.EmbeddingBatchSize,
         CancellationToken cancellationToken = default)
     {
         var sql = "SELECT * FROM get_next_embedding_batch(@batchSize);";
         
-        await using var conn = await OpenConnectionAsync();
-        var results = await conn.QueryAsync<EmbeddingQueueItem>(sql, new { batchSize });
+        await using var conn = await OpenConnectionAsync().ConfigureAwait(false);
+        var results = await conn.QueryAsync<EmbeddingQueueItem>(sql, new { batchSize }).ConfigureAwait(false);
         return results.ToList();
     }
     
@@ -124,8 +127,8 @@ public partial class PostgreSQLDataStore
     {
         var sql = "SELECT complete_embedding_queue_item(@queueItemId);";
         
-        await using var conn = await OpenConnectionAsync();
-        await conn.ExecuteAsync(sql, new { queueItemId });
+        await using var conn = await OpenConnectionAsync().ConfigureAwait(false);
+        await conn.ExecuteAsync(sql, new { queueItemId }).ConfigureAwait(false);
     }
     
     /// <summary>
@@ -138,8 +141,8 @@ public partial class PostgreSQLDataStore
     {
         var sql = "SELECT fail_embedding_queue_item(@queueItemId, @errorMessage);";
         
-        await using var conn = await OpenConnectionAsync();
-        await conn.ExecuteAsync(sql, new { queueItemId, errorMessage });
+        await using var conn = await OpenConnectionAsync().ConfigureAwait(false);
+        await conn.ExecuteAsync(sql, new { queueItemId, errorMessage }).ConfigureAwait(false);
     }
     
     /// <summary>
@@ -149,8 +152,8 @@ public partial class PostgreSQLDataStore
     {
         var sql = "DELETE FROM embedding_queue WHERE status IN ('completed', 'failed');";
         
-        await using var conn = await OpenConnectionAsync();
-        await conn.ExecuteAsync(sql);
+        await using var conn = await OpenConnectionAsync().ConfigureAwait(false);
+        await conn.ExecuteAsync(sql).ConfigureAwait(false);
     }
     
     /// <summary>
@@ -160,8 +163,8 @@ public partial class PostgreSQLDataStore
     {
         var sql = "DELETE FROM embedding_queue;";
         
-        await using var conn = await OpenConnectionAsync();
-        await conn.ExecuteAsync(sql);
+        await using var conn = await OpenConnectionAsync().ConfigureAwait(false);
+        await conn.ExecuteAsync(sql).ConfigureAwait(false);
     }
     
     /// <summary>
@@ -171,8 +174,8 @@ public partial class PostgreSQLDataStore
     {
         var sql = "SELECT retry_failed_embeddings();";
         
-        await using var conn = await OpenConnectionAsync();
-        var count = await conn.ExecuteScalarAsync<int>(sql);
+        await using var conn = await OpenConnectionAsync().ConfigureAwait(false);
+        var count = await conn.ExecuteScalarAsync<int>(sql).ConfigureAwait(false);
         return count;
     }
     
@@ -192,8 +195,8 @@ public partial class PostgreSQLDataStore
                 MAX(queued_at) AS NewestQueuedAt
             FROM embedding_queue;";
         
-        await using var conn = await OpenConnectionAsync();
-        var stats = await conn.QuerySingleAsync<EmbeddingQueueStatistics>(sql);
+        await using var conn = await OpenConnectionAsync().ConfigureAwait(false);
+        var stats = await conn.QuerySingleAsync<EmbeddingQueueStatistics>(sql).ConfigureAwait(false);
         return stats;
     }
     
@@ -202,10 +205,16 @@ public partial class PostgreSQLDataStore
     /// </summary>
     public async Task<Image?> GetImageByIdAsync(int imageId, CancellationToken cancellationToken = default)
     {
-        var sql = "SELECT * FROM image WHERE id = @imageId;";
+        // Use explicit columns to avoid reading vector columns that Dapper can't handle
+        var sql = @"SELECT id, root_folder_id, folder_id, path, file_name, prompt, negative_prompt, steps, sampler, 
+            cfg_scale, seed, width, height, model_hash, model, batch_size, batch_pos, created_date, modified_date, 
+            custom_tags, rating, favorite, for_deletion, nsfw, unavailable, aesthetic_score, hyper_network, 
+            hyper_network_strength, clip_skip, ensd, file_size, no_metadata, workflow, workflow_id, has_error, 
+            hash, viewed_date, touched_date, metadata_hash, embedding_source_id, is_embedding_representative
+            FROM image WHERE id = @imageId;";
         
-        await using var conn = await OpenConnectionAsync();
-        var image = await conn.QueryFirstOrDefaultAsync<Image>(sql, new { imageId });
+        await using var conn = await OpenConnectionAsync().ConfigureAwait(false);
+        var image = await conn.QueryFirstOrDefaultAsync<Image>(sql, new { imageId }).ConfigureAwait(false);
         return image;
     }
     
@@ -220,8 +229,8 @@ public partial class PostgreSQLDataStore
     {
         var sql = "SELECT * FROM embedding_worker_state WHERE id = 1;";
         
-        await using var conn = await OpenConnectionAsync();
-        var state = await conn.QuerySingleAsync<EmbeddingWorkerState>(sql);
+        await using var conn = await OpenConnectionAsync().ConfigureAwait(false);
+        var state = await conn.QuerySingleAsync<EmbeddingWorkerState>(sql).ConfigureAwait(false);
         return state;
     }
     
@@ -233,6 +242,8 @@ public partial class PostgreSQLDataStore
         bool? modelsLoaded = null,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(status);
+        
         var sql = @"
             UPDATE embedding_worker_state
             SET status = @status,
@@ -242,8 +253,8 @@ public partial class PostgreSQLDataStore
                 stopped_at = CASE WHEN @status = 'stopped' THEN NOW() ELSE stopped_at END
             WHERE id = 1;";
         
-        await using var conn = await OpenConnectionAsync();
-        await conn.ExecuteAsync(sql, new { status, modelsLoaded });
+        await using var conn = await OpenConnectionAsync().ConfigureAwait(false);
+        await conn.ExecuteAsync(sql, new { status, modelsLoaded }).ConfigureAwait(false);
     }
     
     /// <summary>
@@ -263,8 +274,8 @@ public partial class PostgreSQLDataStore
                 last_error_at = CASE WHEN @lastError IS NOT NULL THEN NOW() ELSE last_error_at END
             WHERE id = 1;";
         
-        await using var conn = await OpenConnectionAsync();
-        await conn.ExecuteAsync(sql, new { processedCount, failedCount, lastError });
+        await using var conn = await OpenConnectionAsync().ConfigureAwait(false);
+        await conn.ExecuteAsync(sql, new { processedCount, failedCount, lastError }).ConfigureAwait(false);
     }
     
     /// <summary>
@@ -280,8 +291,8 @@ public partial class PostgreSQLDataStore
                 last_error_at = NULL
             WHERE id = 1;";
         
-        await using var conn = await OpenConnectionAsync();
-        await conn.ExecuteAsync(sql);
+        await using var conn = await OpenConnectionAsync().ConfigureAwait(false);
+        await conn.ExecuteAsync(sql).ConfigureAwait(false);
     }
     
     #endregion

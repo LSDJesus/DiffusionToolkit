@@ -1,4 +1,5 @@
 using Dapper;
+using Diffusion.Common;
 using Diffusion.Database.PostgreSQL.Models;
 
 namespace Diffusion.Database.PostgreSQL;
@@ -13,13 +14,14 @@ public partial class PostgreSQLDataStore
     public async Task StoreCaptionAsync(int imageId, string caption, string source = "joycaption", 
         string? promptUsed = null, int? tokenCount = null, float? generationTimeMs = null)
     {
+        ArgumentNullException.ThrowIfNull(caption);
+        
         const string sql = @"
             INSERT INTO image_captions (image_id, caption, source, prompt_used, token_count, generation_time_ms)
             VALUES (@imageId, @caption, @source, @promptUsed, @tokenCount, @generationTimeMs);
         ";
 
-        using var connection = _dataSource.CreateConnection();
-        await connection.OpenAsync();
+        await using var connection = await OpenConnectionAsync().ConfigureAwait(false);
 
         await connection.ExecuteAsync(sql, new 
         { 
@@ -29,7 +31,7 @@ public partial class PostgreSQLDataStore
             promptUsed, 
             tokenCount, 
             generationTimeMs 
-        });
+        }).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -38,13 +40,16 @@ public partial class PostgreSQLDataStore
     public async Task StoreCaptionsBatchAsync(Dictionary<int, (string caption, string? promptUsed, int? tokenCount, float? generationTimeMs)> imageCaptions, 
         string source = "joycaption")
     {
+        ArgumentNullException.ThrowIfNull(imageCaptions);
+        
+        if (!imageCaptions.Any()) return;
+        
         const string sql = @"
             INSERT INTO image_captions (image_id, caption, source, prompt_used, token_count, generation_time_ms)
             VALUES (@imageId, @caption, @source, @promptUsed, @tokenCount, @generationTimeMs);
         ";
 
-        using var connection = _dataSource.CreateConnection();
-        await connection.OpenAsync();
+        await using var connection = await OpenConnectionAsync().ConfigureAwait(false);
 
         var batchData = imageCaptions.Select(kvp => new
         {
@@ -56,10 +61,7 @@ public partial class PostgreSQLDataStore
             generationTimeMs = kvp.Value.generationTimeMs
         }).ToList();
 
-        if (batchData.Any())
-        {
-            await connection.ExecuteAsync(sql, batchData);
-        }
+        await connection.ExecuteAsync(sql, batchData).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -67,6 +69,8 @@ public partial class PostgreSQLDataStore
     /// </summary>
     public async Task UpdateCaptionAsync(int captionId, string newCaption)
     {
+        ArgumentNullException.ThrowIfNull(newCaption);
+        
         const string sql = @"
             UPDATE image_captions
             SET caption = @newCaption, 
@@ -74,10 +78,9 @@ public partial class PostgreSQLDataStore
             WHERE id = @captionId;
         ";
 
-        using var connection = _dataSource.CreateConnection();
-        await connection.OpenAsync();
+        await using var connection = await OpenConnectionAsync().ConfigureAwait(false);
 
-        await connection.ExecuteAsync(sql, new { captionId, newCaption });
+        await connection.ExecuteAsync(sql, new { captionId, newCaption }).ConfigureAwait(false);
     }
 
     // ==================== Caption Retrieval Operations ====================
@@ -101,10 +104,9 @@ public partial class PostgreSQLDataStore
 
         sql += " ORDER BY created_at DESC;";
 
-        using var connection = _dataSource.CreateConnection();
-        await connection.OpenAsync();
+        await using var connection = await OpenConnectionAsync().ConfigureAwait(false);
 
-        var captions = await connection.QueryAsync<ImageCaption>(sql, new { imageId, source });
+        var captions = await connection.QueryAsync<ImageCaption>(sql, new { imageId, source }).ConfigureAwait(false);
         return captions.ToList();
     }
 
@@ -127,10 +129,9 @@ public partial class PostgreSQLDataStore
 
         sql += " ORDER BY created_at DESC LIMIT 1;";
 
-        using var connection = _dataSource.CreateConnection();
-        await connection.OpenAsync();
+        await using var connection = await OpenConnectionAsync().ConfigureAwait(false);
 
-        return await connection.QueryFirstOrDefaultAsync<ImageCaption>(sql, new { imageId, source });
+        return await connection.QueryFirstOrDefaultAsync<ImageCaption>(sql, new { imageId, source }).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -138,6 +139,8 @@ public partial class PostgreSQLDataStore
     /// </summary>
     public async Task<Dictionary<int, List<ImageCaption>>> GetImageCaptionsBatchAsync(IEnumerable<int> imageIds, string? source = null)
     {
+        ArgumentNullException.ThrowIfNull(imageIds);
+        
         var sql = @"
             SELECT id, image_id, caption, source, prompt_used, is_user_edited, 
                    token_count, generation_time_ms, created_at, updated_at
@@ -152,10 +155,9 @@ public partial class PostgreSQLDataStore
 
         sql += " ORDER BY created_at DESC;";
 
-        using var connection = _dataSource.CreateConnection();
-        await connection.OpenAsync();
+        await using var connection = await OpenConnectionAsync().ConfigureAwait(false);
 
-        var captions = await connection.QueryAsync<ImageCaption>(sql, new { imageIds = imageIds.ToArray(), source });
+        var captions = await connection.QueryAsync<ImageCaption>(sql, new { imageIds = imageIds.ToArray(), source }).ConfigureAwait(false);
         
         return captions
             .GroupBy(c => c.ImageId)
@@ -169,6 +171,8 @@ public partial class PostgreSQLDataStore
     /// </summary>
     public async Task<List<int>> SearchImagesByCaptionAsync(string searchText, string? source = null, int limit = 100)
     {
+        ArgumentNullException.ThrowIfNull(searchText);
+        
         var sql = @"
             SELECT DISTINCT image_id
             FROM image_captions
@@ -182,10 +186,9 @@ public partial class PostgreSQLDataStore
 
         sql += " LIMIT @limit;";
 
-        using var connection = _dataSource.CreateConnection();
-        await connection.OpenAsync();
+        await using var connection = await OpenConnectionAsync().ConfigureAwait(false);
 
-        var imageIds = await connection.QueryAsync<int>(sql, new { searchText, source, limit });
+        var imageIds = await connection.QueryAsync<int>(sql, new { searchText, source, limit }).ConfigureAwait(false);
         return imageIds.ToList();
     }
 
@@ -217,10 +220,9 @@ public partial class PostgreSQLDataStore
         sql += " WHERE " + string.Join(" AND ", conditions);
         sql += " LIMIT @limit;";
 
-        using var connection = _dataSource.CreateConnection();
-        await connection.OpenAsync();
+        await using var connection = await OpenConnectionAsync().ConfigureAwait(false);
 
-        var imageIds = await connection.QueryAsync<int>(sql, new { folderId, source, limit });
+        var imageIds = await connection.QueryAsync<int>(sql, new { folderId, source, limit }).ConfigureAwait(false);
         return imageIds.ToList();
     }
 
@@ -238,10 +240,9 @@ public partial class PostgreSQLDataStore
             sql += " AND source = @source";
         }
 
-        using var connection = _dataSource.CreateConnection();
-        await connection.OpenAsync();
+        await using var connection = await OpenConnectionAsync().ConfigureAwait(false);
 
-        await connection.ExecuteAsync(sql, new { imageId, source });
+        await connection.ExecuteAsync(sql, new { imageId, source }).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -251,10 +252,9 @@ public partial class PostgreSQLDataStore
     {
         const string sql = "DELETE FROM image_captions WHERE id = @captionId";
 
-        using var connection = _dataSource.CreateConnection();
-        await connection.OpenAsync();
+        await using var connection = await OpenConnectionAsync().ConfigureAwait(false);
 
-        await connection.ExecuteAsync(sql, new { captionId });
+        await connection.ExecuteAsync(sql, new { captionId }).ConfigureAwait(false);
     }
 
     // ==================== Caption Statistics ====================
@@ -278,10 +278,9 @@ public partial class PostgreSQLDataStore
             sql += " WHERE source = @source";
         }
 
-        using var connection = _dataSource.CreateConnection();
-        await connection.OpenAsync();
+        await using var connection = await OpenConnectionAsync().ConfigureAwait(false);
 
-        var result = await connection.QueryFirstAsync<dynamic>(sql, new { source });
+        var result = await connection.QueryFirstAsync<dynamic>(sql, new { source }).ConfigureAwait(false);
         
         return (
             totalCaptions: (int)result.total_captions,

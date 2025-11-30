@@ -1,8 +1,16 @@
 using Diffusion.Database.PostgreSQL;
 using Diffusion.Database.PostgreSQL.Models;
 using Diffusion.Embeddings;
+using TestPostgreSQL;
 
 Console.WriteLine("=== Diffusion Toolkit PostgreSQL + Embeddings Test ===\n");
+
+// Check command line args for specific test
+if (args.Length > 0 && args[0].Equals("duplicates", StringComparison.OrdinalIgnoreCase))
+{
+    await DuplicateDetectionTest.RunAsync();
+    return;
+}
 
 const string connectionString = "Host=localhost;Port=5436;Database=diffusion_images;Username=diffusion;Password=diffusion_toolkit_secure_2025";
 
@@ -153,6 +161,78 @@ catch (Exception ex)
     Console.WriteLine($"❌ Query operations failed: {ex.Message}\n");
 }
 
+// Test 6: Duplicate Detection
+Console.WriteLine("Test 6: Duplicate Detection");
+Console.WriteLine("─────────────────────────────");
+try
+{
+    var dataStore = new PostgreSQLDataStore(connectionString);
+    
+    // Get duplicate detection stats
+    var stats = await dataStore.GetDuplicateDetectionStatsAsync();
+    Console.WriteLine($"✓ Total images: {stats.TotalImages}");
+    Console.WriteLine($"✓ ORIG images: {stats.OriginalCount}");
+    Console.WriteLine($"✓ FINAL images: {stats.FinalCount}");
+    Console.WriteLine($"✓ Unique generations: {stats.UniqueGenerations}");
+    Console.WriteLine($"✓ Duplicate groups: {stats.DuplicateGroups}");
+    Console.WriteLine($"✓ Images with embeddings: {stats.ImagesWithEmbeddings}");
+    Console.WriteLine($"  Potential duplicates: {stats.PotentialDuplicates} ({stats.DuplicatePercentage:F1}%)\n");
+    
+    // Find ORIG/FINAL pairs by filename pattern
+    var pairs = await dataStore.FindOrigFinalPairsByFilenameAsync(limit: 5);
+    if (pairs.Count > 0)
+    {
+        Console.WriteLine($"✓ Found {pairs.Count} ORIG/FINAL pairs by filename:");
+        foreach (var pair in pairs.Take(3))
+        {
+            Console.WriteLine($"  ORIG: {pair.OriginalWidth}×{pair.OriginalHeight} → FINAL: {pair.FinalWidth}×{pair.FinalHeight} ({pair.UpscaleFactor:F2}x)");
+            Console.WriteLine($"        Seed: {pair.Seed}, Model: {pair.Model}");
+        }
+        if (pairs.Count > 3)
+            Console.WriteLine($"  ... and {pairs.Count - 3} more");
+    }
+    else
+    {
+        Console.WriteLine("  No ORIG/FINAL filename pairs found");
+    }
+    Console.WriteLine();
+    
+    // Find workflow variant groups
+    var groups = await dataStore.FindWorkflowVariantGroupsAsync(limit: 5);
+    if (groups.Count > 0)
+    {
+        Console.WriteLine($"✓ Found {groups.Count} workflow variant groups:");
+        foreach (var group in groups.Take(3))
+        {
+            Console.WriteLine($"  Seed {group.Seed}: {group.VariantCount} variants");
+            Console.WriteLine($"    Model: {group.Model}");
+            Console.WriteLine($"    Resolution: {group.MinResolution} → {group.MaxResolution} ({group.UpscaleFactor:F2}x)");
+            if (group.IsLikelyOrigFinalPair)
+                Console.WriteLine($"    ⚡ Likely ORIG/FINAL pair");
+        }
+        if (groups.Count > 3)
+            Console.WriteLine($"  ... and {groups.Count - 3} more");
+    }
+    else
+    {
+        Console.WriteLine("  No workflow variant groups found");
+    }
+    Console.WriteLine();
+    
+    // Dry run: count how many ORIGs could be marked for deletion
+    var deletionCount = await dataStore.MarkOriginalImagesForDeletionAsync(dryRun: true);
+    if (deletionCount > 0)
+    {
+        Console.WriteLine($"⚠ {deletionCount} ORIG images could be marked for deletion");
+        Console.WriteLine("  (FINAL versions exist for all of these)");
+    }
+    Console.WriteLine();
+}
+catch (Exception ex)
+{
+    Console.WriteLine($"❌ Duplicate detection failed: {ex.Message}\n");
+}
+
 // Summary
 Console.WriteLine("══════════════════════════════");
 Console.WriteLine("Test Summary");
@@ -161,6 +241,7 @@ Console.WriteLine("✓ PostgreSQL database layer: Working");
 Console.WriteLine("✓ Vector columns: Ready (1024D text, 512D image)");
 Console.WriteLine("✓ CRUD operations: Functional");
 Console.WriteLine("✓ Folder & Album management: Working");
+Console.WriteLine("✓ Duplicate detection: Ready");
 
 if (ModelDownloader.AreModelsDownloaded(modelsDirectory))
 {

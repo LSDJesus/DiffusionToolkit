@@ -13,6 +13,7 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -21,6 +22,7 @@ using System.Windows.Interop;
 using Dapper;
 using Diffusion.Database;
 using Diffusion.Database.PostgreSQL;
+using Diffusion.Database.PostgreSQL.Models;
 using Diffusion.Toolkit.Configuration;
 using Diffusion.Toolkit.Localization;
 using Diffusion.Toolkit.Services;
@@ -114,6 +116,31 @@ namespace Diffusion.Toolkit.Pages
             _model.Theme = _settings.Theme;
             _model.Culture = _settings.Culture ?? string.Empty;
             
+            // JoyTag settings
+            _model.EnableJoyTag = _settings.EnableJoyTag;
+            _model.JoyTagThreshold = _settings.JoyTagThreshold;
+            _model.JoyTagModelPath = _settings.JoyTagModelPath;
+            _model.JoyTagTagsPath = _settings.JoyTagTagsPath;
+            
+            // WD tagger settings
+            _model.EnableWDTag = _settings.EnableWDTag;
+            _model.WDTagThreshold = _settings.WDTagThreshold;
+            _model.WDTagModelPath = _settings.WDTagModelPath;
+            _model.WDTagTagsPath = _settings.WDTagTagsPath;
+            
+            // JoyCaption settings
+            _model.JoyCaptionModelPath = _settings.JoyCaptionModelPath;
+            _model.JoyCaptionMMProjPath = _settings.JoyCaptionMMProjPath;
+            _model.JoyCaptionDefaultPrompt = _settings.JoyCaptionDefaultPrompt;
+            
+            // Tagging/Captioning output settings
+            _model.StoreTagConfidence = _settings.StoreTagConfidence;
+            _model.AutoWriteMetadata = _settings.AutoWriteMetadata;
+            _model.CreateMetadataBackup = _settings.CreateMetadataBackup;
+            _model.WriteTagsToMetadata = _settings.WriteTagsToMetadata;
+            _model.WriteCaptionsToMetadata = _settings.WriteCaptionsToMetadata;
+            _model.WriteGenerationParamsToMetadata = _settings.WriteGenerationParamsToMetadata;
+            
             // Initialize schema selector
             InitializeSchemaSelector();
             
@@ -125,8 +152,8 @@ namespace Diffusion.Toolkit.Pages
             var comboBox = FindName("SchemaComboBox") as ComboBox;
             if (comboBox == null) return;
             
-            // Set current schema selection
-            var currentSchema = _settings.DatabaseSchema ?? "main";
+            // Set current schema selection (PostgreSQL default is "public")
+            var currentSchema = _settings.DatabaseSchema ?? "public";
             foreach (ComboBoxItem item in comboBox.Items)
             {
                 if (item.Tag as string == currentSchema)
@@ -210,6 +237,69 @@ namespace Diffusion.Toolkit.Pages
             if (dialog.ShowDialog(this._window) == CommonFileDialogResult.Ok)
             {
                 _model.ModelRootPath = dialog.FileName;
+            }
+        }
+        
+        private async void ScanModels_OnClick(object sender, RoutedEventArgs e)
+        {
+            if (string.IsNullOrWhiteSpace(_model.ModelRootPath))
+            {
+                MessageBox.Show(this._window, "Please set a Models Root path first.", "Scan Models", 
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            
+            if (!Directory.Exists(_model.ModelRootPath))
+            {
+                MessageBox.Show(this._window, $"The Models Root path does not exist:\n{_model.ModelRootPath}", 
+                    "Scan Models", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            
+            // Save the path first
+            _settings.ModelRootPath = _model.ModelRootPath;
+            
+            // Register default model folders based on the root path
+            await RegisterModelFoldersAsync(_model.ModelRootPath);
+            
+            // Scan all registered folders
+            await ServiceLocator.ModelResourceService.ScanAllFoldersAsync(CancellationToken.None);
+            
+            MessageBox.Show(this._window, "Model scan complete. Check the log for details.", "Scan Models", 
+                MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        
+        private async Task RegisterModelFoldersAsync(string modelsRoot)
+        {
+            var subfolderTypes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                { "loras", ResourceTypes.Lora },
+                { "embeddings", ResourceTypes.Embedding },
+                { "checkpoints", ResourceTypes.Checkpoint },
+                { "Stable-diffusion", ResourceTypes.Checkpoint }, // A1111 style
+                { "diffusion_models", ResourceTypes.DiffusionModel },
+                { "unet", ResourceTypes.Unet },
+                { "upscale_models", ResourceTypes.Upscaler },
+                { "vae", ResourceTypes.Vae },
+                { "controlnet", ResourceTypes.ControlNet },
+                { "clip", ResourceTypes.Clip },
+            };
+            
+            foreach (var (subdir, resourceType) in subfolderTypes)
+            {
+                var path = Path.Combine(modelsRoot, subdir);
+                if (Directory.Exists(path))
+                {
+                    var folder = new ModelFolder
+                    {
+                        Path = path,
+                        ResourceType = resourceType,
+                        Recursive = true,
+                        Enabled = true
+                    };
+                    await ServiceLocator.DataStore.UpsertModelFolderAsync(folder);
+                    Logger.Log($"Registered model folder: {path} ({resourceType})");
+                }
             }
         }
 
@@ -389,6 +479,31 @@ namespace Diffusion.Toolkit.Pages
                 }).ToList();
 
                 _settings.Culture = _model.Culture;
+                
+                // JoyTag settings
+                _settings.EnableJoyTag = _model.EnableJoyTag;
+                _settings.JoyTagThreshold = _model.JoyTagThreshold;
+                _settings.JoyTagModelPath = _model.JoyTagModelPath;
+                _settings.JoyTagTagsPath = _model.JoyTagTagsPath;
+                
+                // WD tagger settings
+                _settings.EnableWDTag = _model.EnableWDTag;
+                _settings.WDTagThreshold = _model.WDTagThreshold;
+                _settings.WDTagModelPath = _model.WDTagModelPath;
+                _settings.WDTagTagsPath = _model.WDTagTagsPath;
+                
+                // JoyCaption settings
+                _settings.JoyCaptionModelPath = _model.JoyCaptionModelPath;
+                _settings.JoyCaptionMMProjPath = _model.JoyCaptionMMProjPath;
+                _settings.JoyCaptionDefaultPrompt = _model.JoyCaptionDefaultPrompt;
+                
+                // Tagging/Captioning output settings
+                _settings.StoreTagConfidence = _model.StoreTagConfidence;
+                _settings.AutoWriteMetadata = _model.AutoWriteMetadata;
+                _settings.CreateMetadataBackup = _model.CreateMetadataBackup;
+                _settings.WriteTagsToMetadata = _model.WriteTagsToMetadata;
+                _settings.WriteCaptionsToMetadata = _model.WriteCaptionsToMetadata;
+                _settings.WriteGenerationParamsToMetadata = _model.WriteGenerationParamsToMetadata;
 
                 var connection = _dataStore.GetConnection();
                 _model.Host = connection.Host ?? "";

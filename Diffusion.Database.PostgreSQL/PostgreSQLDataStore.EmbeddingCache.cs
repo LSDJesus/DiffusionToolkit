@@ -1,4 +1,5 @@
 using Dapper;
+using Diffusion.Common;
 using Diffusion.Database.PostgreSQL.Models;
 
 namespace Diffusion.Database.PostgreSQL;
@@ -12,14 +13,16 @@ public partial class PostgreSQLDataStore
         string contentHash,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(contentHash);
+        
         const string sql = @"
             SELECT * FROM embedding_cache
             WHERE content_hash = @ContentHash
             LIMIT 1";
 
-        await using var conn = await OpenConnectionAsync();
+        await using var conn = await OpenConnectionAsync().ConfigureAwait(false);
         return await conn.QueryFirstOrDefaultAsync<EmbeddingCache>(
-            new CommandDefinition(sql, new { ContentHash = contentHash }, cancellationToken: cancellationToken));
+            new CommandDefinition(sql, new { ContentHash = contentHash }, cancellationToken: cancellationToken)).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -30,6 +33,8 @@ public partial class PostgreSQLDataStore
         EmbeddingCache embedding,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(embedding);
+        
         const string sql = @"
             INSERT INTO embedding_cache (
                 content_hash,
@@ -55,9 +60,9 @@ public partial class PostgreSQLDataStore
                 @LastUsedAt
             ) RETURNING id";
 
-        await using var conn = await OpenConnectionAsync();
+        await using var conn = await OpenConnectionAsync().ConfigureAwait(false);
         return await conn.ExecuteScalarAsync<int>(
-            new CommandDefinition(sql, embedding, cancellationToken: cancellationToken));
+            new CommandDefinition(sql, embedding, cancellationToken: cancellationToken)).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -73,9 +78,9 @@ public partial class PostgreSQLDataStore
                 last_used_at = NOW()
             WHERE id = @EmbeddingId";
 
-        await using var conn = await OpenConnectionAsync();
+        await using var conn = await OpenConnectionAsync().ConfigureAwait(false);
         await conn.ExecuteAsync(
-            new CommandDefinition(sql, new { EmbeddingId = embeddingId }, cancellationToken: cancellationToken));
+            new CommandDefinition(sql, new { EmbeddingId = embeddingId }, cancellationToken: cancellationToken)).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -90,9 +95,9 @@ public partial class PostgreSQLDataStore
             SET reference_count = GREATEST(0, reference_count - 1)
             WHERE id = @EmbeddingId";
 
-        await using var conn = await OpenConnectionAsync();
+        await using var conn = await OpenConnectionAsync().ConfigureAwait(false);
         await conn.ExecuteAsync(
-            new CommandDefinition(sql, new { EmbeddingId = embeddingId }, cancellationToken: cancellationToken));
+            new CommandDefinition(sql, new { EmbeddingId = embeddingId }, cancellationToken: cancellationToken)).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -105,9 +110,9 @@ public partial class PostgreSQLDataStore
             DELETE FROM embedding_cache
             WHERE reference_count = 0";
 
-        await using var conn = await OpenConnectionAsync();
+        await using var conn = await OpenConnectionAsync().ConfigureAwait(false);
         return await conn.ExecuteAsync(
-            new CommandDefinition(sql, cancellationToken: cancellationToken));
+            new CommandDefinition(sql, cancellationToken: cancellationToken)).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -119,6 +124,8 @@ public partial class PostgreSQLDataStore
         int embeddingCacheId,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(embeddingType);
+        
         var columnName = embeddingType switch
         {
             "prompt" => "prompt_embedding_id",
@@ -132,9 +139,9 @@ public partial class PostgreSQLDataStore
             SET {columnName} = @EmbeddingCacheId
             WHERE id = @ImageId";
 
-        await using var conn = await OpenConnectionAsync();
+        await using var conn = await OpenConnectionAsync().ConfigureAwait(false);
         await conn.ExecuteAsync(
-            new CommandDefinition(sql, new { ImageId = imageId, EmbeddingCacheId = embeddingCacheId }, cancellationToken: cancellationToken));
+            new CommandDefinition(sql, new { ImageId = imageId, EmbeddingCacheId = embeddingCacheId }, cancellationToken: cancellationToken)).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -150,9 +157,9 @@ public partial class PostgreSQLDataStore
             SET needs_visual_embedding = @NeedsEmbedding
             WHERE id = @ImageId";
 
-        await using var conn = await OpenConnectionAsync();
+        await using var conn = await OpenConnectionAsync().ConfigureAwait(false);
         await conn.ExecuteAsync(
-            new CommandDefinition(sql, new { ImageId = imageId, NeedsEmbedding = needsEmbedding }, cancellationToken: cancellationToken));
+            new CommandDefinition(sql, new { ImageId = imageId, NeedsEmbedding = needsEmbedding }, cancellationToken: cancellationToken)).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -162,17 +169,28 @@ public partial class PostgreSQLDataStore
         int limit = 1000,
         CancellationToken cancellationToken = default)
     {
+        // Use explicit columns to avoid reading vector columns that Dapper can't handle
         const string sql = @"
-            SELECT * FROM image
+            SELECT id, root_folder_id, folder_id, path, file_name, prompt, negative_prompt, steps, sampler, cfg_scale, 
+                seed, width, height, model_hash, model, batch_size, batch_pos, created_date, modified_date, 
+                custom_tags, rating, favorite, for_deletion, nsfw, unavailable, aesthetic_score, hyper_network, 
+                hyper_network_strength, clip_skip, ensd, file_size, no_metadata, workflow, workflow_id, has_error, 
+                hash, viewed_date, touched_date, prompt_embedding_id, negative_prompt_embedding_id, image_embedding_id,
+                metadata_hash, embedding_source_id, is_embedding_representative, needs_visual_embedding, is_upscaled, 
+                base_image_id, generated_tags, loras, vae, refiner_model, refiner_switch, upscaler, upscale_factor, 
+                hires_steps, hires_upscaler, hires_upscale, denoising_strength, controlnets, ip_adapter, 
+                ip_adapter_strength, wildcards_used, generation_time_seconds, scheduler, duration_ms, video_codec, 
+                audio_codec, frame_rate, bitrate, is_video, created_at
+            FROM image
             WHERE 
                 prompt_embedding_id IS NULL 
                 OR negative_prompt_embedding_id IS NULL
                 OR (needs_visual_embedding = true AND image_embedding_id IS NULL)
             LIMIT @Limit";
 
-        await using var conn = await OpenConnectionAsync();
+        await using var conn = await OpenConnectionAsync().ConfigureAwait(false);
         var images = await conn.QueryAsync<ImageEntity>(
-            new CommandDefinition(sql, new { Limit = limit }, cancellationToken: cancellationToken));
+            new CommandDefinition(sql, new { Limit = limit }, cancellationToken: cancellationToken)).ConfigureAwait(false);
 
         return images.ToList();
     }
@@ -184,14 +202,16 @@ public partial class PostgreSQLDataStore
         string path,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(path);
+        
         const string sql = @"
             SELECT id FROM image
             WHERE path = @Path
             LIMIT 1";
 
-        await using var conn = await OpenConnectionAsync();
+        await using var conn = await OpenConnectionAsync().ConfigureAwait(false);
         return await conn.ExecuteScalarAsync<int?>(
-            new CommandDefinition(sql, new { Path = path }, cancellationToken: cancellationToken));
+            new CommandDefinition(sql, new { Path = path }, cancellationToken: cancellationToken)).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -231,10 +251,10 @@ public partial class PostgreSQLDataStore
             ORDER BY reference_count DESC
             LIMIT 10";
 
-        await using var conn = await OpenConnectionAsync();
+        await using var conn = await OpenConnectionAsync().ConfigureAwait(false);
         
         var stats = await conn.QueryFirstOrDefaultAsync<EmbeddingCacheStatistics>(
-            new CommandDefinition(statsSql, cancellationToken: cancellationToken));
+            new CommandDefinition(statsSql, cancellationToken: cancellationToken)).ConfigureAwait(false);
 
         if (stats == null)
         {
@@ -242,7 +262,7 @@ public partial class PostgreSQLDataStore
         }
 
         var topEmbeddings = await conn.QueryAsync<MostReusedEmbedding>(
-            new CommandDefinition(topSql, cancellationToken: cancellationToken));
+            new CommandDefinition(topSql, cancellationToken: cancellationToken)).ConfigureAwait(false);
 
         stats.TopReusedEmbeddings = topEmbeddings.ToList();
 

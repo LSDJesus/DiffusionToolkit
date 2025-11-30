@@ -94,6 +94,12 @@ public class MainModel : BaseNotify
     private QueryModel? _selectedQuery;
     private ICommand _renameQueryCommand;
     private ICommand _removeQueryCommand;
+    
+    // Model Library
+    private ObservableCollection<ModelLibraryFolderViewModel>? _modelLibraryFolders;
+    private ModelLibraryFolderViewModel? _selectedModelLibraryFolder;
+    private ICommand? _refreshModelLibraryCommand;
+    private ICommand? _scanModelsCommand;
 
     public MainModel()
     {
@@ -846,4 +852,32 @@ public class MainModel : BaseNotify
     public ICommand ToggleThumbnailViewModeCommand { get; set;  }
     public ICommand FocusSearch { get; set; }
     public ICommand RefreshFolderCommand { get; set; }
+
+    #region Model Library
+
+    public ObservableCollection<ModelLibraryFolderViewModel>? ModelLibraryFolders
+    {
+        get => _modelLibraryFolders;
+        set => SetField(ref _modelLibraryFolders, value);
+    }
+
+    public ModelLibraryFolderViewModel? SelectedModelLibraryFolder
+    {
+        get => _selectedModelLibraryFolder;
+        set => SetField(ref _selectedModelLibraryFolder, value);
+    }
+
+    public ICommand? RefreshModelLibraryCommand
+    {
+        get => _refreshModelLibraryCommand;
+        set => SetField(ref _refreshModelLibraryCommand, value);
+    }
+
+    public ICommand? ScanModelsCommand
+    {
+        get => _scanModelsCommand;
+        set => SetField(ref _scanModelsCommand, value);
+    }
+
+    #endregion
 }

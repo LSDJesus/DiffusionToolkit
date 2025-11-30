@@ -242,8 +242,7 @@ namespace Diffusion.Toolkit.Windows
                 var sql = @"
                     SELECT path 
                     FROM image 
-                    WHERE folder_id = @folderId 
-                    AND is_video = false";
+                    WHERE folder_id = @folderId";
 
                 if (onlyJpeg)
                 {

@@ -229,6 +229,45 @@ public class ThumbnailCache
         }
     }
 
+    /// <summary>
+    /// Add a thumbnail from raw bytes (for embedded previews in model files)
+    /// </summary>
+    public bool AddThumbnailFromBytes(string path, int size, byte[] imageData)
+    {
+        if (!File.Exists(path)) return false;
+        
+        if (TryOpenConnection(path, out var db))
+        {
+            var filename = Path.GetFileName(path);
+            
+            var command = db.CreateCommand("REPLACE INTO Thumbnail (Filename, Data, Size) VALUES (@Filename, @Data, @Size)");
+            command.Bind("@Filename", filename);
+            command.Bind("@Data", imageData);
+            command.Bind("@Size", size);
+            command.ExecuteNonQuery();
+            return true;
+        }
+        
+        return false;
+    }
+
+    /// <summary>
+    /// Check if a thumbnail exists in the cache
+    /// </summary>
+    public bool HasThumbnail(string path, int size)
+    {
+        if (!File.Exists(path)) return false;
+        
+        if (TryOpenConnection(path, out var db))
+        {
+            var filename = Path.GetFileName(path);
+            var count = db.ExecuteScalar<int>("SELECT COUNT(*) FROM Thumbnail WHERE Filename = ? AND Size = ?", filename, size);
+            return count > 0;
+        }
+        
+        return false;
+    }
+
 
     public static void CreateInstance(int maxItems, int evictItems)
     {

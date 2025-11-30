@@ -54,6 +54,31 @@ public class SettingsModel : BaseNotify
     private string _database;
     private string _username;
     private string _status;
+    
+    // JoyTag settings
+    private bool _enableJoyTag;
+    private float _joyTagThreshold;
+    private string _joyTagModelPath;
+    private string _joyTagTagsPath;
+    
+    // WD tagger settings
+    private bool _enableWDTag;
+    private float _wdTagThreshold;
+    private string _wdTagModelPath;
+    private string _wdTagTagsPath;
+    
+    // JoyCaption settings
+    private string _joyCaptionModelPath;
+    private string _joyCaptionMMProjPath;
+    private string _joyCaptionDefaultPrompt;
+    
+    // Tagging/Captioning output settings
+    private bool _storeTagConfidence;
+    private bool _autoWriteMetadata;
+    private bool _createMetadataBackup;
+    private bool _writeTagsToMetadata;
+    private bool _writeCaptionsToMetadata;
+    private bool _writeGenerationParamsToMetadata;
 
     public SettingsModel()
     {
@@ -78,6 +103,27 @@ public class SettingsModel : BaseNotify
         _database = string.Empty;
         _username = string.Empty;
         _status = string.Empty;
+        
+        // JoyTag defaults
+        _joyTagModelPath = string.Empty;
+        _joyTagTagsPath = string.Empty;
+        
+        // WD tagger defaults
+        _wdTagModelPath = string.Empty;
+        _wdTagTagsPath = string.Empty;
+        
+        // JoyCaption defaults
+        _joyCaptionModelPath = string.Empty;
+        _joyCaptionMMProjPath = string.Empty;
+        _joyCaptionDefaultPrompt = "detailed";
+        
+        // Tagging/Captioning output defaults
+        _storeTagConfidence = false;
+        _autoWriteMetadata = false;
+        _createMetadataBackup = true;
+        _writeTagsToMetadata = true;
+        _writeCaptionsToMetadata = true;
+        _writeGenerationParamsToMetadata = true;
         //ExternalApplications.CollectionChanged += ExternalApplicationsOnCollectionChanged;
 
         PropertyChanged += OnPropertyChanged;
@@ -348,6 +394,140 @@ public class SettingsModel : BaseNotify
     {
         get => _status;
         set => SetField(ref _status, value);
+    }
+
+    // JoyTag properties
+    public bool EnableJoyTag
+    {
+        get => _enableJoyTag;
+        set => SetField(ref _enableJoyTag, value);
+    }
+
+    public float JoyTagThreshold
+    {
+        get => _joyTagThreshold;
+        set => SetField(ref _joyTagThreshold, value);
+    }
+
+    public string JoyTagModelPath
+    {
+        get => _joyTagModelPath;
+        set => SetField(ref _joyTagModelPath, value);
+    }
+
+    public string JoyTagTagsPath
+    {
+        get => _joyTagTagsPath;
+        set => SetField(ref _joyTagTagsPath, value);
+    }
+
+    // WD tagger properties (aliases for XAML bindings that use WDV3Large naming)
+    public bool EnableWDTag
+    {
+        get => _enableWDTag;
+        set => SetField(ref _enableWDTag, value);
+    }
+    
+    // Alias for XAML binding
+    public bool EnableWDV3Large
+    {
+        get => _enableWDTag;
+        set => SetField(ref _enableWDTag, value);
+    }
+
+    public float WDTagThreshold
+    {
+        get => _wdTagThreshold;
+        set => SetField(ref _wdTagThreshold, value);
+    }
+    
+    // Alias for XAML binding
+    public float WDV3LargeThreshold
+    {
+        get => _wdTagThreshold;
+        set => SetField(ref _wdTagThreshold, value);
+    }
+
+    public string WDTagModelPath
+    {
+        get => _wdTagModelPath;
+        set => SetField(ref _wdTagModelPath, value);
+    }
+    
+    // Alias for XAML binding
+    public string WDV3LargeModelPath
+    {
+        get => _wdTagModelPath;
+        set => SetField(ref _wdTagModelPath, value);
+    }
+
+    public string WDTagTagsPath
+    {
+        get => _wdTagTagsPath;
+        set => SetField(ref _wdTagTagsPath, value);
+    }
+    
+    // Alias for XAML binding
+    public string WDV3LargeTagsPath
+    {
+        get => _wdTagTagsPath;
+        set => SetField(ref _wdTagTagsPath, value);
+    }
+
+    // JoyCaption properties
+    public string JoyCaptionModelPath
+    {
+        get => _joyCaptionModelPath;
+        set => SetField(ref _joyCaptionModelPath, value);
+    }
+
+    public string JoyCaptionMMProjPath
+    {
+        get => _joyCaptionMMProjPath;
+        set => SetField(ref _joyCaptionMMProjPath, value);
+    }
+
+    public string JoyCaptionDefaultPrompt
+    {
+        get => _joyCaptionDefaultPrompt;
+        set => SetField(ref _joyCaptionDefaultPrompt, value);
+    }
+
+    // Tagging/Captioning output properties
+    public bool StoreTagConfidence
+    {
+        get => _storeTagConfidence;
+        set => SetField(ref _storeTagConfidence, value);
+    }
+
+    public bool AutoWriteMetadata
+    {
+        get => _autoWriteMetadata;
+        set => SetField(ref _autoWriteMetadata, value);
+    }
+
+    public bool CreateMetadataBackup
+    {
+        get => _createMetadataBackup;
+        set => SetField(ref _createMetadataBackup, value);
+    }
+
+    public bool WriteTagsToMetadata
+    {
+        get => _writeTagsToMetadata;
+        set => SetField(ref _writeTagsToMetadata, value);
+    }
+
+    public bool WriteCaptionsToMetadata
+    {
+        get => _writeCaptionsToMetadata;
+        set => SetField(ref _writeCaptionsToMetadata, value);
+    }
+
+    public bool WriteGenerationParamsToMetadata
+    {
+        get => _writeGenerationParamsToMetadata;
+        set => SetField(ref _writeGenerationParamsToMetadata, value);
     }
 
     public override bool IsDirty => _isDirty;

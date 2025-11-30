@@ -23,7 +23,10 @@ public partial class PostgreSQLDataStore
 
     private void AddNodesInternal(NpgsqlConnection conn, IEnumerable<ComfyUINode> nodes)
     {
-        var nodeList = nodes.ToList();
+        // Filter out nodes with invalid image IDs (Id <= 0 means image wasn't inserted/found)
+        var nodeList = nodes
+            .Where(n => n.ImageRef != null && ((Models.Image)n.ImageRef).Id > 0)
+            .ToList();
         if (nodeList.Count == 0) return;
 
         // Insert nodes
