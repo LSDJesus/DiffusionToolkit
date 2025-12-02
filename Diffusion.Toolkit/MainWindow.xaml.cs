@@ -37,6 +37,7 @@ using System.Windows.Markup;
 using System.Xml;
 using Diffusion.Toolkit.Services;
 using Diffusion.Toolkit.Common;
+using Diffusion.Toolkit.Configuration;
 using Settings = Diffusion.Toolkit.Configuration.Settings;
 using Diffusion.Database.Models;
 using Image = System.Windows.Controls.Image;
@@ -523,6 +524,10 @@ namespace Diffusion.Toolkit
                 {
                     _configuration.Load(out _settings);
 
+                    // Initialize sections if null (may be missing from older config files)
+                    _settings.MetadataSection ??= new MetadataSectionSettings();
+                    _settings.NavigationSection ??= new NavigationSectionSettings();
+                    
                     _settings.MetadataSection.Attach(_settings);
                     _settings.NavigationSection.Attach(_settings);
                     _settings.UseBuiltInViewer ??= true;

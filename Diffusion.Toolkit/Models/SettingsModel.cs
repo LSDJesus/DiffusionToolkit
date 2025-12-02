@@ -79,6 +79,14 @@ public class SettingsModel : BaseNotify
     private bool _writeTagsToMetadata;
     private bool _writeCaptionsToMetadata;
     private bool _writeGenerationParamsToMetadata;
+    
+    // Caption provider & handling
+    private Diffusion.Toolkit.Configuration.CaptionHandlingMode _captionHandlingMode;
+    private Diffusion.Toolkit.Configuration.CaptionProviderType _captionProvider;
+    private string _externalCaptionBaseUrl;
+    private string _externalCaptionModel;
+    private string _externalCaptionApiKey;
+    private ObservableCollection<string> _availableModels;
 
     public SettingsModel()
     {
@@ -124,6 +132,14 @@ public class SettingsModel : BaseNotify
         _writeTagsToMetadata = true;
         _writeCaptionsToMetadata = true;
         _writeGenerationParamsToMetadata = true;
+        
+        // Caption provider defaults
+        _captionHandlingMode = Diffusion.Toolkit.Configuration.CaptionHandlingMode.Overwrite;
+        _captionProvider = Diffusion.Toolkit.Configuration.CaptionProviderType.LocalJoyCaption;
+        _externalCaptionBaseUrl = string.Empty;
+        _externalCaptionModel = string.Empty;
+        _externalCaptionApiKey = string.Empty;
+        _availableModels = new ObservableCollection<string>();
         //ExternalApplications.CollectionChanged += ExternalApplicationsOnCollectionChanged;
 
         PropertyChanged += OnPropertyChanged;
@@ -528,6 +544,42 @@ public class SettingsModel : BaseNotify
     {
         get => _writeGenerationParamsToMetadata;
         set => SetField(ref _writeGenerationParamsToMetadata, value);
+    }
+
+    public Diffusion.Toolkit.Configuration.CaptionHandlingMode CaptionHandlingMode
+    {
+        get => _captionHandlingMode;
+        set => SetField(ref _captionHandlingMode, value);
+    }
+
+    public Diffusion.Toolkit.Configuration.CaptionProviderType CaptionProvider
+    {
+        get => _captionProvider;
+        set => SetField(ref _captionProvider, value);
+    }
+
+    public string ExternalCaptionBaseUrl
+    {
+        get => _externalCaptionBaseUrl;
+        set => SetField(ref _externalCaptionBaseUrl, value);
+    }
+
+    public string ExternalCaptionModel
+    {
+        get => _externalCaptionModel;
+        set => SetField(ref _externalCaptionModel, value);
+    }
+
+    public string ExternalCaptionApiKey
+    {
+        get => _externalCaptionApiKey;
+        set => SetField(ref _externalCaptionApiKey, value);
+    }
+
+    public ObservableCollection<string> AvailableModels
+    {
+        get => _availableModels;
+        set => SetField(ref _availableModels, value);
     }
 
     public override bool IsDirty => _isDirty;

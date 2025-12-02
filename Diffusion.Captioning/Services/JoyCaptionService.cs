@@ -13,7 +13,7 @@ namespace Diffusion.Captioning.Services;
 /// Service for generating detailed image captions using JoyCaption (LLaVA-style model)
 /// via LLamaSharp with GGUF format using BatchedExecutor for efficient embedding reuse
 /// </summary>
-public class JoyCaptionService : IDisposable
+public class JoyCaptionService : IDisposable, ICaptionService
 {
     private readonly string _modelPath;
     private readonly string _mmProjPath;

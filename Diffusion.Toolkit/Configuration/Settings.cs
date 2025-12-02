@@ -88,6 +88,11 @@ public class Settings : SettingsContainer, IScanOptions
     private string _wdTagTagsPath;
     private string _joyCaptionModelPath;
     private string _joyCaptionMMProjPath;
+    // Caption provider settings
+    private CaptionProviderType _captionProvider;
+    private string _externalCaptionBaseUrl;
+    private string _externalCaptionModel;
+    private string _externalCaptionApiKey;
     private bool _storeTagConfidence;
     private bool _enableWDV3Large;
     private string _wdV3LargeModelPath;
@@ -100,6 +105,7 @@ public class Settings : SettingsContainer, IScanOptions
     private bool _writeTagsToMetadata;
     private bool _writeCaptionsToMetadata;
     private bool _writeGenerationParamsToMetadata;
+    private CaptionHandlingMode _captionHandlingMode;
 
     public Settings()
     {
@@ -160,6 +166,7 @@ public class Settings : SettingsContainer, IScanOptions
         WriteTagsToMetadata = true;
         WriteCaptionsToMetadata = true;
         WriteGenerationParamsToMetadata = true;
+        CaptionHandlingMode = CaptionHandlingMode.Overwrite; // Default behavior
         EnableWDTag = true;
         EnableWDV3Large = true;
         StoreTagConfidence = false;
@@ -172,6 +179,11 @@ public class Settings : SettingsContainer, IScanOptions
         JoyCaptionModelPath = @"models\Joycaption\llama-joycaption-beta-one-hf-llava.i1-Q6_K.gguf";
         JoyCaptionMMProjPath = @"models\Joycaption\llava.projector";
         JoyCaptionDefaultPrompt = "detailed";
+        // Caption provider defaults
+        CaptionProvider = CaptionProviderType.LocalJoyCaption; // default to local
+        ExternalCaptionBaseUrl = "http://localhost:1234/v1"; // LM Studio default
+        ExternalCaptionModel = ""; // user must set
+        ExternalCaptionApiKey = ""; // optional depending on provider
 
         NavigationSection = new NavigationSectionSettings();
         NavigationSection.Attach(this);
@@ -628,6 +640,30 @@ public class Settings : SettingsContainer, IScanOptions
         set => UpdateValue(ref _joyCaptionMMProjPath, value);
     }
 
+    public CaptionProviderType CaptionProvider
+    {
+        get => _captionProvider;
+        set => UpdateValue(ref _captionProvider, value);
+    }
+
+    public string ExternalCaptionBaseUrl
+    {
+        get => _externalCaptionBaseUrl;
+        set => UpdateValue(ref _externalCaptionBaseUrl, value);
+    }
+
+    public string ExternalCaptionModel
+    {
+        get => _externalCaptionModel;
+        set => UpdateValue(ref _externalCaptionModel, value);
+    }
+
+    public string ExternalCaptionApiKey
+    {
+        get => _externalCaptionApiKey;
+        set => UpdateValue(ref _externalCaptionApiKey, value);
+    }
+
     public bool StoreTagConfidence
     {
         get => _storeTagConfidence;
@@ -726,6 +762,15 @@ public class Settings : SettingsContainer, IScanOptions
         get => _writeGenerationParamsToMetadata;
         set => UpdateValue(ref _writeGenerationParamsToMetadata, value);
     }
+
+    /// <summary>
+    /// How to handle existing captions when generating new ones
+    /// </summary>
+    public CaptionHandlingMode CaptionHandlingMode
+    {
+        get => _captionHandlingMode;
+        set => UpdateValue(ref _captionHandlingMode, value);
+    }
 }
 
 public class PreviewWindowState
@@ -737,4 +782,20 @@ public class PreviewWindowState
     public double Width { get; set; }
     public double Height { get; set; }
     public bool IsFullScreen { get; set; }
+}
+
+public enum CaptionHandlingMode
+{
+    /// <summary>Replace existing caption with new one</summary>
+    Overwrite,
+    /// <summary>Append new caption to existing caption</summary>
+    Append,
+    /// <summary>Use existing caption as context for refinement</summary>
+    Refine
+}
+
+public enum CaptionProviderType
+{
+    LocalJoyCaption = 0,
+    OpenAICompatible = 1
 }

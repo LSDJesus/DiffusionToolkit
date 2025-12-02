@@ -14,6 +14,7 @@ public class MetadataSection : BaseNotify
     private AccordionState _modelState;
     private AccordionState _dateState;
     private AccordionState _workflowState;
+    private AccordionState _tagsState;
 
     public AccordionState PromptState
     {
@@ -73,5 +74,11 @@ public class MetadataSection : BaseNotify
     {
         get => _workflowState; 
         set => SetField(ref _workflowState, value);
+    }
+
+    public AccordionState TagsState
+    {
+        get => _tagsState;
+        set => SetField(ref _tagsState, value);
     }
 }

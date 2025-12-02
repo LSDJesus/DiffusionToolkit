@@ -13,6 +13,7 @@
         <converters:SizeConverter x:Key="SizeConverter"></converters:SizeConverter>
         <converters:ZeroConverter x:Key="ZeroConverter"></converters:ZeroConverter>
         <converters:BoolToVisibilityConverter x:Key="boolToVis"></converters:BoolToVisibilityConverter>
+        <converters:StringToVisibilityConverter x:Key="strToVis"></converters:StringToVisibilityConverter>
     </UserControl.Resources>
     <Grid x:Name="Root" Background="Transparent"
         DataContext="{Binding CurrentImage, RelativeSource={RelativeSource AncestorLevel=1, Mode=FindAncestor, AncestorType=UserControl}}">
@@ -217,6 +218,56 @@
                                     </ItemsPanelTemplate>
                                 </ItemsControl.ItemsPanel>
                             </ItemsControl>
+                        </local:AccordionControl>
+
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+            <TabItem Header="{lex:Loc Metadata.TagsCaption.Tab}" Background="Transparent" GotFocus="UIElement_OnGotFocus" HorizontalContentAlignment="Stretch"
+                     Visibility="{Binding HasTags, Converter={StaticResource boolToVis}}">
+                <ScrollViewer Background="Transparent" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Background="Transparent">
+                        
+                        <!-- Caption section (shown first if present) -->
+                        <local:AccordionControl x:Name="CaptionMetadata" 
+                                                HeaderBackground="#80000000" 
+                                                Header="{lex:Loc Metadata.Caption}"
+                                                Margin="0,0,0,5"
+                                                Visibility="{Binding Caption, Converter={StaticResource strToVis}}"
+                                                State="Expanded">
+                            <local:AccordionControl.ButtonAreaContent>
+                                <Grid Background="{x:Null}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition/>
+                                        <ColumnDefinition Width="80"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Button Style="{DynamicResource BorderlessButton}" Grid.Column="1" Command="{Binding CopyCaptionCommand}" Content="{lex:Loc Metadata.Buttons.Copy}"/>
+                                </Grid>
+                            </local:AccordionControl.ButtonAreaContent>
+                            <TextBox Background="#00000000" FontSize="14" BorderThickness="0"
+                                     IsReadOnly="True"
+                                     Padding="5" TextWrapping="WrapWithOverflow" Text="{Binding Caption}"/>
+                        </local:AccordionControl>
+
+                        <!-- Tags section -->
+                        <local:AccordionControl x:Name="TagsMetadata" 
+                                                HeaderBackground="#80000000" 
+                                                Header="{lex:Loc Metadata.Tags}"
+                                                Margin="0,0,0,5"
+                                                Visibility="{Binding Tags, Converter={StaticResource strToVis}}"
+                                                State="{Binding MetadataSection.TagsState, RelativeSource={RelativeSource AncestorLevel=1, Mode=FindAncestor, AncestorType=UserControl}, Mode=TwoWay}">
+                            <local:AccordionControl.ButtonAreaContent>
+                                <Grid Background="{x:Null}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition/>
+                                        <ColumnDefinition Width="80"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Button Style="{DynamicResource BorderlessButton}" Grid.Column="1" Command="{Binding CopyTagsCommand}" Content="{lex:Loc Metadata.Buttons.Copy}"/>
+                                </Grid>
+                            </local:AccordionControl.ButtonAreaContent>
+                            <TextBox Background="#00000000" FontSize="14" BorderThickness="0"
+                                     IsReadOnly="True"
+                                     Padding="5" TextWrapping="WrapWithOverflow" Text="{Binding Tags}"/>
                         </local:AccordionControl>
 
                     </StackPanel>

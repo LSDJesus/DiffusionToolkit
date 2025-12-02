@@ -839,7 +839,7 @@ namespace Diffusion.Toolkit.Controls
                 return;
             }
 
-            var window = new Diffusion.Toolkit.Windows.TaggingWindow(selectedImages)
+            var window = new Diffusion.Toolkit.Windows.TaggingWindow(selectedImages, taggingOnly: true)
             {
                 Owner = Window.GetWindow(this)
             };
@@ -852,6 +852,37 @@ namespace Diffusion.Toolkit.Controls
                     ServiceLocator.ToastService.Toast(
                         $"Successfully tagged {selectedImages.Count} image(s)", 
                         "Tagging Complete");
+                }
+            }
+        }
+
+        private void Caption_OnClick(object sender, RoutedEventArgs e)
+        {
+            var selectedImages = ThumbnailListView.SelectedItems.Cast<ImageEntry>()
+                .Where(img => img.Id > 0)
+                .Select(img => img.Id)
+                .ToList();
+
+            if (selectedImages.Count == 0)
+            {
+                MessageBox.Show("No images selected for captioning.", "Caption", 
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            var window = new Diffusion.Toolkit.Windows.TaggingWindow(selectedImages, captioningOnly: true)
+            {
+                Owner = Window.GetWindow(this)
+            };
+            
+            if (window.ShowDialog() == true)
+            {
+                // Refresh the current view to show new captions
+                if (ServiceLocator.ToastService != null)
+                {
+                    ServiceLocator.ToastService.Toast(
+                        $"Successfully captioned {selectedImages.Count} image(s)", 
+                        "Captioning Complete");
                 }
             }
         }

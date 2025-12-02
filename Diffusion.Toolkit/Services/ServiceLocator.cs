@@ -55,6 +55,7 @@ public class ServiceLocator
     private static JoyTagService? _joyTagService;
     private static WDTagService? _wdTagService;
     private static JoyCaptionService? _joyCaptionService;
+    private static ICaptionService? _captionService;
     private static ModelResourceService? _modelResourceService;
 
     public static PostgreSQLDataStore? DataStore => _dataStore; // Primary PostgreSQL database
@@ -247,6 +248,35 @@ public class ServiceLocator
                 }
             }
             return _joyCaptionService;
+        }
+    }
+
+    public static ICaptionService? CaptionService
+    {
+        get
+        {
+            if (_captionService != null) return _captionService;
+            if (_settings == null) return null;
+
+            if (_settings.CaptionProvider == Configuration.CaptionProviderType.LocalJoyCaption)
+            {
+                // Return JoyCaption if available, else null
+                _captionService = JoyCaptionService;
+                return _captionService;
+            }
+            else // OpenAI-compatible HTTP
+            {
+                if (!string.IsNullOrWhiteSpace(_settings.ExternalCaptionBaseUrl) && !string.IsNullOrWhiteSpace(_settings.ExternalCaptionModel))
+                {
+                    _captionService = new Diffusion.Captioning.Services.HttpCaptionService(
+                        _settings.ExternalCaptionBaseUrl,
+                        _settings.ExternalCaptionModel,
+                        _settings.ExternalCaptionApiKey);
+                    return _captionService;
+                }
+            }
+
+            return null;
         }
     }
 }

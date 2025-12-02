@@ -228,6 +228,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Content Include="..\models\tag_deduplication_map.json" Link="models\tag_deduplication_map.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
     <None Update="hints.txt">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>

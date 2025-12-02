@@ -1099,6 +1099,50 @@ namespace Diffusion.Toolkit.Pages
                     imageViewModel.Albums = ServiceLocator.DataStore.GetImageAlbums(image.Id);
                     var albumLookup = imageViewModel.Albums.ToDictionary(x => x.Id);
 
+                    // Load tags and caption from database
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            var tags = await ServiceLocator.DataStore.GetImageTagsAsync(image.Id);
+                            if (tags.Count > 0)
+                            {
+                                // Separate captions (usually from joycaption source) from tags
+                                var captionTags = tags.Where(t => t.Source?.Contains("caption", StringComparison.OrdinalIgnoreCase) == true).ToList();
+                                var regularTags = tags.Where(t => t.Source?.Contains("caption", StringComparison.OrdinalIgnoreCase) != true).ToList();
+
+                                await Dispatcher.InvokeAsync(() =>
+                                {
+                                    if (captionTags.Count > 0)
+                                    {
+                                        imageViewModel.Caption = string.Join("\n\n", captionTags.Select(t => t.Tag));
+                                    }
+                                    if (regularTags.Count > 0)
+                                    {
+                                        imageViewModel.Tags = string.Join(", ", regularTags.OrderByDescending(t => t.Confidence).Select(t => t.Tag));
+                                    }
+                                    imageViewModel.HasTags = captionTags.Count > 0 || regularTags.Count > 0;
+                                    
+                                    // Set up copy commands
+                                    imageViewModel.CopyTagsCommand = new RelayCommand<object>(_ =>
+                                    {
+                                        if (!string.IsNullOrEmpty(imageViewModel.Tags))
+                                            Clipboard.SetText(imageViewModel.Tags);
+                                    });
+                                    imageViewModel.CopyCaptionCommand = new RelayCommand<object>(_ =>
+                                    {
+                                        if (!string.IsNullOrEmpty(imageViewModel.Caption))
+                                            Clipboard.SetText(imageViewModel.Caption);
+                                    });
+                                });
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Logger.Log($"Failed to load tags for image {image.Id}: {ex.Message}");
+                        }
+                    });
+
                     //foreach (var album in _model.MainModel.Albums)
                     //{
                     //    album.IsTicked = albumLookup.ContainsKey(album.Id);

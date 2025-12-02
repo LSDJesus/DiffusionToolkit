@@ -26,6 +26,9 @@ using Diffusion.Database.PostgreSQL.Models;
 using Diffusion.Toolkit.Configuration;
 using Diffusion.Toolkit.Localization;
 using Diffusion.Toolkit.Services;
+using System.Net.Http;
+using System.Net.Http.Json;
+using Diffusion.Captioning.Services;
 
 namespace Diffusion.Toolkit.Pages
 {
@@ -132,6 +135,11 @@ namespace Diffusion.Toolkit.Pages
             _model.JoyCaptionModelPath = _settings.JoyCaptionModelPath;
             _model.JoyCaptionMMProjPath = _settings.JoyCaptionMMProjPath;
             _model.JoyCaptionDefaultPrompt = _settings.JoyCaptionDefaultPrompt;
+            _model.CaptionHandlingMode = _settings.CaptionHandlingMode;
+            _model.CaptionProvider = _settings.CaptionProvider;
+            _model.ExternalCaptionBaseUrl = _settings.ExternalCaptionBaseUrl;
+            _model.ExternalCaptionModel = _settings.ExternalCaptionModel;
+            _model.ExternalCaptionApiKey = _settings.ExternalCaptionApiKey;
             
             // Tagging/Captioning output settings
             _model.StoreTagConfidence = _settings.StoreTagConfidence;
@@ -496,6 +504,11 @@ namespace Diffusion.Toolkit.Pages
                 _settings.JoyCaptionModelPath = _model.JoyCaptionModelPath;
                 _settings.JoyCaptionMMProjPath = _model.JoyCaptionMMProjPath;
                 _settings.JoyCaptionDefaultPrompt = _model.JoyCaptionDefaultPrompt;
+                _settings.CaptionHandlingMode = _model.CaptionHandlingMode;
+                _settings.CaptionProvider = _model.CaptionProvider;
+                _settings.ExternalCaptionBaseUrl = _model.ExternalCaptionBaseUrl;
+                _settings.ExternalCaptionModel = _model.ExternalCaptionModel;
+                _settings.ExternalCaptionApiKey = _model.ExternalCaptionApiKey;
                 
                 // Tagging/Captioning output settings
                 _settings.StoreTagConfidence = _model.StoreTagConfidence;
@@ -588,9 +601,196 @@ namespace Diffusion.Toolkit.Pages
             }
         }
 
+        private async void TestCaptionApi_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (_model.CaptionProvider != Configuration.CaptionProviderType.OpenAICompatible)
+                {
+                    MessageBox.Show(this._window, "Select 'OpenAI-Compatible HTTP API' as Provider.", "Test Connection", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
+                if (string.IsNullOrWhiteSpace(_model.ExternalCaptionBaseUrl))
+                {
+                    MessageBox.Show(this._window, "Please set Base URL.", "Test Connection", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                var client = new HttpClient();
+                client.BaseAddress = new Uri(_model.ExternalCaptionBaseUrl.TrimEnd('/'));
+                if (!string.IsNullOrWhiteSpace(_model.ExternalCaptionApiKey))
+                {
+                    client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _model.ExternalCaptionApiKey);
+                }
+
+                // Try fetch models list first
+                var ok = false;
+                string? modelList = null;
+                try
+                {
+                    var resp = await client.GetAsync("/v1/models");
+                    if (!resp.IsSuccessStatusCode)
+                    {
+                        resp = await client.GetAsync("/models");
+                    }
+                    if (resp.IsSuccessStatusCode)
+                    {
+                        ok = true;
+                        var content = await resp.Content.ReadAsStringAsync();
+                        // Parse model names if available
+                        try
+                        {
+                            var modelsResponse = JsonSerializer.Deserialize<ModelsResponse>(content);
+                            if (modelsResponse?.data != null && modelsResponse.data.Length > 0)
+                            {
+                                // Populate the dropdown with available models
+                                _model.AvailableModels.Clear();
+                                foreach (var model in modelsResponse.data)
+                                {
+                                    _model.AvailableModels.Add(model.id);
+                                }
+                                
+                                modelList = string.Join(", ", modelsResponse.data.Take(5).Select(m => m.id));
+                                if (modelsResponse.data.Length > 5)
+                                {
+                                    modelList += $" (and {modelsResponse.data.Length - 5} more)";
+                                }
+                            }
+                        }
+                        catch { /* ignore parse errors */ }
+                    }
+                }
+                catch
+                {
+                    // ignore
+                }
+
+                if (!ok)
+                {
+                    // Fallback: ping /chat/completions with minimal payload
+                    var testModel = string.IsNullOrWhiteSpace(_model.ExternalCaptionModel) ? "gpt-4" : _model.ExternalCaptionModel;
+                    var payload = new
+                    {
+                        model = testModel,
+                        messages = new[] { new { role = "user", content = "ping" } },
+                        max_tokens = 1
+                    };
+                    try
+                    {
+                        var resp2 = await client.PostAsJsonAsync("/v1/chat/completions", payload);
+                        if (!resp2.IsSuccessStatusCode)
+                        {
+                            resp2 = await client.PostAsJsonAsync("/chat/completions", payload);
+                        }
+                        ok = resp2.IsSuccessStatusCode;
+                    }
+                    catch { /* ignore */ }
+                }
+
+                var message = ok ? "Connection OK" : "Connection failed";
+                if (ok && modelList != null)
+                {
+                    message += $"\n\nAvailable models:\n{modelList}";
+                }
+                
+                MessageBox.Show(this._window, message, "Test Connection",
+                    MessageBoxButton.OK, ok ? MessageBoxImage.Information : MessageBoxImage.Error);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this._window, $"Connection error: {ex.Message}", "Test Connection", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        // Helper class for parsing /models response
+        private class ModelsResponse
+        {
+            public ModelInfo[]? data { get; set; }
+        }
+
+        private class ModelInfo
+        {
+            public string id { get; set; } = "";
+        }
+
+        private async void TestCaptionApiWithImage_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (_model.CaptionProvider != Configuration.CaptionProviderType.OpenAICompatible)
+                {
+                    MessageBox.Show(this._window, "Select 'OpenAI-Compatible HTTP API' as Provider.", "Sample Caption", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
+                if (string.IsNullOrWhiteSpace(_model.ExternalCaptionBaseUrl))
+                {
+                    MessageBox.Show(this._window, "Please set Base URL.", "Sample Caption", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                // Pick a sample image
+                using var dialog = new CommonOpenFileDialog();
+                dialog.Title = "Select an image to caption";
+                dialog.Filters.Add(new CommonFileDialogFilter("Images", "*.png;*.jpg;*.jpeg;*.webp"));
+                if (dialog.ShowDialog(this._window) != CommonFileDialogResult.Ok)
+                    return;
+
+                var imagePath = dialog.FileName;
+                var promptTag = _model.JoyCaptionDefaultPrompt ?? "detailed";
+                var promptText = promptTag switch
+                {
+                    "detailed" => JoyCaptionService.PROMPT_DETAILED,
+                    "short" => JoyCaptionService.PROMPT_SHORT,
+                    "technical" => JoyCaptionService.PROMPT_TECHNICAL,
+                    "precise_colors" => JoyCaptionService.PROMPT_PRECISE_COLORS,
+                    "character" => JoyCaptionService.PROMPT_CHARACTER_FOCUS,
+                    "scene" => JoyCaptionService.PROMPT_SCENE_FOCUS,
+                    "artistic" => JoyCaptionService.PROMPT_ARTISTIC_STYLE,
+                    "booru" => JoyCaptionService.PROMPT_BOORU_TAGS,
+                    _ => JoyCaptionService.PROMPT_DETAILED
+                };
+
+                // Temporarily apply current UI values to settings for service to use
+                var oldProvider = _settings.CaptionProvider;
+                var oldBaseUrl = _settings.ExternalCaptionBaseUrl;
+                var oldModel = _settings.ExternalCaptionModel;
+                var oldApiKey = _settings.ExternalCaptionApiKey;
+                
+                _settings.CaptionProvider = _model.CaptionProvider;
+                _settings.ExternalCaptionBaseUrl = _model.ExternalCaptionBaseUrl;
+                _settings.ExternalCaptionModel = _model.ExternalCaptionModel;
+                _settings.ExternalCaptionApiKey = _model.ExternalCaptionApiKey;
+
+                try
+                {
+                    var service = ServiceLocator.CaptionService;
+                    if (service == null)
+                    {
+                        MessageBox.Show(this._window, "Caption service is not available.", "Sample Caption", MessageBoxButton.OK, MessageBoxImage.Error);
+                        return;
+                    }
+
+                    var result = await service.CaptionImageAsync(imagePath, promptText, CancellationToken.None);
+                    MessageBox.Show(this._window, result.Caption ?? "(empty)", "Caption Result", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                finally
+                {
+                    // Restore original settings
+                    _settings.CaptionProvider = oldProvider;
+                    _settings.ExternalCaptionBaseUrl = oldBaseUrl;
+                    _settings.ExternalCaptionModel = oldModel;
+                    _settings.ExternalCaptionApiKey = oldApiKey;
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this._window, $"Caption error: {ex.Message}", "Sample Caption", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+
 
     }
-
-
-
 }

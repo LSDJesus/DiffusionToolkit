@@ -288,6 +288,26 @@
                         </Style>
                     </Grid.Style>
                     <StackPanel Orientation="Horizontal">
+                        <Button Style="{StaticResource StaticButton}" Margin="0,0,15,2" Background="Transparent" BorderBrush="Transparent" BorderThickness="0" Command="{Binding GotoUrl}" CommandParameter="settings">
+                            <Grid>
+                                <fa:ImageAwesome ToolTip="Settings" Icon="Gear" Width="16" Foreground="{DynamicResource ForegroundBrush}" VerticalAlignment="Center" HorizontalAlignment="Center">
+                                    <fa:ImageAwesome.Resources>
+                                        <Style TargetType="fa:ImageAwesome">
+                                            <Setter Property="Opacity" Value="0.5"></Setter>
+                                            <Style.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter Property="Opacity" Value="1.0"></Setter>
+                                                </Trigger>
+                                                <DataTrigger Binding="{Binding ActiveView, Converter={StaticResource StringMatchConverter}, ConverterParameter=Settings}" Value="{StaticResource TrueValue}">
+                                                    <Setter Property="Opacity" Value="1.0"></Setter>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </fa:ImageAwesome.Resources>
+                                </fa:ImageAwesome>
+                                <Ellipse Fill="Red" Width="8" Height="8" Margin="10,0,0,10" Visibility="{Binding IsSettingsDirty, Converter={StaticResource boolToVisCol}}"></Ellipse>
+                            </Grid>
+                        </Button>
                         <Button Style="{StaticResource StaticButton}" Margin="0,0,15,2" Background="Transparent" BorderBrush="Transparent" BorderThickness="0" Command="{Binding ToggleNotificationsCommand}">
                             <fa:ImageAwesome ToolTip="{lex:Loc Common.Controls.ShowNotifications}" Icon="Bell" Width="16"  Foreground="{DynamicResource ForegroundBrush}" VerticalAlignment="Center" HorizontalAlignment="Center">
                                 <fa:ImageAwesome.Resources>
@@ -485,15 +505,6 @@
                             <fa:ImageAwesome ToolTip="Models" Icon="PuzzlePiece" Width="16" Foreground="{DynamicResource ForegroundBrush}" VerticalAlignment="Center" HorizontalAlignment="Center">
                             </fa:ImageAwesome>
                         </Button>
-                        <Grid>
-                            <Button Margin="0,5,0,10" Height="16" Width="24" 
-                                    behaviors:DTBehaviors.IsSelected="{Binding ActiveView, Converter={StaticResource StringMatchConverter}, ConverterParameter=Settings}"
-                                    Style="{StaticResource BorderlessToolbarButton}" Command="{Binding GotoUrl}" CommandParameter="settings">
-                                <fa:ImageAwesome ToolTip="Settings" Icon="Gear" Width="16" Foreground="{DynamicResource ForegroundBrush}" VerticalAlignment="Center" HorizontalAlignment="Center">
-                                </fa:ImageAwesome>
-                            </Button>
-                            <Ellipse Fill="Red" Width="8" Height="8" Margin="15,0,0,15" Visibility="{Binding IsSettingsDirty, Converter={StaticResource boolToVisCol}}"></Ellipse>
-                        </Grid>
                         <Separator BorderThickness="1" BorderBrush="{DynamicResource SecondaryBrush}"></Separator>
                         <Button Margin="0,5,0,10" Height="16" Width="24" Style="{StaticResource BorderlessToolbarButton}" Command="{Binding Rescan}">
                             <fa:ImageAwesome ToolTip="Scan folders for new images (Ctrl+R)" Icon="Refresh" Width="16" Foreground="{DynamicResource ForegroundBrush}" VerticalAlignment="Center" HorizontalAlignment="Center">

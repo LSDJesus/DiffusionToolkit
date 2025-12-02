@@ -4,6 +4,8 @@ Diffusion Toolkit is an image metadata-indexer and viewer for AI-generated image
 
 > **This is an enhanced fork** of [RupertAvery/DiffusionToolkit](https://github.com/RupertAvery/DiffusionToolkit) with significant architectural changes for scale and advanced features.
 
+This fork adds a number of workflow and UX improvements focused on large libraries, fast auto‑tagging/captioning, and flexible caption providers. The sections below document all major changes from the base version in detail.
+
 ## Original Features
 
 - **Metadata Indexing**: Scan and index prompts and PNGInfo from images
@@ -78,6 +80,42 @@ AUTOMATIC1111, InvokeAI, NovelAI, Stable Diffusion, EasyDiffusion, Fooocus, Ruin
 - GPU-accelerated inference (10-50 images/second)
 - No external API required - runs locally
 
+### Caption Provider Abstraction (Local + OpenAI-Compatible API)
+
+- Introduced `ICaptionService` with two implementations:
+   - `JoyCaptionService` (local, LLamaSharp + GGUF/LLaVA models)
+   - `HttpCaptionService` (external, OpenAI-compatible HTTP API e.g., LM Studio, Ollama, cloud)
+- Provider selection added to Settings: `Local JoyCaption` or `OpenAI-Compatible HTTP API`.
+- When an external provider is selected:
+   - Base URL, Model, and optional API Key fields are available.
+   - A new “Test Connection” button probes `/v1/models` or `/models`, falling back to `/v1/chat/completions`.
+   - On success, the models list is parsed and used to populate a Model dropdown (editable ComboBox).
+   - “Send Sample Image” lets you pick an image and receive a caption using the currently configured provider.
+- TaggingWindow now calls `ServiceLocator.CaptionService` so the UI is provider‑agnostic.
+
+### Caption Handling Modes
+
+- New setting: `CaptionHandlingMode` with options: Overwrite, Append, Refine.
+- Applied when saving captions returned by JoyCaption or the external provider.
+- Mode is honored consistently across manual captioning and batch operations.
+
+### Tag + Caption UX Improvements
+
+- Image Preview: Added a “Tags/Caption” tab with quick copy buttons to copy tags, caption, and parameters.
+- Context Menu: Split the single action into two entries:
+   - “Auto‑Tag…” → opens TaggingWindow with tagging options only (JoyTag / WDv3 Large)
+   - “Caption…” → opens TaggingWindow with captioning options only (JoyCaption / HTTP API)
+- TaggingWindow supports mode flags (`taggingOnly`, `captioningOnly`) that tailor the UI (title, enabled checkboxes) to the chosen operation.
+
+### Tag Deduplication Overhaul
+
+- Precomputed `tag_deduplication_map.json` generated from JoyTag and WDv3 Large lists to normalize common aliases.
+- Centralized deduplication in the PostgreSQL DataStore layer so duplicates are eliminated regardless of source:
+   - Auto‑tagging
+   - Sidecar ingestion
+   - Manual edits/imports
+- Ensures consistent tags across the library even when mixing taggers and sources.
+
 ## 🧠 Multi-Modal Embedding System (5 Vectors)
 
 **Why**: Enable semantic search and ComfyUI workflow integration.
@@ -132,6 +170,16 @@ Added 5 embedding vectors per image stored in pgvector:
 - PostgreSQL models separate from SQLite models
 - Type aliases for disambiguation (`PgSorting`, `PgPaging`)
 
+### Settings & Navigation UX
+
+- Settings page additions:
+   - Caption Provider selection + fields for external provider (Base URL, Model, API Key)
+   - “Test Connection” and “Send Sample Image” utilities
+   - Model field upgraded to an editable ComboBox populated from the `/models` endpoint
+   - Model Root path management with “Scan Models” (registers typical model subfolders)
+   - Collection (schema) switcher with quick “Create Schema” action for multi‑collection setups
+- Settings button moved from the left sidebar to the top toolbar for quicker access; dirty indicator (red dot) follows the button.
+
 ### Error Handling
 - Global exception handler with logging
 - Toast notifications for user feedback
@@ -173,6 +221,22 @@ docker-compose up -d
 .\Diffusion.Toolkit.exe
 ```
 
+### Configure Caption Provider
+
+1. Open Settings (top toolbar gear icon).
+2. Under “Caption Provider”, choose one:
+    - Local JoyCaption: set Model path + mmproj (LLaVA projection) if needed.
+    - OpenAI‑Compatible HTTP API: set Base URL (e.g., http://localhost:1234/v1), leave Model blank initially.
+3. Click “Test Connection”. On success, the Model dropdown will populate with available models. Pick one or type manually.
+4. Optionally click “Send Sample Image” to verify the full captioning flow.
+
+### Use Auto‑Tagging or Captioning
+
+- Right‑click selected images in the grid:
+   - Choose “Auto‑Tag…” for JoyTag / WDv3 Large tagging.
+   - Choose “Caption…” for JoyCaption or your configured HTTP provider.
+- In TaggingWindow, progress and results update live; captions are saved according to the configured handling mode.
+
 ---
 
 ## Screenshots
@@ -197,6 +261,7 @@ See the `/docs` folder for detailed guides:
 - `EMBEDDING_ARCHITECTURE.md` - Multi-modal embedding system
 - `EMBEDDING_SYSTEM_STATUS.md` - Current implementation status
 - `JOYCAPTION_INTEGRATION_GUIDE.md` - JoyCaption setup
+- `llamasharp.md` / `llamasharp_multimodal.md` - Local model setup notes
 - `ONNX_GPU_SETUP.md` - GPU acceleration configuration
 - `TEXTUAL_EMBEDDING_LIBRARY.md` - Embedding model details
 
@@ -216,6 +281,7 @@ See the `/docs` folder for detailed guides:
 - [x] Duplicate detection using image embeddings - ✅ **Complete**
 - [ ] Batch metadata editing
 - [ ] Plugin system for custom metadata extractors
+- [ ] Post‑operation review modal with Accept / Retry / Cancel for tags and captions
 
 ---
 

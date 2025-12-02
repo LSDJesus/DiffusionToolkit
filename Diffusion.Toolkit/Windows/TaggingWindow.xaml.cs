@@ -27,7 +27,7 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    public TaggingWindow(List<int> imageIds)
+    public TaggingWindow(List<int> imageIds, bool taggingOnly = false, bool captioningOnly = false)
     {
         InitializeComponent();
         _imageIds = imageIds;
@@ -36,7 +36,7 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
         // Check service availability
         JoyTagAvailable = ServiceLocator.JoyTagService != null;
         WDTagAvailable = ServiceLocator.WDTagService != null;
-        JoyCaptionAvailable = ServiceLocator.JoyCaptionService != null;
+        JoyCaptionAvailable = ServiceLocator.CaptionService != null;
 
         JoyTagStatus = JoyTagAvailable 
             ? $"Ready (Threshold: {ServiceLocator.Settings?.JoyTagThreshold ?? 0.5f:F2})" 
@@ -46,7 +46,7 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
             : "Model not found";
         JoyCaptionStatus = JoyCaptionAvailable 
             ? "Ready" 
-            : "Model not found";
+            : "Service not available";
 
         ImageCount = imageIds.Count;
         
@@ -62,6 +62,23 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
                     CaptionPromptComboBox.SelectedIndex = i;
                     break;
                 }
+            }
+            
+            // Set mode-specific UI state
+            if (taggingOnly)
+            {
+                Title = "Auto-Tag Images";
+                JoyCaptionCheckBox.IsChecked = false;
+                JoyCaptionCheckBox.IsEnabled = false;
+            }
+            else if (captioningOnly)
+            {
+                Title = "Caption Images";
+                JoyTagCheckBox.IsChecked = false;
+                JoyTagCheckBox.IsEnabled = false;
+                WDTagCheckBox.IsChecked = false;
+                WDTagCheckBox.IsEnabled = false;
+                JoyCaptionCheckBox.IsChecked = true;
             }
         };
     }
@@ -149,7 +166,7 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
 
             var runJoyTag = JoyTagCheckBox.IsChecked == true && ServiceLocator.JoyTagService != null;
             var runWDTag = WDTagCheckBox.IsChecked == true && ServiceLocator.WDTagService != null;
-            var runJoyCaption = JoyCaptionCheckBox.IsChecked == true && ServiceLocator.JoyCaptionService != null;
+            var runJoyCaption = JoyCaptionCheckBox.IsChecked == true && ServiceLocator.CaptionService != null;
             var storeConfidence = ServiceLocator.Settings?.StoreTagConfidence ?? false;
 
             foreach (var imageId in _imageIds)
@@ -176,39 +193,22 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
                         var joyTags = await joyTagsTask;
                         var wdTags = await wdTagsTask;
 
-                        // Combine and deduplicate tags
-                        var tagDict = new Dictionary<string, List<float>>(StringComparer.OrdinalIgnoreCase);
-                        
-                        foreach (var tag in joyTags)
-                        {
-                            if (!tagDict.ContainsKey(tag.Tag))
-                                tagDict[tag.Tag] = new List<float>();
-                            tagDict[tag.Tag].Add(tag.Confidence);
-                        }
-                        
-                        foreach (var tag in wdTags)
-                        {
-                            if (!tagDict.ContainsKey(tag.Tag))
-                                tagDict[tag.Tag] = new List<float>();
-                            tagDict[tag.Tag].Add(tag.Confidence);
-                        }
+                        // Combine all tags (deduplication handled at database layer)
+                        var allTags = joyTags.Concat(wdTags).Select(t => (t.Tag, t.Confidence)).ToList();
 
-                        // Average confidence for duplicates
-                        var deduplicatedTags = tagDict.Select(kvp => 
-                            (Tag: kvp.Key, Confidence: kvp.Value.Average())
-                        ).ToList();
-
-                        Logger.Log($"Tagging combined (JoyTag+WDTag): {deduplicatedTags.Count} tags for image {imageId}");
-                        await dataStore.StoreImageTagsAsync(imageId, deduplicatedTags, "joytag+wdv3large");
+                        Logger.Log($"Tagging combined (JoyTag+WDTag): {allTags.Count} tags for image {imageId}");
+                        await dataStore.StoreImageTagsAsync(imageId, allTags, "joytag+wdv3large");
                         
                         // Write tags to image metadata if enabled
                         Logger.Log($"AutoWriteMetadata={ServiceLocator.Settings?.AutoWriteMetadata}, WriteTagsToMetadata={ServiceLocator.Settings?.WriteTagsToMetadata}");
                         if (ServiceLocator.Settings?.AutoWriteMetadata == true && 
                             ServiceLocator.Settings?.WriteTagsToMetadata == true)
                         {
+                            // Get deduplicated tags from database for metadata write
+                            var dbTags = await dataStore.GetImageTagsAsync(imageId, "joytag+wdv3large");
                             var request = new Scanner.MetadataWriteRequest
                             {
-                                Tags = deduplicatedTags.Select(t => new Scanner.TagWithConfidence 
+                                Tags = dbTags.Select(t => new Scanner.TagWithConfidence 
                                 { 
                                     Tag = t.Tag, 
                                     Confidence = t.Confidence 
@@ -305,12 +305,49 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
                                 "booru" => Captioning.Services.JoyCaptionService.PROMPT_BOORU_TAGS,
                                 _ => Captioning.Services.JoyCaptionService.PROMPT_DETAILED
                             };
+
+                            // Handle existing captions based on mode
+                            var handlingMode = ServiceLocator.Settings?.CaptionHandlingMode ?? Configuration.CaptionHandlingMode.Overwrite;
+                            var existingCaption = await dataStore.GetLatestCaptionAsync(imageId);
                             
-                            var result = await ServiceLocator.JoyCaptionService!.CaptionImageAsync(
+                            string finalPrompt = promptText;
+                            string? finalCaption = null;
+
+                            switch (handlingMode)
+                            {
+                                case Configuration.CaptionHandlingMode.Refine:
+                                    if (existingCaption != null && !string.IsNullOrWhiteSpace(existingCaption.Caption))
+                                    {
+                                        finalPrompt = $"{promptText}\n\nExisting caption to refine/expand/correct: \"{existingCaption.Caption}\"";
+                                    }
+                                    break;
+
+                                case Configuration.CaptionHandlingMode.Append:
+                                    break;
+
+                                case Configuration.CaptionHandlingMode.Overwrite:
+                                default:
+                                    break;
+                            }
+                            
+                                var result = await ServiceLocator.CaptionService!.CaptionImageAsync(
                                 image.Path, 
-                                promptText);
+                                finalPrompt);
+
+                            // Handle append mode
+                            if (handlingMode == Configuration.CaptionHandlingMode.Append && 
+                                existingCaption != null && 
+                                !string.IsNullOrWhiteSpace(existingCaption.Caption))
+                            {
+                                finalCaption = $"{existingCaption.Caption} {result.Caption}";
+                            }
+                            else
+                            {
+                                finalCaption = result.Caption;
+                            }
                             
-                            await dataStore.StoreCaptionAsync(imageId, result.Caption, "joycaption", 
+                            var captionSource = ServiceLocator.Settings?.CaptionProvider == Diffusion.Toolkit.Configuration.CaptionProviderType.LocalJoyCaption ? "joycaption" : "openai";
+                            await dataStore.StoreCaptionAsync(imageId, finalCaption, captionSource, 
                                 result.PromptUsed, result.TokenCount, (float)result.GenerationTimeMs);
                             
                             // Write caption to image metadata if enabled
@@ -319,7 +356,7 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
                             {
                                 var request = new Scanner.MetadataWriteRequest
                                 {
-                                    Caption = result.Caption,
+                                    Caption = finalCaption,
                                     CreateBackup = ServiceLocator.Settings?.CreateMetadataBackup ?? true
                                 };
                                 Scanner.MetadataWriter.WriteMetadata(image.Path, request);
@@ -358,12 +395,52 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
                             "booru" => Captioning.Services.JoyCaptionService.PROMPT_BOORU_TAGS,
                             _ => Captioning.Services.JoyCaptionService.PROMPT_DETAILED
                         };
+
+                        // Handle existing captions based on mode
+                        var handlingMode = ServiceLocator.Settings?.CaptionHandlingMode ?? Configuration.CaptionHandlingMode.Overwrite;
+                        var existingCaption = await dataStore.GetLatestCaptionAsync(imageId);
                         
-                        var result = await ServiceLocator.JoyCaptionService!.CaptionImageAsync(
+                        string finalPrompt = promptText;
+                        string? finalCaption = null;
+
+                        switch (handlingMode)
+                        {
+                            case Configuration.CaptionHandlingMode.Refine:
+                                if (existingCaption != null && !string.IsNullOrWhiteSpace(existingCaption.Caption))
+                                {
+                                    // Use existing caption as context for refinement
+                                    finalPrompt = $"{promptText}\n\nExisting caption to refine/expand/correct: \"{existingCaption.Caption}\"";
+                                }
+                                break;
+
+                            case Configuration.CaptionHandlingMode.Append:
+                                // Generate new caption, will append after
+                                break;
+
+                            case Configuration.CaptionHandlingMode.Overwrite:
+                            default:
+                                // Generate new caption to replace
+                                break;
+                        }
+                        
+                            var result = await ServiceLocator.CaptionService!.CaptionImageAsync(
                             image.Path, 
-                            promptText);
+                            finalPrompt);
+
+                        // Handle append mode
+                        if (handlingMode == Configuration.CaptionHandlingMode.Append && 
+                            existingCaption != null && 
+                            !string.IsNullOrWhiteSpace(existingCaption.Caption))
+                        {
+                            finalCaption = $"{existingCaption.Caption} {result.Caption}";
+                        }
+                        else
+                        {
+                            finalCaption = result.Caption;
+                        }
                         
-                        await dataStore.StoreCaptionAsync(imageId, result.Caption, "joycaption", 
+                        var captionSource2 = ServiceLocator.Settings?.CaptionProvider == Diffusion.Toolkit.Configuration.CaptionProviderType.LocalJoyCaption ? "joycaption" : "openai";
+                        await dataStore.StoreCaptionAsync(imageId, finalCaption, captionSource2, 
                             result.PromptUsed, result.TokenCount, (float)result.GenerationTimeMs);
                         
                         // Write caption to image metadata if enabled
@@ -372,7 +449,7 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
                         {
                             var request = new Scanner.MetadataWriteRequest
                             {
-                                Caption = result.Caption,
+                                Caption = finalCaption,
                                 CreateBackup = ServiceLocator.Settings?.CreateMetadataBackup ?? true
                             };
                             Scanner.MetadataWriter.WriteMetadata(image.Path, request);

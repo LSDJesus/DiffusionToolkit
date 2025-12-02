@@ -9,6 +9,7 @@
                 xmlns:converters="clr-namespace:Diffusion.Toolkit.Converters"
                 xmlns:system="clr-namespace:System;assembly=System.Runtime"
                 xmlns:models="clr-namespace:Diffusion.Toolkit.Models"
+                xmlns:config="clr-namespace:Diffusion.Toolkit.Configuration"
                 lex:LocalizeDictionary.Provider="{StaticResource LocalizationProvider}"
                 lex:LocalizeDictionary.Separation="."
                 lex:LocalizeDictionary.DefaultProvider="{StaticResource LocalizationProvider}"
@@ -451,6 +452,8 @@
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
                                     <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
                                 </Grid.RowDefinitions>
                                 
                                 <Label Grid.Row="0" Grid.Column="0" Content="Default Prompt:"/>
@@ -466,19 +469,101 @@
                                     <ComboBoxItem Content="Artistic Style" Tag="artistic"/>
                                     <ComboBoxItem Content="Booru-style Tags" Tag="booru"/>
                                 </ComboBox>
+
+                                <Label Grid.Row="1" Grid.Column="0" Content="Caption Handling:" Margin="0,10,0,0"/>
+                                <ComboBox Grid.Row="1" Grid.Column="1" SelectedValue="{Binding CaptionHandlingMode}" 
+                                          Height="26" VerticalContentAlignment="Center" Margin="0,10,0,0"
+                                          ToolTip="How to handle existing captions when generating new ones">
+                                    <ComboBoxItem Content="Overwrite - Replace existing caption" Tag="0"/>
+                                    <ComboBoxItem Content="Append - Add to existing caption" Tag="1"/>
+                                    <ComboBoxItem Content="Refine - Use existing as context for improvement" Tag="2"/>
+                                </ComboBox>
+
+                                <Label Grid.Row="2" Grid.Column="0" Content="Provider:" Margin="0,10,0,0"/>
+                                <ComboBox Grid.Row="2" Grid.Column="1" SelectedValue="{Binding CaptionProvider}"
+                                          Height="26" VerticalContentAlignment="Center" Margin="0,10,0,0"
+                                          SelectedValuePath="Tag">
+                                    <ComboBoxItem Content="Local JoyCaption (LLava GGUF)" Tag="{x:Static config:CaptionProviderType.LocalJoyCaption}"/>
+                                    <ComboBoxItem Content="OpenAI-Compatible HTTP API" Tag="{x:Static config:CaptionProviderType.OpenAICompatible}"/>
+                                </ComboBox>
                                 
-                                <Label Grid.Row="1" Grid.Column="0" Content="Model Path:" Margin="0,10,0,0"/>
-                                <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding JoyCaptionModelPath}" 
-                                         Height="26" VerticalContentAlignment="Center" Margin="0,10,0,0"/>
-                                
-                                <Label Grid.Row="2" Grid.Column="0" Content="MMProj Path:"/>
-                                <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding JoyCaptionMMProjPath}" 
-                                         Height="26" VerticalContentAlignment="Center"/>
-                                
-                                <TextBlock Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="2" 
+                                <!-- Local JoyCaption configuration -->
+                                <Grid Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="2">
+                                    <Grid.Style>
+                                        <Style TargetType="Grid">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding CaptionProvider}" Value="{x:Static config:CaptionProviderType.LocalJoyCaption}">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Grid.Style>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="150"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+                                    <Label Grid.Row="0" Grid.Column="0" Content="Model Path:"/>
+                                    <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding JoyCaptionModelPath}" Height="26" VerticalContentAlignment="Center"/>
+                                    <Label Grid.Row="1" Grid.Column="0" Content="MMProj Path:"/>
+                                    <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding JoyCaptionMMProjPath}" Height="26" VerticalContentAlignment="Center"/>
+                                </Grid>
+
+                                <!-- External OpenAI-compatible HTTP provider configuration -->
+                                <Grid Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="2">
+                                    <Grid.Style>
+                                        <Style TargetType="Grid">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding CaptionProvider}" Value="{x:Static config:CaptionProviderType.OpenAICompatible}">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Grid.Style>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="150"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+                                    <Label Grid.Row="0" Grid.Column="0" Content="Base URL:"/>
+                                    <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding ExternalCaptionBaseUrl}" Height="26" VerticalContentAlignment="Center"/>
+                                    <Label Grid.Row="1" Grid.Column="0" Content="Model:"/>
+                                    <ComboBox Grid.Row="1" Grid.Column="1" Height="26" IsEditable="True" 
+                                              Text="{Binding ExternalCaptionModel, UpdateSourceTrigger=PropertyChanged}"
+                                              ItemsSource="{Binding AvailableModels}"/>
+                                    <Label Grid.Row="2" Grid.Column="0" Content="API Key:"/>
+                                    <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding ExternalCaptionApiKey}" Height="26" VerticalContentAlignment="Center"/>
+                                    <StackPanel Grid.Row="3" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,10,0,0">
+                                        <Button Width="160" Height="26" HorizontalAlignment="Left" Click="TestCaptionApi_Click">Test Connection</Button>
+                                        <Button Width="220" Height="26" HorizontalAlignment="Left" Margin="10,0,0,0" Click="TestCaptionApiWithImage_Click">Send Sample Image</Button>
+                                    </StackPanel>
+                                </Grid>
+
+                                <TextBlock Grid.Row="5" Grid.Column="0" Grid.ColumnSpan="2" 
                                            TextWrapping="Wrap" Margin="0,10,0,0" Opacity="0.7" FontSize="11"
-                                           Foreground="{DynamicResource ForegroundBrush}"
-                                           Text="Note: JoyCaption requires significant VRAM (8GB+ recommended). Caption generation may take several seconds per image."/>
+                                           Foreground="{DynamicResource ForegroundBrush}">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding CaptionProvider}" Value="{x:Static config:CaptionProviderType.LocalJoyCaption}">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                    Note: JoyCaption requires significant VRAM (8GB+ recommended). Caption generation may take several seconds per image.
+                                </TextBlock>
                             </Grid>
                         </StackPanel>
                     </GroupBox>

@@ -57,6 +57,11 @@ public class ImageViewModel : BaseNotify
     private IReadOnlyCollection<Node> _nodes;
     private bool _hasError;
     private string _errorMessage;
+    private string? _tags;
+    private string? _caption;
+    private bool _hasTags;
+    private ICommand? _copyTagsCommand;
+    private ICommand? _copyCaptionCommand;
 
     public ImageViewModel()
     {
@@ -320,5 +325,35 @@ public class ImageViewModel : BaseNotify
     {
         get => _errorMessage;
         set => SetField(ref _errorMessage, value);
+    }
+
+    public string? Tags
+    {
+        get => _tags;
+        set => SetField(ref _tags, value);
+    }
+
+    public string? Caption
+    {
+        get => _caption;
+        set => SetField(ref _caption, value);
+    }
+
+    public bool HasTags
+    {
+        get => _hasTags;
+        set => SetField(ref _hasTags, value);
+    }
+
+    public ICommand? CopyTagsCommand
+    {
+        get => _copyTagsCommand;
+        set => SetField(ref _copyTagsCommand, value);
+    }
+
+    public ICommand? CopyCaptionCommand
+    {
+        get => _copyCaptionCommand;
+        set => SetField(ref _copyCaptionCommand, value);
     }
 }
