@@ -781,8 +781,8 @@ namespace Diffusion.Toolkit.Pages
                 long size = 0;
 
 
-                var albums = _model.MainModel.Albums.Where(d => d.IsTicked).Select(d => d.Id).ToList();
-                var models = _model.MainModel.ImageModels.Where(d => d.IsTicked).Select(d => new ModelInfo { Name = d.Name, Hash = d.Hash, HashV2 = d.Hashv2 }).ToList();
+                var albums = (_model.MainModel.Albums?.Where(d => d.IsTicked).Select(d => d.Id) ?? Enumerable.Empty<int>()).ToList();
+                var models = (_model.MainModel.ImageModels?.Where(d => d.IsTicked).Select(d => new ModelInfo { Name = d.Name, Hash = d.Hash, HashV2 = d.Hashv2 }) ?? Enumerable.Empty<ModelInfo>()).ToList();
 
                 if (queryOptions != null)
                 {
@@ -790,7 +790,7 @@ namespace Diffusion.Toolkit.Pages
 
                     ServiceLocator.MainModel.SelectedAlbumsCount = queryOptions.AlbumIds.Count;
 
-                    foreach (var album in ServiceLocator.MainModel.Albums)
+                    foreach (var album in ServiceLocator.MainModel.Albums ?? Enumerable.Empty<AlbumModel>())
                     {
                         album.IsTicked = queryOptions.AlbumIds.Contains(album.Id);
                     }

@@ -54,6 +54,7 @@ public class SettingsModel : BaseNotify
     private string _database;
     private string _username;
     private string _status;
+    private string _databaseSchema;
     
     // JoyTag settings
     private bool _enableJoyTag;
@@ -111,6 +112,7 @@ public class SettingsModel : BaseNotify
         _database = string.Empty;
         _username = string.Empty;
         _status = string.Empty;
+        _databaseSchema = "public";
         
         // JoyTag defaults
         _joyTagModelPath = string.Empty;
@@ -410,6 +412,12 @@ public class SettingsModel : BaseNotify
     {
         get => _status;
         set => SetField(ref _status, value);
+    }
+
+    public string DatabaseSchema
+    {
+        get => _databaseSchema;
+        set => SetField(ref _databaseSchema, value);
     }
 
     // JoyTag properties

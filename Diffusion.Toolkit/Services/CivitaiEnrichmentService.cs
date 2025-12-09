@@ -1,12 +1,17 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using Diffusion.Civitai;
 using Diffusion.Common;
 using Diffusion.Database.PostgreSQL;
 using Diffusion.Database.PostgreSQL.Models;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Processing;
+using SixLabors.ImageSharp.Formats.Jpeg;
+using ImageSharpImage = SixLabors.ImageSharp.Image;
 
 namespace Diffusion.Toolkit.Services;
 
@@ -16,16 +21,22 @@ namespace Diffusion.Toolkit.Services;
 public class CivitaiEnrichmentService
 {
     private readonly CivitaiClient _client;
+    private readonly HttpClient _httpClient;
     private PostgreSQLDataStore _dataStore => ServiceLocator.DataStore!;
     
     // Rate limiting - Civitai has request limits
     private readonly SemaphoreSlim _rateLimiter = new(1, 1);
     private DateTime _lastRequest = DateTime.MinValue;
     private readonly TimeSpan _minRequestInterval = TimeSpan.FromMilliseconds(500);
+    
+    // Thumbnail settings (matching Luna node format)
+    private const int MaxThumbnailSize = 256;
+    private const int ThumbnailQuality = 85;
 
     public CivitaiEnrichmentService()
     {
         _client = new CivitaiClient();
+        _httpClient = new HttpClient();
     }
 
     /// <summary>
@@ -113,6 +124,30 @@ public class CivitaiEnrichmentService
             resource.CivitaiBaseModel = modelVersion.BaseModel;
             resource.CivitaiNsfw = modelVersion.Model?.Nsfw ?? false;
             
+            // Extended fields (matching Luna node modelspec.* format)
+            resource.CivitaiAuthor = modelVersion.Model?.Creator?.Username;
+            resource.CivitaiTags = modelVersion.Model?.Tags?.ToArray();
+            resource.CivitaiDefaultWeight = modelVersion.Weight;
+            resource.CivitaiDefaultClipWeight = modelVersion.ClipWeight;
+            resource.CivitaiPublishedAt = modelVersion.PublishedAt ?? modelVersion.CreatedAt;
+            
+            // Get cover image URL (first image from version)
+            var coverImage = modelVersion.Images?.FirstOrDefault();
+            if (coverImage != null)
+            {
+                resource.CivitaiCoverImageUrl = coverImage.Url;
+                
+                // Download and resize thumbnail
+                try
+                {
+                    resource.CivitaiThumbnail = await DownloadAndResizeThumbnailAsync(coverImage.Url, cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log($"Failed to download thumbnail for {resource.FileName}: {ex.Message}");
+                }
+            }
+            
             // Store full response as JSON for future use
             resource.CivitaiMetadata = System.Text.Json.JsonSerializer.Serialize(modelVersion);
             resource.CivitaiFetchedAt = DateTime.UtcNow;
@@ -185,9 +220,57 @@ public class CivitaiEnrichmentService
         return result ?? Array.Empty<string>();
     }
 
+    /// <summary>
+    /// Download image from URL and resize to thumbnail
+    /// </summary>
+    private async Task<byte[]?> DownloadAndResizeThumbnailAsync(string imageUrl, CancellationToken cancellationToken)
+    {
+        try
+        {
+            // Download image
+            var imageBytes = await _httpClient.GetByteArrayAsync(imageUrl, cancellationToken);
+            
+            using var image = ImageSharpImage.Load(imageBytes);
+            
+            // Calculate new size maintaining aspect ratio
+            var maxDimension = Math.Max(image.Width, image.Height);
+            if (maxDimension > MaxThumbnailSize)
+            {
+                var scale = (float)MaxThumbnailSize / maxDimension;
+                var newWidth = (int)(image.Width * scale);
+                var newHeight = (int)(image.Height * scale);
+                
+                image.Mutate(x => x.Resize(newWidth, newHeight));
+            }
+            
+            // Encode as JPEG
+            using var ms = new System.IO.MemoryStream();
+            var encoder = new JpegEncoder { Quality = ThumbnailQuality };
+            await image.SaveAsync(ms, encoder, cancellationToken);
+            
+            return ms.ToArray();
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"Thumbnail download failed: {ex.Message}");
+            return null;
+        }
+    }
+    
+    /// <summary>
+    /// Get thumbnail as base64 string (for API responses)
+    /// </summary>
+    public static string? GetThumbnailBase64(byte[]? thumbnailBytes)
+    {
+        if (thumbnailBytes == null || thumbnailBytes.Length == 0)
+            return null;
+        return Convert.ToBase64String(thumbnailBytes);
+    }
+
     public void Dispose()
     {
         _client.Dispose();
+        _httpClient.Dispose();
         _rateLimiter.Dispose();
     }
 }

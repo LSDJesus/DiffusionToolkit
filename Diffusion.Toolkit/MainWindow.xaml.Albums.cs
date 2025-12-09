@@ -209,6 +209,9 @@ namespace Diffusion.Toolkit
                 case "Custom":
                     _model.Albums = new ObservableCollection<AlbumModel>(albums.OrderBy(a => a.Order));
                     break;
+                default:
+                    _model.Albums = new ObservableCollection<AlbumModel>(albums.OrderBy(a => a.Name));
+                    break;
             }
 
             ServiceLocator.AlbumService.UpdateSelectedImageAlbums();

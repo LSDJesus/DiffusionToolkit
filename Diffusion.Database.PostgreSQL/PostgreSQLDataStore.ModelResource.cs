@@ -319,6 +319,12 @@ public partial class PostgreSQLDataStore
                 civitai_trained_words = @CivitaiTrainedWords,
                 civitai_base_model = @CivitaiBaseModel,
                 civitai_metadata = @CivitaiMetadata::jsonb,
+                civitai_author = @CivitaiAuthor,
+                civitai_cover_image_url = @CivitaiCoverImageUrl,
+                civitai_thumbnail = @CivitaiThumbnail,
+                civitai_default_weight = @CivitaiDefaultWeight,
+                civitai_default_clip_weight = @CivitaiDefaultClipWeight,
+                civitai_published_at = @CivitaiPublishedAt,
                 civitai_fetched_at = NOW()
             WHERE id = @Id";
         await connection.ExecuteAsync(sql, resource);

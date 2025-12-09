@@ -152,6 +152,21 @@ namespace Diffusion.Toolkit.Pages
             // Initialize schema selector
             InitializeSchemaSelector();
             
+            // Load connection info
+            try
+            {
+                var connection = _dataStore.GetConnection();
+                _model.Host = connection.Host ?? "";
+                _model.Port = connection.Port;
+                _model.Database = connection.Database ?? "";
+                _model.Username = connection.Username ?? "";
+                _model.Status = _dataStore.GetStatus();
+            }
+            catch
+            {
+                _model.Status = "Not connected";
+            }
+            
             _model.SetPristine();
         }
         
@@ -162,6 +177,8 @@ namespace Diffusion.Toolkit.Pages
             
             // Set current schema selection (PostgreSQL default is "public")
             var currentSchema = _settings.DatabaseSchema ?? "public";
+            _model.DatabaseSchema = currentSchema;
+            
             foreach (ComboBoxItem item in comboBox.Items)
             {
                 if (item.Tag as string == currentSchema)
@@ -169,6 +186,23 @@ namespace Diffusion.Toolkit.Pages
                     comboBox.SelectedItem = item;
                     break;
                 }
+            }
+        }
+        
+        private void RefreshConnectionInfo_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var connection = _dataStore.GetConnection();
+                _model.Host = connection.Host ?? "";
+                _model.Port = connection.Port;
+                _model.Database = connection.Database ?? "";
+                _model.Username = connection.Username ?? "";
+                _model.Status = _dataStore.GetStatus();
+            }
+            catch (Exception ex)
+            {
+                _model.Status = $"Error: {ex.Message}";
             }
         }
 

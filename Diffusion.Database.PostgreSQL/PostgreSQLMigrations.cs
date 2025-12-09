@@ -869,6 +869,12 @@ public class PostgreSQLMigrations
                 civitai_trained_words TEXT[],            -- Trigger words for LoRAs
                 civitai_base_model TEXT,                 -- Civitai's base model classification
                 civitai_metadata JSONB,                  -- Full Civitai response cache
+                civitai_author TEXT,                     -- Creator username
+                civitai_cover_image_url TEXT,            -- First preview image URL
+                civitai_thumbnail BYTEA,                 -- Resized preview thumbnail (max 256px JPEG)
+                civitai_default_weight DECIMAL(5,3),     -- Recommended LoRA weight
+                civitai_default_clip_weight DECIMAL(5,3),-- Recommended CLIP weight
+                civitai_published_at TIMESTAMP,          -- Version publish date
                 
                 -- Embeddings for similarity search (LoRAs/embeddings with CLIP vectors)
                 clip_l_embedding vector(768),
@@ -888,6 +894,21 @@ public class PostgreSQLMigrations
                                WHERE table_name = 'model_resource' AND column_name = 'has_preview_image') 
                 THEN 
                     ALTER TABLE model_resource ADD COLUMN has_preview_image BOOLEAN DEFAULT FALSE;
+                END IF; 
+            END $$;
+
+            -- Add extended Civitai fields if they don't exist (migration for v1.1+)
+            DO $$ 
+            BEGIN 
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                               WHERE table_name = 'model_resource' AND column_name = 'civitai_author') 
+                THEN 
+                    ALTER TABLE model_resource ADD COLUMN civitai_author TEXT;
+                    ALTER TABLE model_resource ADD COLUMN civitai_cover_image_url TEXT;
+                    ALTER TABLE model_resource ADD COLUMN civitai_thumbnail BYTEA;
+                    ALTER TABLE model_resource ADD COLUMN civitai_default_weight DECIMAL(5,3);
+                    ALTER TABLE model_resource ADD COLUMN civitai_default_clip_weight DECIMAL(5,3);
+                    ALTER TABLE model_resource ADD COLUMN civitai_published_at TIMESTAMP;
                 END IF; 
             END $$;
 
