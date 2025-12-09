@@ -1116,7 +1116,7 @@ namespace Diffusion.Toolkit
         }
 
 
-        private ICollection<Model> _modelsCollection;
+        private ICollection<Model> _modelsCollection = new List<Model>();
         private Prompts _prompts;
         private bool _isLoadingModels = false;
 

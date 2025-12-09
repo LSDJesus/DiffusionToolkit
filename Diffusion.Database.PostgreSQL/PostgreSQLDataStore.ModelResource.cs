@@ -243,6 +243,25 @@ public partial class PostgreSQLDataStore
     }
 
     /// <summary>
+    /// Get all model resources for header-first enrichment
+    /// </summary>
+    public async Task<List<ModelResource>> GetAllModelResourcesAsync()
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync();
+        var sql = @"
+            SELECT id, file_path, file_name, file_hash, file_size, resource_type, base_model,
+                   local_metadata, civitai_id, civitai_version_id, civitai_name, civitai_description,
+                   civitai_tags, civitai_nsfw, civitai_trained_words, civitai_base_model, civitai_metadata,
+                   civitai_author, civitai_default_weight, civitai_default_clip_weight, civitai_published_at,
+                   civitai_cover_image_url, civitai_thumbnail, unavailable, scanned_at, civitai_fetched_at, created_at
+            FROM model_resource
+            WHERE unavailable = FALSE
+            ORDER BY created_at";
+        var results = await connection.QueryAsync<ModelResource>(sql);
+        return results.ToList();
+    }
+
+    /// <summary>
     /// Insert a new model resource (including Civitai fields if populated from sidecar JSON)
     /// </summary>
     public async Task<int> InsertModelResourceAsync(ModelResource resource)

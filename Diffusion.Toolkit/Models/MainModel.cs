@@ -56,6 +56,8 @@ public class MainModel : BaseNotify
     private int _thumbnailSize;
     private ICommand _escape;
     private ICommand _downloadCivitai;
+    private ICommand _enrichModelMetadata;
+    private ICommand _writeMetadataToFiles;
     private ICommand _addAlbumCommand;
     private ICommand _addToAlbumCommand;
     private ICommand _removeFromAlbumCommand;
@@ -522,6 +524,18 @@ public class MainModel : BaseNotify
     {
         get => _downloadCivitai;
         set => SetField(ref _downloadCivitai, value);
+    }
+
+    public ICommand EnrichModelMetadata
+    {
+        get => _enrichModelMetadata;
+        set => SetField(ref _enrichModelMetadata, value);
+    }
+
+    public ICommand WriteMetadataToFiles
+    {
+        get => _writeMetadataToFiles;
+        set => SetField(ref _writeMetadataToFiles, value);
     }
     
     public ObservableCollection<AlbumModel> Albums
