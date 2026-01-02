@@ -175,8 +175,12 @@ public static class PostgreSQLQueryCombiner
             bindings = bindings.Concat(p.Bindings);
         }
 
-        query += " INTERSECT " +
-                 $"{query0}";
+        // Only add INTERSECT if query0 is different from query (i.e., has additional constraints)
+        if (query.Trim() != query0.Trim())
+        {
+            query += " INTERSECT " +
+                     $"{query0}";
+        }
 
         bindings = bindings.Concat(r.Bindings);
 

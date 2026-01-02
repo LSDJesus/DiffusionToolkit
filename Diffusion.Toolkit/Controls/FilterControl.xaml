@@ -1,11 +1,11 @@
-﻿<UserControl x:Class="Diffusion.Toolkit.Controls.FilterControl"
+<UserControl x:Class="Diffusion.Toolkit.Controls.FilterControl"
        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
        xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
        xmlns:local="clr-namespace:Diffusion.Toolkit.Controls"
        xmlns:converters="clr-namespace:Diffusion.Toolkit.Converters"
-       xmlns:fa="http://schemas.fontawesome.io/icons/"
+       xmlns:fa="clr-namespace:FontAwesome.Sharp;assembly=FontAwesome.Sharp"
        xmlns:lex="http://wpflocalizeextension.codeplex.com"
        xmlns:behaviors="clr-namespace:Diffusion.Toolkit.Behaviors"
        lex:LocalizeDictionary.Provider="{StaticResource LocalizationProvider}"
@@ -393,7 +393,7 @@
                                             VerticalScrollBarVisibility="Auto"
                                         ></TextBox>
                                         <Button Style="{StaticResource StaticButton}" Grid.Column="5" Command="{Binding RemoveCommand}" CommandParameter="{Binding .}" >
-                                            <fa:FontAwesome Icon="Close"></fa:FontAwesome>
+                                            <fa:IconBlock Icon="Close"></fa:IconBlock>
                                         </Button>
                                     </Grid>
                                 </DataTemplate>
@@ -408,3 +408,5 @@
 
     </Grid>
 </UserControl>
+
+

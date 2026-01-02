@@ -390,7 +390,7 @@ namespace Diffusion.Toolkit
                                 Logger.Log($"Error writing metadata to {resource.FileName}: {ex.Message}");
                             }
 
-                            progress.Report((totalProcessed, safetensorsOnly.Count));
+                            ((IProgress<(int, int)>)progress).Report((totalProcessed, safetensorsOnly.Count));
                         }
 
                         var resultMessage = $"Metadata written to {totalSuccessful}/{safetensorsOnly.Count} files successfully.";

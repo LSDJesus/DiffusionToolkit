@@ -128,23 +128,6 @@ public partial class PostgreSQLDataStore
     }
 
     /// <summary>
-    /// Get all model resources
-    /// </summary>
-    public async Task<List<ModelResource>> GetAllModelResourcesAsync()
-    {
-        await using var connection = await _dataSource.OpenConnectionAsync();
-        var sql = @"
-            SELECT id, file_path, file_name, file_hash, file_size, resource_type, base_model,
-                   local_metadata, civitai_id, civitai_version_id, civitai_name, civitai_description,
-                   civitai_tags, civitai_nsfw, civitai_trained_words, civitai_base_model, civitai_metadata,
-                   unavailable, scanned_at, civitai_fetched_at, created_at
-            FROM model_resource
-            ORDER BY resource_type, file_name";
-        var results = await connection.QueryAsync<ModelResource>(sql);
-        return results.ToList();
-    }
-
-    /// <summary>
     /// Get model resources by type with optional pagination
     /// </summary>
     public async Task<List<ModelResource>> GetModelResourcesByTypeAsync(string resourceType, int limit = 0, int offset = 0)

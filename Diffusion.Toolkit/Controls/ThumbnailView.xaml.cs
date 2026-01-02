@@ -25,7 +25,7 @@ using Diffusion.Toolkit.Localization;
 using Settings = Diffusion.Toolkit.Configuration.Settings;
 using Diffusion.Database.Models;
 using System.Reflection;
-using FontAwesome.WPF;
+using FontAwesome.Sharp;
 
 namespace Diffusion.Toolkit.Controls
 {
@@ -756,7 +756,7 @@ namespace Diffusion.Toolkit.Controls
                     Model.MainModel.CurrentImageEntry = entry;
                     SelectedImageEntry = entry;
 
-                    if (e.LeftButton == MouseButtonState.Pressed && (e.OriginalSource is Thumbnail or Border or Grid or ImageAwesome))
+                    if (e.LeftButton == MouseButtonState.Pressed && (e.OriginalSource is Thumbnail or Border or Grid or IconImage))
                     {
                         if (ThumbnailListView.SelectedItems.Contains(entry))
                         {
@@ -1061,7 +1061,7 @@ namespace Diffusion.Toolkit.Controls
 
                 if (item.VisualHit is FrameworkElement { DataContext: ImageEntry { IsEmpty: false } entry })
                 {
-                    if (e.LeftButton == MouseButtonState.Released && (e.OriginalSource is Thumbnail or Border or Grid or ImageAwesome))
+                    if (e.LeftButton == MouseButtonState.Released && (e.OriginalSource is Thumbnail or Border or Grid or IconImage))
                     {
                         if ((Keyboard.Modifiers & ModifierKeys.Control) != 0 || (Keyboard.Modifiers & ModifierKeys.Shift) != 0)
                         {

@@ -210,6 +210,21 @@ public class Metadata
                             // MP4 Video track metadata
                             if (directory.Name == "MP4 Video" || directory.Name.Contains("QuickTime Video"))
                             {
+                                // Extract video dimensions (width/height)
+                                var widthTag = directory.Tags.FirstOrDefault(t => 
+                                    t.Name.Contains("Width", StringComparison.OrdinalIgnoreCase));
+                                if (widthTag != null && int.TryParse(widthTag.Description?.Split(' ')[0], out int videoWidth))
+                                {
+                                    fileParameters.Width = videoWidth;
+                                }
+                                
+                                var heightTag = directory.Tags.FirstOrDefault(t => 
+                                    t.Name.Contains("Height", StringComparison.OrdinalIgnoreCase));
+                                if (heightTag != null && int.TryParse(heightTag.Description?.Split(' ')[0], out int videoHeight))
+                                {
+                                    fileParameters.Height = videoHeight;
+                                }
+                                
                                 // Extract duration
                                 var durationTag = directory.Tags.FirstOrDefault(t => 
                                     t.Name.Contains("Duration", StringComparison.OrdinalIgnoreCase));
@@ -284,7 +299,11 @@ public class Metadata
                         fileParameters = new FileParameters { IsVideo = true }; // Still mark as video even on error
                     }
                     
-                    break;
+                    // Video files don't need image size extraction - return early
+                    fileParameters.Path = file;
+                    fileParameters.FileSize = new FileInfo(file).Length;
+                    fileParameters.Hash = hash;
+                    return fileParameters;
                 }
             case FileType.AVI:
                 {
@@ -300,6 +319,21 @@ public class Metadata
                             // AVI RIFF header info
                             if (directory.Name.Contains("AVI") || directory.Name.Contains("RIFF"))
                             {
+                                // Extract video dimensions (width/height)
+                                var widthTag = directory.Tags.FirstOrDefault(t => 
+                                    t.Name.Contains("Width", StringComparison.OrdinalIgnoreCase));
+                                if (widthTag != null && int.TryParse(widthTag.Description?.Split(' ')[0], out int videoWidth))
+                                {
+                                    fileParameters.Width = videoWidth;
+                                }
+                                
+                                var heightTag = directory.Tags.FirstOrDefault(t => 
+                                    t.Name.Contains("Height", StringComparison.OrdinalIgnoreCase));
+                                if (heightTag != null && int.TryParse(heightTag.Description?.Split(' ')[0], out int videoHeight))
+                                {
+                                    fileParameters.Height = videoHeight;
+                                }
+                                
                                 // Extract duration
                                 var durationTag = directory.Tags.FirstOrDefault(t => 
                                     t.Name.Contains("Duration", StringComparison.OrdinalIgnoreCase));
@@ -364,7 +398,11 @@ public class Metadata
                         fileParameters = new FileParameters { IsVideo = true };
                     }
                     
-                    break;
+                    // Video files don't need image size extraction - return early
+                    fileParameters.Path = file;
+                    fileParameters.FileSize = new FileInfo(file).Length;
+                    fileParameters.Hash = hash;
+                    return fileParameters;
                 }
             case FileType.WEBM:
                 {
@@ -381,6 +419,21 @@ public class Metadata
                             // Look for any video-related directories (WebM, Matroska, etc.)
                             if (directory.Name.Contains("Video") || directory.Name.Contains("Track"))
                             {
+                                // Extract video dimensions (width/height)
+                                var widthTag = directory.Tags.FirstOrDefault(t => 
+                                    t.Name.Contains("Width", StringComparison.OrdinalIgnoreCase));
+                                if (widthTag != null && int.TryParse(widthTag.Description?.Split(' ')[0], out int videoWidth))
+                                {
+                                    fileParameters.Width = videoWidth;
+                                }
+                                
+                                var heightTag = directory.Tags.FirstOrDefault(t => 
+                                    t.Name.Contains("Height", StringComparison.OrdinalIgnoreCase));
+                                if (heightTag != null && int.TryParse(heightTag.Description?.Split(' ')[0], out int videoHeight))
+                                {
+                                    fileParameters.Height = videoHeight;
+                                }
+                                
                                 // Extract duration
                                 var durationTag = directory.Tags.FirstOrDefault(t => 
                                     t.Name.Contains("Duration", StringComparison.OrdinalIgnoreCase));
@@ -445,7 +498,11 @@ public class Metadata
                         fileParameters = new FileParameters { IsVideo = true };
                     }
                     
-                    break;
+                    // Video files don't need image size extraction - return early
+                    fileParameters.Path = file;
+                    fileParameters.FileSize = new FileInfo(file).Length;
+                    fileParameters.Hash = hash;
+                    return fileParameters;
                 }
             case FileType.PNG:
                 {

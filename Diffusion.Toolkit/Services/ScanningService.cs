@@ -435,7 +435,7 @@ public class ScanningService
     {
         lock (_lock)
         {
-            var db = _dataStore.OpenConnection();
+            using var db = _dataStore.OpenConnection();
 
             int updated = 0;
 
@@ -469,7 +469,7 @@ public class ScanningService
         lock (_lock)
         {
 
-            var db = _dataStore.OpenConnection();
+            using var db = _dataStore.OpenConnection();
 
             int added = 0;
 

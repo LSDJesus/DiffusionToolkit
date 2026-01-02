@@ -596,17 +596,30 @@ namespace Diffusion.Toolkit.Pages
                     "Add folder", MessageBoxButton.YesNo,
                     MessageBoxImage.Information);
 
-                _ = ServiceLocator.FolderService.ApplyFolderChanges(new[]
+                Logger.Log($"Adding root folder: {path}, recursive: {recursiveScan == MessageBoxResult.Yes}");
+
+                _ = Task.Run(async () =>
                 {
-                    new FolderChange()
+                    try
                     {
-                        Path = path,
-                        FolderType = FolderType.Root,
-                        ChangeType = ChangeType.Add,
-                        Watched = false,
-                        Recursive = recursiveScan == MessageBoxResult.Yes,
+                        await ServiceLocator.FolderService.ApplyFolderChanges(new[]
+                        {
+                            new FolderChange()
+                            {
+                                Path = path,
+                                FolderType = FolderType.Root,
+                                ChangeType = ChangeType.Add,
+                                Watched = false,
+                                Recursive = recursiveScan == MessageBoxResult.Yes,
+                            }
+                        }, true);
+                        Logger.Log($"Successfully added root folder: {path}");
                     }
-                }, true);
+                    catch (Exception ex)
+                    {
+                        Logger.Log($"Error adding root folder: {ex}");
+                    }
+                });
             }
         }
 

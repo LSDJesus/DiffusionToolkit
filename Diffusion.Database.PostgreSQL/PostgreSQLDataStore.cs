@@ -105,6 +105,29 @@ public partial class PostgreSQLDataStore : IDisposable
     }
 
     /// <summary>
+    /// Add schema prefixes to common table names in a SQL query
+    /// </summary>
+    private string WithSchema(string sql)
+    {
+        return sql
+            .Replace(" image ", $" {Table("image")} ")
+            .Replace(" folder ", $" {Table("folder")} ")
+            .Replace(" album ", $" {Table("album")} ")
+            .Replace(" album_image ", $" {Table("album_image")} ")
+            .Replace(" node ", $" {Table("node")} ")
+            .Replace(" node_property ", $" {Table("node_property")} ")
+            .Replace("FROM image ", $"FROM {Table("image")} ")
+            .Replace("FROM folder ", $"FROM {Table("folder")} ")
+            .Replace("FROM album ", $"FROM {Table("album")} ")
+            .Replace("JOIN image ", $"JOIN {Table("image")} ")
+            .Replace("JOIN folder ", $"JOIN {Table("folder")} ")
+            .Replace("JOIN album ", $"JOIN {Table("album")} ")
+            .Replace("JOIN album_image ", $"JOIN {Table("album_image")} ")
+            .Replace("JOIN node ", $"JOIN {Table("node")} ")
+            .Replace("JOIN node_property ", $"JOIN {Table("node_property")} ");
+    }
+
+    /// <summary>
     /// Initialize database schema and pgvector extension
     /// </summary>
     public async Task Create(Func<object> notify, Action<object> complete)
@@ -177,6 +200,54 @@ public partial class PostgreSQLDataStore : IDisposable
         catch (Exception ex)
         {
             throw new InvalidOperationException("Failed to initialize PostgreSQL database", ex);
+        }
+    }
+
+    /// <summary>
+    /// Get all schemas that contain the 'image' table (our application schemas)
+    /// </summary>
+    public async Task<List<string>> GetApplicationSchemasAsync()
+    {
+        await using var conn = await OpenConnectionAsync().ConfigureAwait(false);
+        
+        var schemas = await conn.QueryAsync<string>(
+            @"SELECT DISTINCT table_schema 
+              FROM information_schema.tables 
+              WHERE table_name = 'image' 
+              AND table_schema NOT IN ('pg_catalog', 'information_schema')
+              ORDER BY table_schema").ConfigureAwait(false);
+        
+        return schemas.ToList();
+    }
+
+    /// <summary>
+    /// Create a new schema and initialize all tables in it (does NOT fall back to public)
+    /// </summary>
+    public async Task CreateSchemaWithTables(string schemaName)
+    {
+        await using var conn = await OpenConnectionAsync().ConfigureAwait(false);
+
+        try
+        {
+            Logger.Log($"CreateSchemaWithTables: Creating schema '{schemaName}'");
+            
+            // Create the schema
+            await conn.ExecuteAsync($"CREATE SCHEMA IF NOT EXISTS \"{schemaName}\";").ConfigureAwait(false);
+            Logger.Log($"CreateSchemaWithTables: Schema '{schemaName}' created");
+            
+            // Set search path to the new schema
+            await conn.ExecuteAsync($"SET search_path TO \"{schemaName}\", public;").ConfigureAwait(false);
+            
+            // Run migrations in the new schema
+            var migrations = new PostgreSQLMigrations(conn, schemaName);
+            await migrations.UpdateAsync().ConfigureAwait(false);
+            
+            Logger.Log($"CreateSchemaWithTables: Tables created in schema '{schemaName}'");
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"CreateSchemaWithTables: Error - {ex}");
+            throw new InvalidOperationException($"Failed to create schema '{schemaName}'", ex);
         }
     }
 

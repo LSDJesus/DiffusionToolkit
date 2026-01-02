@@ -303,7 +303,7 @@ public partial class PostgreSQLDataStore
         using var conn = OpenConnection();
         
         return conn.QueryFirstOrDefault<ImageEntity>(
-            $"SELECT {ImageEntityColumns} FROM image WHERE id = @id", 
+            WithSchema($"SELECT {ImageEntityColumns} FROM image WHERE id = @id"), 
             new { id });
     }
 
@@ -314,9 +314,9 @@ public partial class PostgreSQLDataStore
         var idList = ids.ToList();
         
         var images = conn.Query<ImageView>(
-            $@"SELECT i.id, i.path, {ViewColumns}, 
+            WithSchema($@"SELECT i.id, i.path, {ViewColumns}, 
                (SELECT COUNT(1) FROM album_image WHERE image_id = i.id) AS album_count 
-               FROM image i WHERE i.id = ANY(@ids)",
+               FROM image i WHERE i.id = ANY(@ids)"),
             new { ids = idList.ToArray() });
         
         return images;
@@ -327,10 +327,10 @@ public partial class PostgreSQLDataStore
         using var conn = OpenConnection();
         
         var albums = conn.Query<Album>(
-            @"SELECT a.* FROM image i 
+            WithSchema(@"SELECT a.* FROM image i 
               INNER JOIN album_image ai ON ai.image_id = i.id 
-              INNER JOIN album a ON ai.album_id = a.id 
-              WHERE i.id = @id",
+              INNER JOIN album a ON a.id = ai.album_id 
+              WHERE i.id = @id"),
             new { id });
         
         return albums;
@@ -415,10 +415,10 @@ public partial class PostgreSQLDataStore
         
         var (sortField, sortDir) = sorting;
         
-        var sql = $@"SELECT main.id, main.path, {ViewColumns}, 
+        var sql = WithSchema($@"SELECT main.id, main.path, {ViewColumns}, 
                (SELECT COUNT(1) FROM album_image WHERE image_id = main.id) AS album_count 
                FROM image main {join} {where} 
-               ORDER BY {sortField} {sortDir} {page}";
+               ORDER BY {sortField} {sortDir} {page}");
         
         if (paging != null)
         {
@@ -455,10 +455,10 @@ public partial class PostgreSQLDataStore
         
         var (sortField, sortDir) = sorting;
         
-        var sql = $@"SELECT main.id, main.path, {ViewColumns}, 
+        var sql = WithSchema($@"SELECT main.id, main.path, {ViewColumns}, 
                (SELECT COUNT(1) FROM album_image WHERE image_id = main.id) AS album_count 
                FROM image main {join} {where} 
-               ORDER BY {sortField} {sortDir} {page}";
+               ORDER BY {sortField} {sortDir} {page}");
         
         if (paging != null)
         {

@@ -170,12 +170,34 @@ namespace Diffusion.Toolkit.Pages
             _model.SetPristine();
         }
         
-        private void InitializeSchemaSelector()
+        private async void InitializeSchemaSelector()
         {
             var comboBox = FindName("SchemaComboBox") as ComboBox;
             if (comboBox == null) return;
             
-            // Set current schema selection (PostgreSQL default is "public")
+            // Clear existing items
+            comboBox.Items.Clear();
+            
+            try
+            {
+                // Load all application schemas from database
+                var schemas = await ((Database.PostgreSQL.PostgreSQLDataStore)_dataStore).GetApplicationSchemasAsync();
+                
+                foreach (var schema in schemas)
+                {
+                    var displayName = char.ToUpper(schema[0]) + schema.Substring(1);
+                    var item = new ComboBoxItem { Content = displayName, Tag = schema };
+                    comboBox.Items.Add(item);
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"Error loading schemas: {ex.Message}");
+                // Fallback to just public if query fails
+                comboBox.Items.Add(new ComboBoxItem { Content = "Public", Tag = "public" });
+            }
+            
+            // Set current schema selection
             var currentSchema = _settings.DatabaseSchema ?? "public";
             _model.DatabaseSchema = currentSchema;
             
@@ -598,24 +620,11 @@ namespace Diffusion.Toolkit.Pages
             
             try
             {
-                await using var conn = await _dataStore.OpenConnectionAsync();
+                Logger.Log($"Creating schema: {schemaName}");
                 
-                // Create schema
-                await conn.ExecuteAsync($"CREATE SCHEMA IF NOT EXISTS \"{schemaName}\"");
-                
-                // Copy table structure from main schema
-                var tables = new[] { "image", "image_tags", "folder", "album", "album_image", "saved_query", "image_captions" };
-                foreach (var table in tables)
-                {
-                    try
-                    {
-                        await conn.ExecuteAsync($"CREATE TABLE IF NOT EXISTS \"{schemaName}\".\"{table}\" (LIKE main.\"{table}\" INCLUDING ALL)");
-                    }
-                    catch
-                    {
-                        // Table might not exist in main schema yet, continue
-                    }
-                }
+                // Create the new schema with all tables
+                await _dataStore.CreateSchemaWithTables(schemaName);
+                Logger.Log($"Schema {schemaName} created and initialized");
                 
                 // Add new schema to ComboBox
                 var comboBox = FindName("SchemaComboBox") as ComboBox;

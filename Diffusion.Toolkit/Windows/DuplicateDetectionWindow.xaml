@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:fa="http://schemas.fontawesome.io/icons/"
+        xmlns:fa="clr-namespace:FontAwesome.Sharp;assembly=FontAwesome.Sharp"
         xmlns:lex="http://wpflocalizeextension.codeplex.com"
         xmlns:converters="clr-namespace:Diffusion.Toolkit.Converters"
         mc:Ignorable="d"
@@ -128,7 +128,7 @@
                     <!-- Empty state -->
                     <StackPanel Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center"
                                 Visibility="{Binding HasNoPairs, Converter={StaticResource BoolToVisibilityConverter}}">
-                        <fa:ImageAwesome Icon="Search" Width="48" Height="48" 
+                        <fa:IconImage Icon="Search" Width="48" Height="48" 
                                          Foreground="{DynamicResource TextBrush}" Opacity="0.3"/>
                         <TextBlock Text="No duplicates found" FontSize="14" Margin="0,15,0,0"
                                    Foreground="{DynamicResource TextBrush}" Opacity="0.5" TextAlignment="Center"/>
@@ -244,7 +244,7 @@
         <Border Grid.RowSpan="5" Background="#AA000000" CornerRadius="4"
                 Visibility="{Binding IsProcessing, Converter={StaticResource BoolToVisibilityConverter}}">
             <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                <fa:ImageAwesome Icon="CircleOutlineNotch" Width="48" Height="48" Spin="True" SpinDuration="1"
+                <fa:IconImage Icon="CircleNotch" Width="48" Height="48"
                                  Foreground="{DynamicResource ForegroundBrush}"/>
                 <TextBlock Text="{Binding ProcessingMessage}" FontSize="14" Margin="0,15,0,0"
                            Foreground="{DynamicResource ForegroundBrush}" TextAlignment="Center"/>
@@ -253,3 +253,4 @@
         </Border>
     </Grid>
 </Window>
+

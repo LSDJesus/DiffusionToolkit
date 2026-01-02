@@ -1,10 +1,10 @@
-﻿<UserControl x:Class="Diffusion.Toolkit.Controls.ThumbnailView"
+<UserControl x:Class="Diffusion.Toolkit.Controls.ThumbnailView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
              xmlns:local="clr-namespace:Diffusion.Toolkit.Controls"
-             xmlns:fa="http://schemas.fontawesome.io/icons/"
+             xmlns:fa="clr-namespace:FontAwesome.Sharp;assembly=FontAwesome.Sharp"
              xmlns:toolkit="clr-namespace:Diffusion.Toolkit"
              xmlns:converters="clr-namespace:Diffusion.Toolkit.Converters"
              xmlns:lex="http://wpflocalizeextension.codeplex.com"
@@ -65,13 +65,13 @@
                         <ColumnDefinition Width="30"/>
                     </Grid.ColumnDefinitions>
 
-                    <fa:ImageAwesome 
+                    <fa:IconImage 
                         Height="64"
-                        Icon="FolderOutlinepenOutline"
+                        Icon="FolderOpen"
                       
                         HorizontalAlignment="Center" VerticalAlignment="Center">
-                        <fa:ImageAwesome.Style>
-                            <Style TargetType="fa:ImageAwesome" BasedOn="{StaticResource {x:Type fa:ImageAwesome}}">
+                        <fa:IconImage.Style>
+                            <Style TargetType="fa:IconImage">
                                 <Setter Property="Foreground" Value="{DynamicResource ForegroundBrush}"></Setter>
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding Unavailable}" Value="{StaticResource TrueValue}">
@@ -79,8 +79,8 @@
                                     </DataTrigger>
                                 </Style.Triggers>
                             </Style>
-                        </fa:ImageAwesome.Style>
-                    </fa:ImageAwesome>
+                        </fa:IconImage.Style>
+                    </fa:IconImage>
 
                     <Grid Grid.Column="1">
                         <Grid.RowDefinitions>
@@ -150,9 +150,9 @@
                                 </Style.Triggers>
                             </Style>
                         </Grid.Style>
-                        <fa:ImageAwesome Height="48" Icon="TrashOutline" Foreground="{DynamicResource ForegroundBrush}" ToolTip="{lex:Loc RootFolders.Remove}" MouseDown="RemoveRootFolder_OnClick">
-                            <fa:ImageAwesome.Style>
-                                <Style TargetType="fa:ImageAwesome">
+                        <fa:IconImage Height="48" Icon="TrashCan" Foreground="{DynamicResource ForegroundBrush}" ToolTip="{lex:Loc RootFolders.Remove}" MouseDown="RemoveRootFolder_OnClick">
+                            <fa:IconImage.Style>
+                                <Style TargetType="fa:IconImage">
                                     <Setter Property="Opacity" Value="0.2"></Setter>
                                     <Style.Triggers>
                                         <Trigger Property="IsMouseOver" Value="True">
@@ -160,8 +160,8 @@
                                         </Trigger>
                                     </Style.Triggers>
                                 </Style>
-                            </fa:ImageAwesome.Style>
-                        </fa:ImageAwesome>
+                            </fa:IconImage.Style>
+                        </fa:IconImage>
                     </Grid>
                 </Grid>
 
@@ -185,11 +185,11 @@
                         <RowDefinition Height="40"/>
                     </Grid.RowDefinitions>
 
-                    <fa:ImageAwesome 
+                    <fa:IconImage 
                         Height="64"
-                        Icon="FolderOutlinepenOutline"
+                        Icon="Folder"
                         Foreground="{DynamicResource ForegroundBrush}" 
-                        HorizontalAlignment="Center" VerticalAlignment="Center"></fa:ImageAwesome>
+                        HorizontalAlignment="Center" VerticalAlignment="Center"></fa:IconImage>
                     <Label Grid.Row="1" Foreground="{DynamicResource ForegroundBrush}"  HorizontalContentAlignment="Center" >
                         <Label>
                             <TextBlock TextTrimming="CharacterEllipsis" Text="{Binding Name}"></TextBlock>
@@ -623,7 +623,7 @@
         </ListView>
 
         <Grid  Background="#80000000" Visibility="{Binding IsBusy, Converter={StaticResource boolToVis}}">
-            <fa:ImageAwesome Opacity="0.5" Icon="CircleOutlineNotch" Height="60" Spin="True" SpinDuration="1" Foreground="{DynamicResource ForegroundBrush}" />
+            <fa:IconImage Opacity="0.5" Icon="CircleNotch" Height="60" Foreground="{DynamicResource ForegroundBrush}" />
         </Grid>
 
 
@@ -654,12 +654,12 @@
             </Slider>
             <StackPanel Grid.Column="2"   Orientation="Horizontal">
                 <Button Style="{DynamicResource BorderlessButton}" Width="24" IsEnabled="{Binding FirstPageEnabled}" ToolTip="{lex:Loc Thumbnail.Pagination.First}" Click="FirstPage_OnClick">
-                    <fa:ImageAwesome Icon="FastBackward" Width="16" Foreground="{DynamicResource ForegroundBrush}" VerticalAlignment="Center" HorizontalAlignment="Center">
-                    </fa:ImageAwesome>
+                    <fa:IconImage Icon="FastBackward" Width="16" Foreground="{DynamicResource ForegroundBrush}" VerticalAlignment="Center" HorizontalAlignment="Center">
+                    </fa:IconImage>
                 </Button>
                 <Button Style="{DynamicResource BorderlessButton}" Width="24" IsEnabled="{Binding PrevPageEnabled}" ToolTip="{lex:Loc Thumbnail.Pagination.Previous}" Click="PrevPage_OnClick">
-                    <fa:ImageAwesome Icon="Backward" Width="14" Foreground="{DynamicResource ForegroundBrush}" VerticalAlignment="Center" HorizontalAlignment="Center">
-                    </fa:ImageAwesome>
+                    <fa:IconImage Icon="Backward" Width="14" Foreground="{DynamicResource ForegroundBrush}" VerticalAlignment="Center" HorizontalAlignment="Center">
+                    </fa:IconImage>
                 </Button>
                 <TextBox  
                         MinWidth="30"
@@ -686,14 +686,17 @@
                            Content="{Binding Pages}"
                     ></Label>
                 <Button Style="{DynamicResource BorderlessButton}" Width="24" IsEnabled="{Binding NextPageEnabled}" ToolTip="{lex:Loc Thumbnail.Pagination.Next}" Click="NextPage_OnClick">
-                    <fa:ImageAwesome Icon="Forward" Width="14" Foreground="{DynamicResource ForegroundBrush}" VerticalAlignment="Center" HorizontalAlignment="Center">
-                    </fa:ImageAwesome>
+                    <fa:IconImage Icon="Forward" Width="14" Foreground="{DynamicResource ForegroundBrush}" VerticalAlignment="Center" HorizontalAlignment="Center">
+                    </fa:IconImage>
                 </Button>
                 <Button Style="{DynamicResource BorderlessButton}" Width="24" IsEnabled="{Binding LastPageEnabled}" ToolTip="{lex:Loc Thumbnail.Pagination.Last}" Click="LastPage_OnClick">
-                    <fa:ImageAwesome Icon="FastForward" Width="16" Foreground="{DynamicResource ForegroundBrush}" VerticalAlignment="Center" HorizontalAlignment="Center">
-                    </fa:ImageAwesome>
+                    <fa:IconImage Icon="FastForward" Width="16" Foreground="{DynamicResource ForegroundBrush}" VerticalAlignment="Center" HorizontalAlignment="Center">
+                    </fa:IconImage>
                 </Button>
             </StackPanel>
         </Grid>
     </Grid>
 </UserControl>
+
+
+

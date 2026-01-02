@@ -10,34 +10,34 @@ namespace Diffusion.Database.PostgreSQL;
 /// </summary>
 public partial class PostgreSQLDataStore
 {
-    private const string DirectoryTreeCTE = @"
+    private string DirectoryTreeCTE => $@"
         WITH RECURSIVE directory_tree(id, parent_id, root_id, depth) AS (
             SELECT id, parent_id, id AS root_id, 0 AS depth 
-            FROM folder
+            FROM {Table("folder")}
             UNION ALL
             SELECT f.id, f.parent_id, t.root_id, t.depth + 1 
-            FROM folder f 
+            FROM {Table("folder")} f 
             JOIN directory_tree t ON f.parent_id = t.id
         )";
 
-    private const string DirectoryTreeWithPathCTE = @"
+    private string DirectoryTreeWithPathCTE => $@"
         WITH RECURSIVE directory_tree(id, parent_id, path, root_id, depth) AS (
             SELECT id, parent_id, path, id AS root_id, 0 AS depth 
-            FROM folder
+            FROM {Table("folder")}
             UNION ALL
             SELECT f.id, f.parent_id, f.path, t.root_id, t.depth + 1 
-            FROM folder f 
+            FROM {Table("folder")} f 
             JOIN directory_tree t ON f.parent_id = t.id
         )";
 
-    private const string DirectoryTreeCTEExcluded = @"
+    private string DirectoryTreeCTEExcluded => $@"
         WITH RECURSIVE directory_tree(id, parent_id, root_id, depth) AS (
             SELECT id, parent_id, id AS root_id, 0 AS depth 
-            FROM folder 
+            FROM {Table("folder")} 
             WHERE excluded = true
             UNION ALL
             SELECT f.id, f.parent_id, t.root_id, t.depth + 1 
-            FROM folder f 
+            FROM {Table("folder")} f 
             JOIN directory_tree t ON f.parent_id = t.id
         )";
 
@@ -61,8 +61,8 @@ public partial class PostgreSQLDataStore
         if (EnsureFolderExists(conn, path, null, out var folderId))
         {
             var query = recursive
-                ? $"{DirectoryTreeCTE} UPDATE folder SET excluded = @excluded FROM (SELECT id FROM directory_tree WHERE root_id = @folderId) AS subfolder WHERE folder.id = subfolder.id"
-                : "UPDATE folder SET excluded = @excluded WHERE id = @folderId";
+                ? $"{DirectoryTreeCTE} UPDATE {Table("folder")} SET excluded = @excluded FROM (SELECT id FROM directory_tree WHERE root_id = @folderId) AS subfolder WHERE folder.id = subfolder.id"
+                : $"UPDATE {Table("folder")} SET excluded = @excluded WHERE id = @folderId";
 
             lock (_lock)
             {
@@ -76,8 +76,8 @@ public partial class PostgreSQLDataStore
         using var conn = OpenConnection();
 
         var query = recursive
-            ? $"{DirectoryTreeCTE} UPDATE folder SET excluded = @excluded FROM (SELECT id FROM directory_tree WHERE root_id = @id) AS subfolder WHERE folder.id = subfolder.id"
-            : "UPDATE folder SET excluded = @excluded WHERE id = @id";
+            ? $"{DirectoryTreeCTE} UPDATE {Table("folder")} SET excluded = @excluded FROM (SELECT id FROM directory_tree WHERE root_id = @id) AS subfolder WHERE folder.id = subfolder.id"
+            : $"UPDATE {Table("folder")} SET excluded = @excluded WHERE id = @id";
 
         lock (_lock)
         {
@@ -90,8 +90,8 @@ public partial class PostgreSQLDataStore
         using var conn = OpenConnection();
 
         var query = recursive
-            ? $"{DirectoryTreeCTE} UPDATE folder SET unavailable = @unavailable FROM (SELECT id FROM directory_tree WHERE root_id = @id) AS subfolder WHERE folder.id = subfolder.id"
-            : "UPDATE folder SET unavailable = @unavailable WHERE id = @id";
+            ? $"{DirectoryTreeCTE} UPDATE {Table("folder")} SET unavailable = @unavailable FROM (SELECT id FROM directory_tree WHERE root_id = @id) AS subfolder WHERE folder.id = subfolder.id"
+            : $"UPDATE {Table("folder")} SET unavailable = @unavailable WHERE id = @id";
 
         lock (_lock)
         {
@@ -104,8 +104,8 @@ public partial class PostgreSQLDataStore
         using var conn = OpenConnection();
 
         var query = recursive
-            ? $"{DirectoryTreeCTE} UPDATE folder SET archived = @archived FROM (SELECT id FROM directory_tree WHERE root_id = @id) AS subfolder WHERE folder.id = subfolder.id"
-            : "UPDATE folder SET archived = @archived WHERE id = @id";
+            ? $"{DirectoryTreeCTE} UPDATE {Table("folder")} SET archived = @archived FROM (SELECT id FROM directory_tree WHERE root_id = @id) AS subfolder WHERE folder.id = subfolder.id"
+            : $"UPDATE {Table("folder")} SET archived = @archived WHERE id = @id";
 
         lock (_lock)
         {
@@ -119,7 +119,7 @@ public partial class PostgreSQLDataStore
 
         lock (_lock)
         {
-            conn.Execute("UPDATE folder SET watched = @watched WHERE id = @id", new { watched, id });
+            conn.Execute($"UPDATE {Table("folder")} SET watched = @watched WHERE id = @id", new { watched, id });
         }
     }
 
@@ -129,7 +129,7 @@ public partial class PostgreSQLDataStore
 
         lock (_lock)
         {
-            conn.Execute("UPDATE folder SET recursive = @recursive WHERE id = @id", new { recursive, id });
+            conn.Execute($"UPDATE {Table("folder")} SET recursive = @recursive WHERE id = @id", new { recursive, id });
         }
     }
 
@@ -142,14 +142,14 @@ public partial class PostgreSQLDataStore
             // For root folders, root_folder_id should be the folder's own ID
             // We use a two-step process: insert with temporary value, then update
             var id = conn.QuerySingleOrDefault<int?>(
-                "SELECT id FROM folder WHERE path = @path",
+                $"SELECT id FROM {Table("folder")} WHERE path = @path",
                 new { path });
 
             if (id.HasValue)
             {
                 // Update existing folder
-                conn.Execute(@"
-                    UPDATE folder SET
+                conn.Execute($@"
+                    UPDATE {Table("folder")} SET
                         parent_id = 0,
                         excluded = false,
                         is_root = true,
@@ -163,15 +163,15 @@ public partial class PostgreSQLDataStore
             else
             {
                 // Insert new folder with temporary root_folder_id = 0
-                var newId = conn.QuerySingle<int>(@"
-                    INSERT INTO folder (parent_id, root_folder_id, path, image_count, scanned_date, unavailable, archived, excluded, is_root, recursive, watched)
+                var newId = conn.QuerySingle<int>($@"
+                    INSERT INTO {Table("folder")} (parent_id, root_folder_id, path, image_count, scanned_date, unavailable, archived, excluded, is_root, recursive, watched)
                     VALUES (0, 0, @path, 0, NULL, false, false, false, true, @recursive, @watched)
                     RETURNING id",
                     new { path, recursive, watched });
 
                 // Update root_folder_id to point to itself
                 conn.Execute(
-                    "UPDATE folder SET root_folder_id = @newId WHERE id = @newId",
+                    $"UPDATE {Table("folder")} SET root_folder_id = @newId WHERE id = @newId",
                     new { newId });
 
                 return newId;
@@ -187,14 +187,14 @@ public partial class PostgreSQLDataStore
 
             // Check if folder exists
             var id = conn.QuerySingleOrDefault<int?>(
-                "SELECT id FROM folder WHERE path = @path",
+                $"SELECT id FROM {Table("folder")} WHERE path = @path",
                 new { path });
 
             if (id.HasValue)
             {
                 // Update existing folder
-                conn.Execute(@"
-                    UPDATE folder SET
+                conn.Execute($@"
+                    UPDATE {Table("folder")} SET
                         parent_id = 0,
                         excluded = true,
                         is_root = false,
@@ -206,15 +206,15 @@ public partial class PostgreSQLDataStore
             else
             {
                 // Insert new excluded folder with temporary root_folder_id = 0
-                var newId = conn.QuerySingle<int>(@"
-                    INSERT INTO folder (parent_id, root_folder_id, path, image_count, scanned_date, unavailable, archived, excluded, is_root)
+                var newId = conn.QuerySingle<int>($@"
+                    INSERT INTO {Table("folder")} (parent_id, root_folder_id, path, image_count, scanned_date, unavailable, archived, excluded, is_root)
                     VALUES (0, 0, @path, 0, NULL, false, false, true, false)
                     RETURNING id",
                     new { path });
 
                 // Update root_folder_id to point to itself
                 conn.Execute(
-                    "UPDATE folder SET root_folder_id = @newId WHERE id = @newId",
+                    $"UPDATE {Table("folder")} SET root_folder_id = @newId WHERE id = @newId",
                     new { newId });
 
                 return newId;
@@ -227,7 +227,7 @@ public partial class PostgreSQLDataStore
         lock (_lock)
         {
             using var conn = OpenConnection();
-            conn.Execute("DELETE FROM folder WHERE id = @id", new { id });
+            conn.Execute($"DELETE FROM {Table("folder")} WHERE id = @id", new { id });
         }
     }
 
@@ -240,7 +240,7 @@ public partial class PostgreSQLDataStore
         }
 
         // Find root folder that matches this path
-        var rootFolders = conn.Query<Folder>($"SELECT {FolderColumns} FROM folder WHERE is_root = true");
+        var rootFolders = conn.Query<Folder>($"SELECT {FolderColumns} FROM {Table("folder")} WHERE is_root = true");
         var root = rootFolders.FirstOrDefault(d => path.StartsWith(d.Path));
         
         if (root == null)
@@ -264,7 +264,7 @@ public partial class PostgreSQLDataStore
             current = nextSeparator > 0 ? path[..nextSeparator] : path;
 
             var existingId = conn.ExecuteScalar<int?>(
-                "SELECT id FROM folder WHERE path = @current",
+                $"SELECT id FROM {Table("folder")} WHERE path = @current",
                 new { current });
 
             if (existingId.HasValue)
@@ -277,8 +277,8 @@ public partial class PostgreSQLDataStore
                 lock (_lock)
                 {
                     // Sub-folders inherit root_folder_id from their root
-                    id = conn.QuerySingle<int>(@"
-                        INSERT INTO folder (parent_id, root_folder_id, path, unavailable, archived, excluded, is_root)
+                    id = conn.QuerySingle<int>($@"
+                        INSERT INTO {Table("folder")} (parent_id, root_folder_id, path, unavailable, archived, excluded, is_root)
                         VALUES (@currentParentId, @rootId, @current, false, false, false, false)
                         RETURNING id",
                         new { currentParentId, rootId = root.Id, current });
@@ -318,7 +318,7 @@ public partial class PostgreSQLDataStore
                 f.recursive AS Recursive,
                 f.watched AS Watched,
                 LEAST(COALESCE(p.children, 0), 1) AS HasChildren
-            FROM folder f
+            FROM {Table("folder")} f
             JOIN directory_tree t ON f.id = t.id
             LEFT JOIN (
                 SELECT root_id, COUNT(*) AS children 
@@ -337,7 +337,7 @@ public partial class PostgreSQLDataStore
         return conn.Query<Folder>($@"
             {DirectoryTreeCTE}
             SELECT {FolderColumns}
-            FROM folder f
+            FROM {Table("folder")} f
             JOIN directory_tree t ON f.id = t.id
             WHERE t.root_id = @id AND t.depth = 1",
             new { id });
@@ -350,7 +350,7 @@ public partial class PostgreSQLDataStore
         return conn.Query<Folder>($@"
             {DirectoryTreeCTE}
             SELECT {FolderColumns}
-            FROM folder f
+            FROM {Table("folder")} f
             JOIN directory_tree t ON f.id = t.id
             WHERE t.root_id = @id",
             new { id });
@@ -363,7 +363,7 @@ public partial class PostgreSQLDataStore
         return conn.Query<Folder>($@"
             {DirectoryTreeCTEExcluded}
             SELECT {FolderColumns}
-            FROM folder
+            FROM {Table("folder")}
             WHERE id IN (
                 SELECT id FROM directory_tree WHERE depth = 0
                 EXCEPT
@@ -374,19 +374,19 @@ public partial class PostgreSQLDataStore
     public IEnumerable<Folder> GetExcludedFolders()
     {
         using var conn = OpenConnection();
-        return conn.Query<Folder>($"SELECT {FolderColumns} FROM folder WHERE excluded = true");
+        return conn.Query<Folder>($"SELECT {FolderColumns} FROM {Table("folder")} WHERE excluded = true");
     }
 
     public IEnumerable<Folder> GetArchivedFolders(bool archived = true)
     {
         using var conn = OpenConnection();
-        return conn.Query<Folder>($"SELECT {FolderColumns} FROM folder WHERE archived = @archived", new { archived });
+        return conn.Query<Folder>($"SELECT {FolderColumns} FROM {Table("folder")} WHERE archived = @archived", new { archived });
     }
 
     public IEnumerable<Folder> GetRootFolders()
     {
         using var conn = OpenConnection();
-        return conn.Query<Folder>($"SELECT {FolderColumns} FROM folder WHERE is_root = true");
+        return conn.Query<Folder>($"SELECT {FolderColumns} FROM {Table("folder")} WHERE is_root = true");
     }
 
     public IEnumerable<FolderView> GetFoldersView()
@@ -408,7 +408,7 @@ public partial class PostgreSQLDataStore
                 f.recursive AS Recursive,
                 f.watched AS Watched,
                 LEAST(COALESCE(p.children, 0), 1) AS HasChildren
-            FROM folder f
+            FROM {Table("folder")} f
             LEFT JOIN (
                 SELECT root_id, COUNT(*) AS children 
                 FROM directory_tree 
@@ -420,13 +420,13 @@ public partial class PostgreSQLDataStore
     public IEnumerable<Folder> GetFolders()
     {
         using var conn = OpenConnection();
-        return conn.Query<Folder>($"SELECT {FolderColumns} FROM folder");
+        return conn.Query<Folder>($"SELECT {FolderColumns} FROM {Table("folder")}");
     }
 
     public Folder? GetFolder(string path)
     {
         using var conn = OpenConnection();
-        return conn.QuerySingleOrDefault<Folder>($"SELECT {FolderColumns} FROM folder WHERE path = @path", new { path });
+        return conn.QuerySingleOrDefault<Folder>($"SELECT {FolderColumns} FROM {Table("folder")} WHERE path = @path", new { path });
     }
 
     public int CleanRemovedFolders()
@@ -453,16 +453,16 @@ public partial class PostgreSQLDataStore
                     transaction);
 
                 // Update subfolder paths
-                conn.Execute(@"
-                    UPDATE folder 
+                conn.Execute($@"
+                    UPDATE {Table("folder")} 
                     SET path = @newPath || SUBSTRING(path FROM LENGTH(@path) + 1)
                     WHERE path LIKE @path || '\\%'",
                     new { path, newPath },
                     transaction);
 
                 // Update the folder itself
-                conn.Execute(@"
-                    UPDATE folder 
+                conn.Execute($@"
+                    UPDATE {Table("folder")} 
                     SET path = @newPath
                     WHERE path = @path",
                     new { path, newPath },
@@ -532,13 +532,13 @@ public partial class PostgreSQLDataStore
                 // Delete subfolders
                 conn.Execute($@"
                     {DirectoryTreeCTE}
-                    DELETE FROM folder
+                    DELETE FROM {Table("folder")}
                     WHERE id IN (SELECT id FROM directory_tree WHERE root_id = @id)",
                     new { id },
                     transaction);
 
                 // Delete the folder itself
-                conn.Execute("DELETE FROM folder WHERE id = @id", new { id }, transaction);
+                conn.Execute($@"DELETE FROM {Table("folder")} WHERE id = @id", new { id }, transaction);
 
                 transaction.Commit();
                 return imagesDeleted;
@@ -561,46 +561,46 @@ public partial class PostgreSQLDataStore
             try
             {
                 // Delete associated data
-                conn.Execute(@"
+                conn.Execute($@"
                     DELETE FROM node_property
                     WHERE node_id IN (
                         SELECT n.id FROM node n
                         WHERE n.image_id IN (
                             SELECT i.id FROM image i
-                            INNER JOIN folder f ON i.folder_id = f.id
+                            INNER JOIN {Table("folder")} f ON i.folder_id = f.id
                             WHERE f.path LIKE @path || '%'
                         )
                     )",
                     new { path },
                     transaction);
 
-                conn.Execute(@"
+                conn.Execute($@"
                     DELETE FROM node
                     WHERE image_id IN (
                         SELECT i.id FROM image i
-                        INNER JOIN folder f ON i.folder_id = f.id
+                        INNER JOIN {Table("folder")} f ON i.folder_id = f.id
                         WHERE f.path LIKE @path || '%'
                     )",
                     new { path },
                     transaction);
 
-                conn.Execute(@"
+                conn.Execute($@"
                     DELETE FROM album_image
                     WHERE image_id IN (
                         SELECT i.id FROM image i
-                        INNER JOIN folder f ON i.folder_id = f.id
+                        INNER JOIN {Table("folder")} f ON i.folder_id = f.id
                         WHERE f.path LIKE @path || '%'
                     )",
                     new { path },
                     transaction);
 
-                var imagesDeleted = conn.Execute(@"
+                var imagesDeleted = conn.Execute($@"
                     DELETE FROM image
-                    WHERE folder_id IN (SELECT id FROM folder WHERE path LIKE @path || '%')",
+                    WHERE folder_id IN (SELECT id FROM {Table("folder")} WHERE path LIKE @path || '%')",
                     new { path },
                     transaction);
 
-                conn.Execute("DELETE FROM folder WHERE path = @path", new { path }, transaction);
+                conn.Execute($"DELETE FROM {Table("folder")} WHERE path = @path", new { path }, transaction);
 
                 transaction.Commit();
                 return imagesDeleted;
@@ -616,17 +616,17 @@ public partial class PostgreSQLDataStore
     public IEnumerable<FolderArchived> GetArchivedStatus()
     {
         using var conn = OpenConnection();
-        return conn.Query<FolderArchived>("SELECT id AS Id, archived AS Archived FROM folder ORDER BY id");
+        return conn.Query<FolderArchived>($"SELECT id AS Id, archived AS Archived FROM {Table("folder")} ORDER BY id");
     }
 
     public bool FolderHasImages(string path)
     {
         using var conn = OpenConnection();
         
-        var count = conn.ExecuteScalar<int>(@"
+        var count = conn.ExecuteScalar<int>($@"
             SELECT COUNT(1) 
             FROM image i 
-            INNER JOIN folder f ON i.folder_id = f.id 
+            INNER JOIN {Table("folder")} f ON i.folder_id = f.id 
             WHERE f.path = @path",
             new { path });
 
@@ -647,3 +647,4 @@ public partial class PostgreSQLDataStore
             new { folderId });
     }
 }
+
