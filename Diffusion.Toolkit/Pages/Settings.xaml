@@ -465,10 +465,9 @@
                                        ToolTip="Number of images processed in parallel (1-16). Higher values use more VRAM but are faster."
                                        Foreground="{DynamicResource ForegroundBrush}"/>
                                 <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal">
-                                    <Slider Width="150" Minimum="1" Maximum="16" Value="{Binding TaggingConcurrentWorkers}" 
+                                    <Slider Width="200" Minimum="1" Maximum="16" Value="{Binding TaggingConcurrentWorkers}" 
                                             TickFrequency="1" IsSnapToTickEnabled="True" VerticalAlignment="Center"/>
-                                    <Label Width="40" Content="{Binding TaggingConcurrentWorkers}" Margin="5,0,0,0" VerticalAlignment="Center" 
-                                           Foreground="{DynamicResource ForegroundBrush}" HorizontalContentAlignment="Right"/>
+                                    <Label Content="{Binding TaggingConcurrentWorkers}" Margin="10,0,0,0" VerticalAlignment="Center" Foreground="{DynamicResource ForegroundBrush}"/>
                                 </StackPanel>
                                 
                                 <Label Grid.Row="1" Grid.Column="0" Content="GPU Devices:" 
@@ -487,10 +486,9 @@
                                        ToolTip="Auto-release caption models after inactivity: -1=Keep loaded, 0=Instantly release, 1-10=Minutes"
                                        Foreground="{DynamicResource ForegroundBrush}"/>
                                 <StackPanel Grid.Row="3" Grid.Column="1" Orientation="Horizontal">
-                                    <Slider Width="150" Minimum="-1" Maximum="10" Value="{Binding CaptioningModelTTLMinutes}" 
+                                    <Slider Width="200" Minimum="-1" Maximum="10" Value="{Binding CaptioningModelTTLMinutes}" 
                                             TickFrequency="1" IsSnapToTickEnabled="True" VerticalAlignment="Center"/>
-                                    <Label Width="40" Content="{Binding CaptioningModelTTLMinutes}" Margin="5,0,0,0" VerticalAlignment="Center" 
-                                           Foreground="{DynamicResource ForegroundBrush}" HorizontalContentAlignment="Right"/>
+                                    <Label Content="{Binding CaptioningModelTTLMinutes}" Margin="10,0,0,0" VerticalAlignment="Center" Foreground="{DynamicResource ForegroundBrush}"/>
                                     <TextBlock Margin="5,0,0,0" VerticalAlignment="Center" Foreground="{DynamicResource ForegroundBrush}" FontSize="11">
                                         <Run>
                                             <Run.Style>
@@ -510,71 +508,6 @@
                                 </StackPanel>
                             </Grid>
                             
-                            <Grid Margin="0,0,0,10">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="200"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto"/>
-                                </Grid.RowDefinitions>
-                                
-                                <Label Grid.Row="0" Grid.Column="0" Content="Caption Model TTL:" 
-                                       ToolTip="Auto-release caption models after inactivity: -1=Keep loaded, 0=Instantly release, 1-10=Minutes"
-                                       Foreground="{DynamicResource ForegroundBrush}"/>
-                                <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal">
-                                    <Slider Width="200" Minimum="-1" Maximum="10" Value="{Binding CaptioningModelTTLMinutes}" 
-                                            TickFrequency="1" IsSnapToTickEnabled="True" VerticalAlignment="Center"/>
-                                    <TextBlock Margin="10,0,0,0" VerticalAlignment="Center" Foreground="{DynamicResource ForegroundBrush}">
-                                        <Run Text="{Binding CaptioningModelTTLMinutes}"/>
-                                    </TextBlock>
-                                    <TextBlock Margin="5,0,0,0" VerticalAlignment="Center" Foreground="{DynamicResource ForegroundBrush}">
-                                        <Run>
-                                            <Run.Style>
-                                                <Style>
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding CaptioningModelTTLMinutes}" Value="-1">
-                                                            <Setter Property="TextBlock.Text" Value="(Keep loaded)"/>
-                                                        </DataTrigger>
-                                                        <DataTrigger Binding="{Binding CaptioningModelTTLMinutes}" Value="0">
-                                                            <Setter Property="TextBlock.Text" Value="(Instantly release)"/>
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </Run.Style>
-                                        </Run>
-                                    </TextBlock>
-                                </StackPanel>
-                            </Grid>
-                            
-                            <Grid Margin="0,0,0,10">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="200"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                </Grid.RowDefinitions>
-                                
-                                <Label Grid.Row="0" Grid.Column="0" Content="Concurrent Workers:" 
-                                       ToolTip="Number of images processed in parallel (1-16). Higher values use more VRAM but are faster."
-                                       Foreground="{DynamicResource ForegroundBrush}"/>
-                                <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal">
-                                    <Slider Width="200" Minimum="1" Maximum="16" Value="{Binding TaggingConcurrentWorkers}" 
-                                            TickFrequency="1" IsSnapToTickEnabled="True" VerticalAlignment="Center"/>
-                                    <Label Content="{Binding TaggingConcurrentWorkers}" Margin="10,0,0,0" VerticalAlignment="Center" Foreground="{DynamicResource ForegroundBrush}"/>
-                                </StackPanel>
-                                
-                                <Label Grid.Row="1" Grid.Column="0" Content="GPU Device ID:" 
-                                       ToolTip="CUDA device index to use (0 for first GPU, 1 for second, etc.). Requires application restart. Note: All workers use the same GPU. For multi-GPU, run multiple instances of the app."
-                                       Foreground="{DynamicResource ForegroundBrush}"/>
-                                <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal">
-                                    <Slider Width="200" Minimum="0" Maximum="3" Value="{Binding TaggingGpuDeviceId}" 
-                                            TickFrequency="1" IsSnapToTickEnabled="True" VerticalAlignment="Center"/>
-                                    <Label Content="{Binding TaggingGpuDeviceId}" Margin="10,0,0,0" VerticalAlignment="Center" Foreground="{DynamicResource ForegroundBrush}"/>
-                                </StackPanel>
-                            </Grid>
                         </StackPanel>
                     </GroupBox>
 
