@@ -11,7 +11,7 @@ using System.Linq;
 using System.Windows.Controls;
 using Diffusion.Common;
 using Diffusion.Toolkit.Services;
-using Diffusion.Database.Models;
+using Diffusion.Database.PostgreSQL.Models;
 
 namespace Diffusion.Toolkit.Controls
 {

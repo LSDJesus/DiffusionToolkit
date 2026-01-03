@@ -133,8 +133,18 @@ public class WDTagService : IDisposable
             return string.Join(", ", tags.Select(t => t.Tag));
     }
 
-    public void Dispose()
+    /// <summary>
+    /// Release the ONNX model from memory to free VRAM
+    /// </summary>
+    public void ReleaseModel()
     {
         _session?.Dispose();
+        _session = null;
+        _isInitialized = false;
+    }
+
+    public void Dispose()
+    {
+        ReleaseModel();
     }
 }

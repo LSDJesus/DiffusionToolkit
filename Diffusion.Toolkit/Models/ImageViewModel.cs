@@ -1,4 +1,4 @@
-﻿using Diffusion.Database.Models;
+﻿using Diffusion.Database.PostgreSQL.Models;
 using Diffusion.Toolkit.Classes;
 using Diffusion.Toolkit.Controls;
 using System.Collections.Generic;

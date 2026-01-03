@@ -1,7 +1,7 @@
-using Diffusion.Database;
+using Diffusion.Common.Query;
+using System;
 using System.Windows.Controls;
 using System.Windows;
-using SQLite;
 using System.Collections.Generic;
 using System.Linq;
 using System.Collections.ObjectModel;
@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 using Diffusion.Toolkit.Classes;
 using Diffusion.Toolkit.Models;
 using Diffusion.Toolkit.Services;
-using Diffusion.Database.Models;
+using Diffusion.Database.PostgreSQL.Models;
 using PgAlbum = Diffusion.Database.PostgreSQL.Models.Album;
 
 namespace Diffusion.Toolkit
@@ -254,7 +254,7 @@ namespace Diffusion.Toolkit
 
                 LoadAlbums();
             }
-            catch (SQLiteException ex)
+            catch (Exception ex)
             {
                 await ServiceLocator.MessageService.Show($"Album {name} already exists!\r\n Please use another name.", "New Album", PopupButtons.OK);
             }

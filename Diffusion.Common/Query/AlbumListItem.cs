@@ -1,4 +1,6 @@
-﻿namespace Diffusion.Database;
+﻿using System;
+
+namespace Diffusion.Common.Query;
 
 public interface IAlbumInfo
 {

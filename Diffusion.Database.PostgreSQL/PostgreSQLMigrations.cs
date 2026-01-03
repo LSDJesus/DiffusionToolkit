@@ -10,7 +10,7 @@ public class PostgreSQLMigrations
 {
     private readonly NpgsqlConnection _connection;
     private readonly string _schema;
-    private const int CurrentVersion = 13;
+    private const int CurrentVersion = 2;
 
     public PostgreSQLMigrations(NpgsqlConnection connection, string schema = "public")
     {
@@ -20,97 +20,124 @@ public class PostgreSQLMigrations
 
     public async Task UpdateAsync()
     {
-        // Get current schema version
-        var versionSql = @"
-            CREATE TABLE IF NOT EXISTS schema_version (
-                version INT PRIMARY KEY,
-                applied_at TIMESTAMP DEFAULT NOW()
-            );";
-
-        await _connection.ExecuteAsync(versionSql);
-
-        var currentVersion = await _connection.ExecuteScalarAsync<int?>(
-            "SELECT MAX(version) FROM schema_version;") ?? 0;
-
-        // Apply pending migrations
-        if (currentVersion < 1) await ApplyV1Async();
-        if (currentVersion < 2) await ApplyV2Async();
-        if (currentVersion < 3) await ApplyV3Async();
-        if (currentVersion < 4) await ApplyV4Async();
-        if (currentVersion < 5) await ApplyV5Async();
-        if (currentVersion < 6) await ApplyV6Async();
-        if (currentVersion < 7) await ApplyV7Async();
-        if (currentVersion < 8) await ApplyV8Async();
-        if (currentVersion < 9) await ApplyV9Async();
-        if (currentVersion < 10) await ApplyV10Async();
-        if (currentVersion < 11) await ApplyV11Async();
-        if (currentVersion < 12) await ApplyV12Async();
-        if (currentVersion < 13) await ApplyV13Async();
-
-        // Only insert version if migrations were applied
-        if (currentVersion < CurrentVersion)
+        try
         {
-            await _connection.ExecuteAsync(
-                "INSERT INTO schema_version (version) VALUES (@version) ON CONFLICT (version) DO NOTHING", 
-                new { version = CurrentVersion });
+            // Get current schema version
+            var versionSql = @"
+                CREATE TABLE IF NOT EXISTS schema_version (
+                    version INT PRIMARY KEY,
+                    applied_at TIMESTAMP DEFAULT NOW()
+                );";
+
+            await _connection.ExecuteAsync(versionSql);
+
+            var currentVersion = await _connection.ExecuteScalarAsync<int?>(
+                "SELECT MAX(version) FROM schema_version;") ?? 0;
+
+            // Apply schema migrations in order
+            if (currentVersion < 1) await ApplyV1Async();
+            if (currentVersion < 2) await ApplyV2Async();
+
+            // Only insert version if migrations were applied
+            if (currentVersion < CurrentVersion)
+            {
+                await _connection.ExecuteAsync(
+                    "INSERT INTO schema_version (version) VALUES (@version) ON CONFLICT (version) DO NOTHING", 
+                    new { version = CurrentVersion });
+            }
+        }
+        catch (Exception ex)
+        {
+            Diffusion.Common.Logger.Log($"Migration UpdateAsync failed: {ex.Message}");
+            Diffusion.Common.Logger.Log($"Stack: {ex.StackTrace}");
+            throw;
         }
     }
 
     private async Task ApplyV1Async()
     {
-        var sql = @"
-            -- Main image table
-            CREATE TABLE IF NOT EXISTS image (
-                id SERIAL PRIMARY KEY,
-                root_folder_id INT NOT NULL,
-                folder_id INT NOT NULL,
-                path TEXT NOT NULL UNIQUE,
-                file_name TEXT NOT NULL,
-                prompt TEXT,
-                negative_prompt TEXT,
-                steps INT DEFAULT 0,
-                sampler TEXT,
-                cfg_scale DECIMAL(5, 2) DEFAULT 0.0,
-                seed BIGINT DEFAULT 0,
-                width INT DEFAULT 0,
-                height INT DEFAULT 0,
-                model_hash TEXT,
-                model TEXT,
-                batch_size INT DEFAULT 1,
-                batch_pos INT DEFAULT 0,
-                created_date TIMESTAMP NOT NULL,
-                modified_date TIMESTAMP NOT NULL,
-                custom_tags TEXT,
-                rating INT,
-                favorite BOOLEAN DEFAULT FALSE,
-                for_deletion BOOLEAN DEFAULT FALSE,
-                nsfw BOOLEAN DEFAULT FALSE,
-                unavailable BOOLEAN DEFAULT FALSE,
-                aesthetic_score DECIMAL(4, 2),
-                hyper_network TEXT,
-                hyper_network_strength DECIMAL(4, 2),
-                clip_skip INT,
-                ensd INT,
-                file_size BIGINT DEFAULT 0,
-                no_metadata BOOLEAN DEFAULT FALSE,
-                workflow TEXT,
-                workflow_id TEXT,
-                has_error BOOLEAN DEFAULT FALSE,
-                hash TEXT,
-                viewed_date TIMESTAMP,
-                touched_date TIMESTAMP,
-                
-                -- Vector embeddings for similarity search and ComfyUI integration
-                prompt_embedding vector(1024),              -- BGE-large-en-v1.5 (semantic search)
-                negative_prompt_embedding vector(1024),     -- BGE-large-en-v1.5 (semantic search)
-                image_embedding vector(1024),               -- CLIP-ViT-H/14 (vision)
-                clip_l_embedding vector(768),               -- SDXL CLIP-L text encoder
-                clip_g_embedding vector(1280),              -- SDXL CLIP-G text encoder
-                
-                created_at TIMESTAMP DEFAULT NOW()
-            );
+        try
+        {
+            // Consolidated schema V1 - complete Diffusion Toolkit schema
+            // Combines all historical migrations (V1-V14) into single setup
+            
+            // Read SQL from embedded resource
+            var assembly = System.Reflection.Assembly.GetExecutingAssembly();
+            var resourceName = "Diffusion.Database.PostgreSQL.PostgreSQLMigrations_V1_Schema.sql";
+            
+            Diffusion.Common.Logger.Log($"Loading embedded resource: {resourceName}");
+            
+            using var stream = assembly.GetManifestResourceStream(resourceName);
+            if (stream == null)
+            {
+                var available = string.Join(", ", assembly.GetManifestResourceNames());
+                throw new InvalidOperationException($"Embedded resource not found: {resourceName}. Available: {available}");
+            }
+            
+            using var reader = new System.IO.StreamReader(stream);
+            var sql = await reader.ReadToEndAsync();
+            
+            if (string.IsNullOrWhiteSpace(sql))
+            {
+                throw new InvalidOperationException("Migration SQL is empty");
+            }
+            
+            Diffusion.Common.Logger.Log($"Executing V1 schema SQL ({sql.Length} chars)...");
+            await _connection.ExecuteAsync(sql);
+            
+            Diffusion.Common.Logger.Log("Creating indexes...");
+            // Create indexes
+            await CreateIndexesAsync();
+            
+            Diffusion.Common.Logger.Log("Creating functions and triggers...");
+            // Create functions and triggers
+            await CreateFunctionsAsync();
+            
+            Diffusion.Common.Logger.Log("V1 migration completed successfully");
+        }
+        catch (Exception ex)
+        {
+            Diffusion.Common.Logger.Log($"ApplyV1Async failed: {ex.Message}");
+            Diffusion.Common.Logger.Log($"Stack: {ex.StackTrace}");
+            throw;
+        }
+    }
 
-            -- Indexes for metadata queries
+    /// <summary>
+    /// V2: Add tagging/captioning queue columns
+    /// </summary>
+    private async Task ApplyV2Async()
+    {
+        try
+        {
+            Diffusion.Common.Logger.Log("Applying V2 migration: tagging/captioning queue columns...");
+            
+            var sql = @"
+                -- Add queue columns for background tagging/captioning
+                ALTER TABLE image ADD COLUMN IF NOT EXISTS needs_tagging BOOLEAN DEFAULT FALSE;
+                ALTER TABLE image ADD COLUMN IF NOT EXISTS needs_captioning BOOLEAN DEFAULT FALSE;
+                
+                -- Create indexes for efficient queue queries
+                CREATE INDEX IF NOT EXISTS idx_image_needs_tagging ON image (needs_tagging) WHERE needs_tagging = true;
+                CREATE INDEX IF NOT EXISTS idx_image_needs_captioning ON image (needs_captioning) WHERE needs_captioning = true;
+            ";
+            
+            await _connection.ExecuteAsync(sql);
+            
+            Diffusion.Common.Logger.Log("V2 migration completed successfully");
+        }
+        catch (Exception ex)
+        {
+            Diffusion.Common.Logger.Log($"ApplyV2Async failed: {ex.Message}");
+            Diffusion.Common.Logger.Log($"Stack: {ex.StackTrace}");
+            throw;
+        }
+    }
+
+    private async Task CreateIndexesAsync()
+    {
+        var sql = @"
+            -- IMAGE TABLE INDEXES
             CREATE INDEX IF NOT EXISTS idx_image_root_folder_id ON image (root_folder_id);
             CREATE INDEX IF NOT EXISTS idx_image_folder_id ON image (folder_id);
             CREATE INDEX IF NOT EXISTS idx_image_path ON image (path);
@@ -137,92 +164,63 @@ public class PostgreSQLMigrations
             CREATE INDEX IF NOT EXISTS idx_image_hash ON image (hash);
             CREATE INDEX IF NOT EXISTS idx_image_viewed_date ON image (viewed_date);
             CREATE INDEX IF NOT EXISTS idx_image_touched_date ON image (touched_date);
-
-            -- Composite indexes for common queries
+            CREATE INDEX IF NOT EXISTS idx_image_vae ON image(vae);
+            CREATE INDEX IF NOT EXISTS idx_image_refiner_model ON image(refiner_model);
+            CREATE INDEX IF NOT EXISTS idx_image_upscaler ON image(upscaler);
+            CREATE INDEX IF NOT EXISTS idx_image_scheduler ON image(scheduler);
+            CREATE INDEX IF NOT EXISTS idx_image_metadata_hash ON image(metadata_hash);
+            CREATE INDEX IF NOT EXISTS idx_image_embedding_source_id ON image(embedding_source_id);
+            CREATE INDEX IF NOT EXISTS idx_image_is_embedding_representative ON image(is_embedding_representative);
+            CREATE INDEX IF NOT EXISTS idx_image_prompt_cache ON image(prompt_embedding_id);
+            CREATE INDEX IF NOT EXISTS idx_image_negative_cache ON image(negative_prompt_embedding_id);
+            CREATE INDEX IF NOT EXISTS idx_image_visual_cache ON image(image_embedding_id);
+            CREATE INDEX IF NOT EXISTS idx_image_base_id ON image(base_image_id);
+            CREATE INDEX IF NOT EXISTS idx_image_is_upscaled ON image(is_upscaled);
+            CREATE INDEX IF NOT EXISTS idx_image_scan_phase ON image (scan_phase) WHERE scan_phase = 0;
+            
+            -- Composite indexes
             CREATE INDEX IF NOT EXISTS idx_image_for_deletion_created_date ON image (for_deletion, created_date);
             CREATE INDEX IF NOT EXISTS idx_image_nsfw_for_deletion_unavailable ON image (nsfw, for_deletion, unavailable, created_date);
+            CREATE INDEX IF NOT EXISTS idx_image_needs_visual ON image(needs_visual_embedding) WHERE needs_visual_embedding = true;
+            
+            -- Full-text search
+            CREATE INDEX IF NOT EXISTS idx_image_generated_tags ON image USING gin(to_tsvector('english', COALESCE(generated_tags, '')));
+            
+            -- JSONB indexes
+            CREATE INDEX IF NOT EXISTS idx_image_loras ON image USING gin(loras);
+            CREATE INDEX IF NOT EXISTS idx_image_controlnets ON image USING gin(controlnets);
+            CREATE INDEX IF NOT EXISTS idx_image_wildcards ON image USING gin(wildcards_used);
+            
+            -- Vector indexes (IVFFlat for approximate nearest neighbor)
+            CREATE INDEX IF NOT EXISTS idx_image_prompt_embedding ON image USING ivfflat (prompt_embedding vector_cosine_ops) WITH (lists = 100);
+            CREATE INDEX IF NOT EXISTS idx_image_negative_prompt_embedding ON image USING ivfflat (negative_prompt_embedding vector_cosine_ops) WITH (lists = 100);
+            CREATE INDEX IF NOT EXISTS idx_image_image_embedding ON image USING ivfflat (image_embedding vector_cosine_ops) WITH (lists = 100);
+            CREATE INDEX IF NOT EXISTS idx_image_clip_l_embedding ON image USING ivfflat (clip_l_embedding vector_cosine_ops) WITH (lists = 100);
+            CREATE INDEX IF NOT EXISTS idx_image_clip_g_embedding ON image USING ivfflat (clip_g_embedding vector_cosine_ops) WITH (lists = 100);
 
-            -- Vector indexes for similarity search (IVFFlat for faster approximate nearest neighbor)
-            CREATE INDEX IF NOT EXISTS idx_image_prompt_embedding ON image USING ivfflat (prompt_embedding vector_cosine_ops) 
-                WITH (lists = 100);
-            CREATE INDEX IF NOT EXISTS idx_image_negative_prompt_embedding ON image USING ivfflat (negative_prompt_embedding vector_cosine_ops) 
-                WITH (lists = 100);
-            CREATE INDEX IF NOT EXISTS idx_image_image_embedding ON image USING ivfflat (image_embedding vector_cosine_ops) 
-                WITH (lists = 100);
-            CREATE INDEX IF NOT EXISTS idx_image_clip_l_embedding ON image USING ivfflat (clip_l_embedding vector_cosine_ops) 
-                WITH (lists = 100);
-            CREATE INDEX IF NOT EXISTS idx_image_clip_g_embedding ON image USING ivfflat (clip_g_embedding vector_cosine_ops) 
-                WITH (lists = 100);
+            -- EMBEDDING CACHE INDEXES
+            CREATE INDEX IF NOT EXISTS idx_embedding_cache_hash ON embedding_cache(content_hash);
+            CREATE INDEX IF NOT EXISTS idx_embedding_cache_type ON embedding_cache(content_type);
+            CREATE INDEX IF NOT EXISTS idx_embedding_cache_refcount ON embedding_cache(reference_count DESC);
+            CREATE INDEX IF NOT EXISTS idx_embedding_cache_bge ON embedding_cache USING ivfflat (bge_embedding vector_cosine_ops) WITH (lists = 100);
+            CREATE INDEX IF NOT EXISTS idx_embedding_cache_clip_l ON embedding_cache USING ivfflat (clip_l_embedding vector_cosine_ops) WITH (lists = 100);
+            CREATE INDEX IF NOT EXISTS idx_embedding_cache_clip_g ON embedding_cache USING ivfflat (clip_g_embedding vector_cosine_ops) WITH (lists = 100);
+            CREATE INDEX IF NOT EXISTS idx_embedding_cache_clip_h ON embedding_cache USING ivfflat (clip_h_embedding vector_cosine_ops) WITH (lists = 100);
 
-            -- Album table
-            CREATE TABLE IF NOT EXISTS album (
-                id SERIAL PRIMARY KEY,
-                name TEXT NOT NULL UNIQUE,
-                ""order"" INT DEFAULT 0,
-                last_updated TIMESTAMP NOT NULL,
-                created_at TIMESTAMP DEFAULT NOW()
-            );
-
+            -- ALBUM INDEXES
             CREATE INDEX IF NOT EXISTS idx_album_name ON album (name);
             CREATE INDEX IF NOT EXISTS idx_album_order ON album (""order"");
             CREATE INDEX IF NOT EXISTS idx_album_last_updated ON album (last_updated);
-
-            -- Album image junction table
-            CREATE TABLE IF NOT EXISTS album_image (
-                id SERIAL PRIMARY KEY,
-                album_id INT NOT NULL REFERENCES album(id) ON DELETE CASCADE,
-                image_id INT NOT NULL REFERENCES image(id) ON DELETE CASCADE,
-                added_at TIMESTAMP DEFAULT NOW(),
-                UNIQUE(album_id, image_id)
-            );
-
             CREATE INDEX IF NOT EXISTS idx_album_image_album_id ON album_image (album_id);
             CREATE INDEX IF NOT EXISTS idx_album_image_image_id ON album_image (image_id);
 
-            -- Node/workflow table
-            CREATE TABLE IF NOT EXISTS node (
-                id SERIAL PRIMARY KEY,
-                image_id INT NOT NULL REFERENCES image(id) ON DELETE CASCADE,
-                node_index INT,
-                node_id TEXT,
-                class_type TEXT,
-                data JSONB,
-                created_at TIMESTAMP DEFAULT NOW()
-            );
-
+            -- NODE INDEXES
             CREATE INDEX IF NOT EXISTS idx_node_image_id ON node (image_id);
             CREATE INDEX IF NOT EXISTS idx_node_class_type ON node (class_type);
-            
-            -- Node property table for workflow node properties
-            CREATE TABLE IF NOT EXISTS node_property (
-                id SERIAL PRIMARY KEY,
-                node_id TEXT NOT NULL,
-                name TEXT NOT NULL,
-                value TEXT,
-                created_at TIMESTAMP DEFAULT NOW()
-            );
-            
             CREATE INDEX IF NOT EXISTS idx_node_property_node_id ON node_property (node_id);
             CREATE INDEX IF NOT EXISTS idx_node_property_name ON node_property (name);
 
-            -- Folder table
-            CREATE TABLE IF NOT EXISTS folder (
-                id SERIAL PRIMARY KEY,
-                parent_id INT DEFAULT 0,
-                root_folder_id INT NOT NULL,
-                path TEXT NOT NULL UNIQUE,
-                path_tree ltree,
-                image_count INT DEFAULT 0,
-                scanned_date TIMESTAMP,
-                unavailable BOOLEAN DEFAULT FALSE,
-                archived BOOLEAN DEFAULT FALSE,
-                excluded BOOLEAN DEFAULT FALSE,
-                is_root BOOLEAN DEFAULT FALSE,
-                recursive BOOLEAN DEFAULT FALSE,
-                watched BOOLEAN DEFAULT FALSE,
-                created_at TIMESTAMP DEFAULT NOW()
-            );
-
+            -- FOLDER INDEXES
             CREATE INDEX IF NOT EXISTS idx_folder_parent_id ON folder (parent_id);
             CREATE INDEX IF NOT EXISTS idx_folder_root_folder_id ON folder (root_folder_id);
             CREATE INDEX IF NOT EXISTS idx_folder_path ON folder (path);
@@ -230,107 +228,66 @@ public class PostgreSQLMigrations
             CREATE INDEX IF NOT EXISTS idx_folder_unavailable ON folder (unavailable);
             CREATE INDEX IF NOT EXISTS idx_folder_is_root ON folder (is_root);
             CREATE INDEX IF NOT EXISTS idx_folder_watched ON folder (watched);
-        ";
 
-        await _connection.ExecuteAsync(sql);
-    }
+            -- QUERY INDEXES
+            CREATE INDEX IF NOT EXISTS idx_query_name ON query (name);
+            CREATE INDEX IF NOT EXISTS idx_query_item_query_id ON query_item (query_id);
+            CREATE INDEX IF NOT EXISTS idx_query_item_type ON query_item (type);
 
-    private async Task ApplyV2Async()
-    {
-        var sql = @"
-            -- Textual embedding library (positive/negative embeddings, characters, etc.)
-            CREATE TABLE IF NOT EXISTS textual_embedding (
-                id SERIAL PRIMARY KEY,
-                name TEXT NOT NULL UNIQUE,
-                file_path TEXT NOT NULL,
-                category TEXT NOT NULL,             -- 'negative', 'positive', 'quality', 'character', 'detail_enhancer', 'other'
-                model_type TEXT NOT NULL,           -- 'SDXL', 'Pony', 'Illustrious', 'SD1.5'
-                description TEXT,
-                
-                -- CLIP embeddings for similarity search
-                clip_l_embedding vector(768),       -- CLIP-L for SDXL
-                clip_g_embedding vector(1280),      -- CLIP-G for SDXL
-                
-                -- Store raw safetensors data for re-export
-                raw_embedding BYTEA,
-                
-                created_at TIMESTAMP DEFAULT NOW()
-            );
-
-            -- Indexes for textual embedding search
+            -- TEXTUAL EMBEDDING INDEXES
             CREATE INDEX IF NOT EXISTS idx_textual_embedding_name ON textual_embedding (name);
             CREATE INDEX IF NOT EXISTS idx_textual_embedding_category ON textual_embedding (category);
             CREATE INDEX IF NOT EXISTS idx_textual_embedding_model_type ON textual_embedding (model_type);
-            
-            CREATE INDEX IF NOT EXISTS idx_textual_embedding_clip_l ON textual_embedding 
-                USING ivfflat (clip_l_embedding vector_cosine_ops) WITH (lists = 50);
-            CREATE INDEX IF NOT EXISTS idx_textual_embedding_clip_g ON textual_embedding 
-                USING ivfflat (clip_g_embedding vector_cosine_ops) WITH (lists = 50);
+            CREATE INDEX IF NOT EXISTS idx_textual_embedding_clip_l ON textual_embedding USING ivfflat (clip_l_embedding vector_cosine_ops) WITH (lists = 50);
+            CREATE INDEX IF NOT EXISTS idx_textual_embedding_clip_g ON textual_embedding USING ivfflat (clip_g_embedding vector_cosine_ops) WITH (lists = 50);
+
+            -- EMBEDDING QUEUE INDEXES
+            CREATE INDEX IF NOT EXISTS idx_embedding_queue_status ON embedding_queue(status);
+            CREATE INDEX IF NOT EXISTS idx_embedding_queue_priority ON embedding_queue(priority DESC, queued_at ASC);
+            CREATE INDEX IF NOT EXISTS idx_embedding_queue_image_id ON embedding_queue(image_id);
+            CREATE INDEX IF NOT EXISTS idx_embedding_queue_folder_id ON embedding_queue(folder_id);
+            CREATE INDEX IF NOT EXISTS idx_embedding_queue_processing ON embedding_queue(status, priority DESC, queued_at ASC) WHERE status = 'pending';
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_embedding_queue_unique_pending ON embedding_queue(image_id) WHERE status IN ('pending', 'processing');
+
+            -- IMAGE TAGS INDEXES
+            CREATE INDEX IF NOT EXISTS idx_image_tags_image_id ON image_tags(image_id);
+            CREATE INDEX IF NOT EXISTS idx_image_tags_tag ON image_tags(tag);
+            CREATE INDEX IF NOT EXISTS idx_image_tags_confidence ON image_tags(confidence DESC);
+            CREATE INDEX IF NOT EXISTS idx_image_tags_source ON image_tags(source);
+            CREATE INDEX IF NOT EXISTS idx_image_tags_tag_confidence ON image_tags(tag, confidence DESC);
+
+            -- IMAGE CAPTIONS INDEXES
+            CREATE INDEX IF NOT EXISTS idx_image_captions_image_id ON image_captions(image_id);
+            CREATE INDEX IF NOT EXISTS idx_image_captions_source ON image_captions(source);
+            CREATE INDEX IF NOT EXISTS idx_image_captions_is_user_edited ON image_captions(is_user_edited);
+            CREATE INDEX IF NOT EXISTS idx_image_captions_caption_fts ON image_captions USING gin(to_tsvector('english', caption));
+
+            -- MODEL RESOURCE INDEXES
+            CREATE INDEX IF NOT EXISTS idx_model_resource_hash ON model_resource(file_hash);
+            CREATE INDEX IF NOT EXISTS idx_model_resource_type ON model_resource(resource_type);
+            CREATE INDEX IF NOT EXISTS idx_model_resource_base_model ON model_resource(base_model);
+            CREATE INDEX IF NOT EXISTS idx_model_resource_civitai_id ON model_resource(civitai_id);
+            CREATE INDEX IF NOT EXISTS idx_model_resource_name ON model_resource(file_name);
+            CREATE INDEX IF NOT EXISTS idx_model_resource_unavailable ON model_resource(unavailable);
+            CREATE INDEX IF NOT EXISTS idx_model_resource_clip_l ON model_resource USING ivfflat (clip_l_embedding vector_cosine_ops) WITH (lists = 50) WHERE clip_l_embedding IS NOT NULL;
+            CREATE INDEX IF NOT EXISTS idx_model_resource_clip_g ON model_resource USING ivfflat (clip_g_embedding vector_cosine_ops) WITH (lists = 50) WHERE clip_g_embedding IS NOT NULL;
+            CREATE INDEX IF NOT EXISTS idx_image_resource_image ON image_resource(image_id);
+            CREATE INDEX IF NOT EXISTS idx_image_resource_resource ON image_resource(resource_id);
+            CREATE INDEX IF NOT EXISTS idx_image_resource_name ON image_resource(resource_name);
+            CREATE INDEX IF NOT EXISTS idx_image_resource_type ON image_resource(resource_type);
+
+            -- THUMBNAIL INDEXES
+            CREATE INDEX IF NOT EXISTS idx_thumbnail_path ON thumbnail(path);
+            CREATE INDEX IF NOT EXISTS idx_thumbnail_created ON thumbnail(created_at);
         ";
 
         await _connection.ExecuteAsync(sql);
     }
 
-    private async Task ApplyV3Async()
+    private async Task CreateFunctionsAsync()
     {
         var sql = @"
-            -- Embedding cache table for deduplication
-            -- Stores unique embeddings once, referenced by multiple images
-            CREATE TABLE IF NOT EXISTS embedding_cache (
-                id SERIAL PRIMARY KEY,
-                
-                -- Content identification
-                content_hash TEXT NOT NULL UNIQUE,      -- SHA256 of prompt text or image hash
-                content_type TEXT NOT NULL,             -- 'prompt', 'negative_prompt', 'image'
-                content_text TEXT,                      -- Original text (for prompts)
-                
-                -- Embeddings (only populate relevant ones per content_type)
-                bge_embedding vector(1024),             -- BGE for text (prompt/negative_prompt)
-                clip_l_embedding vector(768),           -- CLIP-L for text
-                clip_g_embedding vector(1280),          -- CLIP-G for text
-                clip_h_embedding vector(1024),          -- CLIP-H for images only
-                
-                -- Usage statistics
-                reference_count INTEGER DEFAULT 0,      -- How many images use this
-                created_at TIMESTAMP DEFAULT NOW(),
-                last_used_at TIMESTAMP DEFAULT NOW()
-            );
-
-            -- Indexes for embedding cache
-            CREATE INDEX IF NOT EXISTS idx_embedding_cache_hash ON embedding_cache(content_hash);
-            CREATE INDEX IF NOT EXISTS idx_embedding_cache_type ON embedding_cache(content_type);
-            CREATE INDEX IF NOT EXISTS idx_embedding_cache_refcount ON embedding_cache(reference_count DESC);
-            
-            -- Vector indexes for cache search
-            CREATE INDEX IF NOT EXISTS idx_embedding_cache_bge 
-                ON embedding_cache USING ivfflat (bge_embedding vector_cosine_ops) WITH (lists = 100);
-            CREATE INDEX IF NOT EXISTS idx_embedding_cache_clip_l 
-                ON embedding_cache USING ivfflat (clip_l_embedding vector_cosine_ops) WITH (lists = 100);
-            CREATE INDEX IF NOT EXISTS idx_embedding_cache_clip_g 
-                ON embedding_cache USING ivfflat (clip_g_embedding vector_cosine_ops) WITH (lists = 100);
-            CREATE INDEX IF NOT EXISTS idx_embedding_cache_clip_h 
-                ON embedding_cache USING ivfflat (clip_h_embedding vector_cosine_ops) WITH (lists = 100);
-
-            -- Add foreign key columns to image table for embedding cache references
-            ALTER TABLE image ADD COLUMN IF NOT EXISTS prompt_embedding_id INTEGER REFERENCES embedding_cache(id);
-            ALTER TABLE image ADD COLUMN IF NOT EXISTS negative_prompt_embedding_id INTEGER REFERENCES embedding_cache(id);
-            ALTER TABLE image ADD COLUMN IF NOT EXISTS image_embedding_id INTEGER REFERENCES embedding_cache(id);
-            
-            -- Add columns for base/upscale linking and visual embedding optimization
-            ALTER TABLE image ADD COLUMN IF NOT EXISTS needs_visual_embedding BOOLEAN DEFAULT true;
-            ALTER TABLE image ADD COLUMN IF NOT EXISTS is_upscaled BOOLEAN DEFAULT false;
-            ALTER TABLE image ADD COLUMN IF NOT EXISTS base_image_id INTEGER REFERENCES image(id);
-            
-            -- Indexes for new image columns
-            CREATE INDEX IF NOT EXISTS idx_image_prompt_cache ON image(prompt_embedding_id);
-            CREATE INDEX IF NOT EXISTS idx_image_negative_cache ON image(negative_prompt_embedding_id);
-            CREATE INDEX IF NOT EXISTS idx_image_visual_cache ON image(image_embedding_id);
-            CREATE INDEX IF NOT EXISTS idx_image_needs_visual ON image(needs_visual_embedding) 
-                WHERE needs_visual_embedding = true;
-            CREATE INDEX IF NOT EXISTS idx_image_base_id ON image(base_image_id);
-            CREATE INDEX IF NOT EXISTS idx_image_is_upscaled ON image(is_upscaled);
-            
-            -- Function to automatically update last_used_at when embedding referenced
+            -- Update embedding cache last_used_at when referenced
             CREATE OR REPLACE FUNCTION update_embedding_last_used()
             RETURNS TRIGGER AS $$
             BEGIN
@@ -341,101 +298,17 @@ public class PostgreSQLMigrations
             END;
             $$ LANGUAGE plpgsql;
 
-            -- Trigger to update last_used_at on image insert/update
             DROP TRIGGER IF EXISTS trigger_update_embedding_last_used ON image;
             CREATE TRIGGER trigger_update_embedding_last_used
                 AFTER INSERT OR UPDATE OF prompt_embedding_id, negative_prompt_embedding_id, image_embedding_id
                 ON image
                 FOR EACH ROW
                 EXECUTE FUNCTION update_embedding_last_used();
-        ";
 
-        await _connection.ExecuteAsync(sql);
-    }
-
-    private async Task ApplyV4Async()
-    {
-        var sql = @"
-            -- Sidecar .txt file content (AI-generated tags from WD14, BLIP, DeepDanbooru, etc.)
-            ALTER TABLE image ADD COLUMN IF NOT EXISTS generated_tags TEXT;
-            CREATE INDEX IF NOT EXISTS idx_image_generated_tags 
-                ON image USING gin(to_tsvector('english', COALESCE(generated_tags, '')));
-            
-            -- LoRA/LyCORIS models with strengths (stored as JSONB array)
-            ALTER TABLE image ADD COLUMN IF NOT EXISTS loras JSONB;
-            CREATE INDEX IF NOT EXISTS idx_image_loras ON image USING gin(loras);
-            
-            -- VAE model
-            ALTER TABLE image ADD COLUMN IF NOT EXISTS vae TEXT;
-            CREATE INDEX IF NOT EXISTS idx_image_vae ON image(vae);
-            
-            -- Refiner model (SDXL)
-            ALTER TABLE image ADD COLUMN IF NOT EXISTS refiner_model TEXT;
-            ALTER TABLE image ADD COLUMN IF NOT EXISTS refiner_switch DECIMAL(4, 2);
-            CREATE INDEX IF NOT EXISTS idx_image_refiner_model ON image(refiner_model);
-            
-            -- Upscaler
-            ALTER TABLE image ADD COLUMN IF NOT EXISTS upscaler TEXT;
-            ALTER TABLE image ADD COLUMN IF NOT EXISTS upscale_factor DECIMAL(3, 1);
-            CREATE INDEX IF NOT EXISTS idx_image_upscaler ON image(upscaler);
-            
-            -- Hires fix parameters
-            ALTER TABLE image ADD COLUMN IF NOT EXISTS hires_steps INT;
-            ALTER TABLE image ADD COLUMN IF NOT EXISTS hires_upscaler TEXT;
-            ALTER TABLE image ADD COLUMN IF NOT EXISTS hires_upscale DECIMAL(3, 1);
-            ALTER TABLE image ADD COLUMN IF NOT EXISTS denoising_strength DECIMAL(4, 2);
-            
-            -- ControlNet configurations (JSONB array for multiple ControlNets)
-            ALTER TABLE image ADD COLUMN IF NOT EXISTS controlnets JSONB;
-            CREATE INDEX IF NOT EXISTS idx_image_controlnets ON image USING gin(controlnets);
-            
-            -- IP-Adapter
-            ALTER TABLE image ADD COLUMN IF NOT EXISTS ip_adapter TEXT;
-            ALTER TABLE image ADD COLUMN IF NOT EXISTS ip_adapter_strength DECIMAL(4, 2);
-            
-            -- Wildcards used in prompt (text array)
-            ALTER TABLE image ADD COLUMN IF NOT EXISTS wildcards_used TEXT[];
-            CREATE INDEX IF NOT EXISTS idx_image_wildcards ON image USING gin(wildcards_used);
-            
-            -- Generation time (for performance tracking)
-            ALTER TABLE image ADD COLUMN IF NOT EXISTS generation_time_seconds DECIMAL(6, 2);
-            
-            -- Scheduler/sampler schedule type
-            ALTER TABLE image ADD COLUMN IF NOT EXISTS scheduler TEXT;
-            CREATE INDEX IF NOT EXISTS idx_image_scheduler ON image(scheduler);
-        ";
-
-        await _connection.ExecuteAsync(sql);
-    }
-
-    private async Task ApplyV5Async()
-    {
-        var sql = @"
-            -- Intelligent embedding deduplication (V5)
-            -- Enables grouping of ORIG/FINAL pairs and prompt caching
-            
-            -- Metadata hash for identifying duplicate generation parameters
-            ALTER TABLE image ADD COLUMN IF NOT EXISTS metadata_hash TEXT;
-            CREATE INDEX IF NOT EXISTS idx_image_metadata_hash ON image(metadata_hash);
-            
-            -- Embedding source tracking for reference-based deduplication
-            ALTER TABLE image ADD COLUMN IF NOT EXISTS embedding_source_id INT;
-            CREATE INDEX IF NOT EXISTS idx_image_embedding_source_id ON image(embedding_source_id);
-            
-            -- Flag to identify which images were actually embedded (vs referenced)
-            ALTER TABLE image ADD COLUMN IF NOT EXISTS is_embedding_representative BOOLEAN DEFAULT FALSE;
-            CREATE INDEX IF NOT EXISTS idx_image_is_embedding_representative ON image(is_embedding_representative);
-            
-            -- Foreign key constraint (self-referencing)
-            ALTER TABLE image ADD CONSTRAINT fk_image_embedding_source 
-                FOREIGN KEY (embedding_source_id) REFERENCES image(id) ON DELETE SET NULL;
-            
-            -- Trigger to handle cascade when embedding source is deleted
-            -- Automatically marks dependent images for re-embedding
+            -- Handle embedding source deletion
             CREATE OR REPLACE FUNCTION handle_embedding_source_deletion()
             RETURNS TRIGGER AS $$
             BEGIN
-                -- Find images that referenced the deleted image as their embedding source
                 UPDATE image 
                 SET embedding_source_id = NULL,
                     image_embedding = NULL,
@@ -450,9 +323,8 @@ public class PostgreSQLMigrations
                 BEFORE DELETE ON image
                 FOR EACH ROW
                 EXECUTE FUNCTION handle_embedding_source_deletion();
-            
-            -- Function to compute metadata hash from image parameters
-            -- Used by EmbeddingCacheService to identify duplicate generation settings
+
+            -- Compute metadata hash
             CREATE OR REPLACE FUNCTION compute_metadata_hash(
                 p_prompt TEXT,
                 p_negative_prompt TEXT,
@@ -466,7 +338,6 @@ public class PostgreSQLMigrations
             )
             RETURNS TEXT AS $$
             BEGIN
-                -- SHA256 hash of concatenated parameters
                 RETURN encode(
                     digest(
                         COALESCE(p_prompt, '') || '|' ||
@@ -484,70 +355,8 @@ public class PostgreSQLMigrations
                 );
             END;
             $$ LANGUAGE plpgsql IMMUTABLE;
-        ";
 
-        await _connection.ExecuteAsync(sql);
-    }
-
-    private async Task ApplyV6Async()
-    {
-        var sql = @"
-            -- Embedding queue for manual user-controlled embedding generation (V6)
-            -- Users right-click folders/images to queue them for embedding
-            -- Control bar with Start/Pause/Stop buttons manages processing
-            
-            CREATE TABLE IF NOT EXISTS embedding_queue (
-                id SERIAL PRIMARY KEY,
-                image_id INT NOT NULL REFERENCES image(id) ON DELETE CASCADE,
-                folder_id INT NOT NULL,
-                priority INT DEFAULT 0,  -- Higher = processed first (0=normal, 100=embed now)
-                status TEXT DEFAULT 'pending',  -- pending, processing, completed, failed
-                queued_at TIMESTAMP DEFAULT NOW(),
-                started_at TIMESTAMP,
-                completed_at TIMESTAMP,
-                error_message TEXT,
-                retry_count INT DEFAULT 0,
-                queued_by TEXT DEFAULT 'user'  -- user, system, auto
-            );
-            
-            -- Indexes for efficient queue processing
-            CREATE INDEX IF NOT EXISTS idx_embedding_queue_status ON embedding_queue(status);
-            CREATE INDEX IF NOT EXISTS idx_embedding_queue_priority ON embedding_queue(priority DESC, queued_at ASC);
-            CREATE INDEX IF NOT EXISTS idx_embedding_queue_image_id ON embedding_queue(image_id);
-            CREATE INDEX IF NOT EXISTS idx_embedding_queue_folder_id ON embedding_queue(folder_id);
-            
-            -- Composite index for queue processing (status + priority + queued_at)
-            CREATE INDEX IF NOT EXISTS idx_embedding_queue_processing 
-                ON embedding_queue(status, priority DESC, queued_at ASC)
-                WHERE status = 'pending';
-            
-            -- Prevent duplicate queue entries
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_embedding_queue_unique_pending
-                ON embedding_queue(image_id)
-                WHERE status IN ('pending', 'processing');
-            
-            -- Worker state table (persists across app restarts)
-            CREATE TABLE IF NOT EXISTS embedding_worker_state (
-                id INT PRIMARY KEY DEFAULT 1,  -- Singleton row
-                status TEXT DEFAULT 'stopped',  -- stopped, running, paused
-                models_loaded BOOLEAN DEFAULT FALSE,
-                started_at TIMESTAMP,
-                paused_at TIMESTAMP,
-                stopped_at TIMESTAMP,
-                total_processed INT DEFAULT 0,
-                total_failed INT DEFAULT 0,
-                last_error TEXT,
-                last_error_at TIMESTAMP,
-                settings JSONB DEFAULT '{}'::jsonb,  -- batch_size, auto_pause, etc.
-                CONSTRAINT chk_worker_status CHECK (status IN ('stopped', 'running', 'paused'))
-            );
-            
-            -- Initialize worker state
-            INSERT INTO embedding_worker_state (id, status, models_loaded)
-            VALUES (1, 'stopped', FALSE)
-            ON CONFLICT (id) DO NOTHING;
-            
-            -- Function to get next batch from queue (priority-ordered)
+            -- Get next embedding batch from queue
             CREATE OR REPLACE FUNCTION get_next_embedding_batch(batch_size INT DEFAULT 32)
             RETURNS TABLE (
                 queue_id INT,
@@ -575,8 +384,8 @@ public class PostgreSQLMigrations
                     embedding_queue.priority;
             END;
             $$ LANGUAGE plpgsql;
-            
-            -- Function to mark queue item as completed
+
+            -- Complete embedding queue item
             CREATE OR REPLACE FUNCTION complete_embedding_queue_item(queue_item_id INT)
             RETURNS VOID AS $$
             BEGIN
@@ -586,8 +395,8 @@ public class PostgreSQLMigrations
                 WHERE id = queue_item_id;
             END;
             $$ LANGUAGE plpgsql;
-            
-            -- Function to mark queue item as failed
+
+            -- Fail embedding queue item
             CREATE OR REPLACE FUNCTION fail_embedding_queue_item(
                 queue_item_id INT,
                 error_msg TEXT
@@ -602,8 +411,8 @@ public class PostgreSQLMigrations
                 WHERE id = queue_item_id;
             END;
             $$ LANGUAGE plpgsql;
-            
-            -- Function to reset failed items for retry
+
+            -- Retry failed embeddings
             CREATE OR REPLACE FUNCTION retry_failed_embeddings()
             RETURNS INT AS $$
             DECLARE
@@ -620,347 +429,23 @@ public class PostgreSQLMigrations
                 RETURN affected_count;
             END;
             $$ LANGUAGE plpgsql;
-        ";
 
-        await _connection.ExecuteAsync(sql);
-    }
-
-    private async Task ApplyV7Async()
-    {
-        var sql = @"
-            -- Image tags table for storing auto-generated and manual tags
-            CREATE TABLE IF NOT EXISTS image_tags (
-                id SERIAL PRIMARY KEY,
-                image_id INTEGER NOT NULL REFERENCES image(id) ON DELETE CASCADE,
-                tag TEXT NOT NULL,
-                confidence REAL NOT NULL DEFAULT 1.0,
-                source TEXT NOT NULL DEFAULT 'manual',
-                created_at TIMESTAMP DEFAULT NOW(),
-                CONSTRAINT unique_image_tag_source UNIQUE(image_id, tag, source)
-            );
-            
-            -- Indexes for fast tag lookups
-            CREATE INDEX IF NOT EXISTS idx_image_tags_image_id ON image_tags(image_id);
-            CREATE INDEX IF NOT EXISTS idx_image_tags_tag ON image_tags(tag);
-            CREATE INDEX IF NOT EXISTS idx_image_tags_confidence ON image_tags(confidence DESC);
-            CREATE INDEX IF NOT EXISTS idx_image_tags_source ON image_tags(source);
-            
-            -- Composite index for common queries
-            CREATE INDEX IF NOT EXISTS idx_image_tags_tag_confidence 
-                ON image_tags(tag, confidence DESC);
-        ";
-
-        await _connection.ExecuteAsync(sql);
-    }
-
-    private async Task ApplyV8Async()
-    {
-        var sql = @"
-            -- Image captions table for storing AI-generated and user-edited captions
-            CREATE TABLE IF NOT EXISTS image_captions (
-                id SERIAL PRIMARY KEY,
-                image_id INTEGER NOT NULL REFERENCES image(id) ON DELETE CASCADE,
-                caption TEXT NOT NULL,
-                source TEXT NOT NULL DEFAULT 'manual',
-                prompt_used TEXT,
-                is_user_edited BOOLEAN DEFAULT FALSE,
-                token_count INTEGER,
-                generation_time_ms REAL,
-                created_at TIMESTAMP DEFAULT NOW(),
-                updated_at TIMESTAMP DEFAULT NOW()
-            );
-            
-            -- Indexes for fast caption lookups
-            CREATE INDEX IF NOT EXISTS idx_image_captions_image_id ON image_captions(image_id);
-            CREATE INDEX IF NOT EXISTS idx_image_captions_source ON image_captions(source);
-            CREATE INDEX IF NOT EXISTS idx_image_captions_is_user_edited ON image_captions(is_user_edited);
-            
-            -- Full-text search index for caption content
-            CREATE INDEX IF NOT EXISTS idx_image_captions_caption_fts 
-                ON image_captions USING gin(to_tsvector('english', caption));
-            
-            -- Function to update updated_at timestamp
+            -- Update caption timestamp
             CREATE OR REPLACE FUNCTION update_caption_timestamp()
             RETURNS TRIGGER AS $$
             BEGIN
                 NEW.updated_at = NOW();
                 RETURN NEW;
             END;
-            $$ LANGUAGE plpgsql;
-            
-            -- Trigger to automatically update timestamp on edit
-            DROP TRIGGER IF EXISTS trigger_update_caption_timestamp ON image_captions;
-            CREATE TRIGGER trigger_update_caption_timestamp
-                BEFORE UPDATE ON image_captions
-                FOR EACH ROW
-                EXECUTE FUNCTION update_caption_timestamp();
+                $$ LANGUAGE plpgsql;
+                
+                DROP TRIGGER IF EXISTS trigger_update_caption_timestamp ON image_captions;
+                CREATE TRIGGER trigger_update_caption_timestamp
+                    BEFORE UPDATE ON image_captions
+                    FOR EACH ROW
+                    EXECUTE FUNCTION update_caption_timestamp();
         ";
-
-        await _connection.ExecuteAsync(sql);
-    }
-
-    private async Task ApplyV9Async()
-    {
-        var sql = @"
-            -- Add missing columns to folder table for complete SQLite compatibility
-            ALTER TABLE folder ADD COLUMN IF NOT EXISTS parent_id INT DEFAULT 0;
-            ALTER TABLE folder ADD COLUMN IF NOT EXISTS image_count INT DEFAULT 0;
-            ALTER TABLE folder ADD COLUMN IF NOT EXISTS scanned_date TIMESTAMP;
-            ALTER TABLE folder ADD COLUMN IF NOT EXISTS archived BOOLEAN DEFAULT FALSE;
-            ALTER TABLE folder ADD COLUMN IF NOT EXISTS excluded BOOLEAN DEFAULT FALSE;
-            ALTER TABLE folder ADD COLUMN IF NOT EXISTS is_root BOOLEAN DEFAULT FALSE;
-            ALTER TABLE folder ADD COLUMN IF NOT EXISTS recursive BOOLEAN DEFAULT FALSE;
-            ALTER TABLE folder ADD COLUMN IF NOT EXISTS watched BOOLEAN DEFAULT FALSE;
-            
-            -- Add missing indexes for folder table
-            CREATE INDEX IF NOT EXISTS idx_folder_parent_id ON folder (parent_id);
-            CREATE INDEX IF NOT EXISTS idx_folder_is_root ON folder (is_root);
-            CREATE INDEX IF NOT EXISTS idx_folder_watched ON folder (watched);
-            
-            -- Add missing 'order' column to album table
-            ALTER TABLE album ADD COLUMN IF NOT EXISTS ""order"" INT DEFAULT 0;
-            CREATE INDEX IF NOT EXISTS idx_album_order ON album (""order"");
-            
-            -- Create query table for saved search queries
-            CREATE TABLE IF NOT EXISTS query (
-                id SERIAL PRIMARY KEY,
-                name TEXT NOT NULL UNIQUE,
-                query_json TEXT NOT NULL,
-                created_date TIMESTAMP DEFAULT NOW(),
-                modified_date TIMESTAMP DEFAULT NOW()
-            );
-            
-            CREATE INDEX IF NOT EXISTS idx_query_name ON query (name);
-            
-            -- Create query_item table for query components (legacy support)
-            CREATE TABLE IF NOT EXISTS query_item (
-                id SERIAL PRIMARY KEY,
-                query_id INT NOT NULL REFERENCES query(id) ON DELETE CASCADE,
-                type TEXT NOT NULL,
-                value TEXT NOT NULL,
-                created_date TIMESTAMP DEFAULT NOW()
-            );
-            
-            CREATE INDEX IF NOT EXISTS idx_query_item_query_id ON query_item (query_id);
-            CREATE INDEX IF NOT EXISTS idx_query_item_type ON query_item (type);
-        ";
-
-        await _connection.ExecuteAsync(sql);
-    }
-
-    private async Task ApplyV10Async()
-    {
-        var sql = @"
-            -- Create query table for saved search queries
-            CREATE TABLE IF NOT EXISTS query (
-                id SERIAL PRIMARY KEY,
-                name TEXT NOT NULL UNIQUE,
-                query_json TEXT NOT NULL,
-                created_date TIMESTAMP DEFAULT NOW(),
-                modified_date TIMESTAMP DEFAULT NOW()
-            );
-            
-            CREATE INDEX IF NOT EXISTS idx_query_name ON query (name);
-            
-            -- Create query_item table for query components (legacy support)
-            CREATE TABLE IF NOT EXISTS query_item (
-                id SERIAL PRIMARY KEY,
-                query_id INT NOT NULL REFERENCES query(id) ON DELETE CASCADE,
-                type TEXT NOT NULL,
-                value TEXT NOT NULL,
-                created_date TIMESTAMP DEFAULT NOW()
-            );
-            
-            CREATE INDEX IF NOT EXISTS idx_query_item_query_id ON query_item (query_id);
-            CREATE INDEX IF NOT EXISTS idx_query_item_type ON query_item (type);
-            
-            -- Create node_property table for workflow node properties
-            CREATE TABLE IF NOT EXISTS node_property (
-                id SERIAL PRIMARY KEY,
-                node_id TEXT NOT NULL,
-                name TEXT NOT NULL,
-                value TEXT,
-                created_at TIMESTAMP DEFAULT NOW()
-            );
-            
-            CREATE INDEX IF NOT EXISTS idx_node_property_node_id ON node_property (node_id);
-            CREATE INDEX IF NOT EXISTS idx_node_property_name ON node_property (name);
-        ";
-
-        await _connection.ExecuteAsync(sql);
-    }
-
-    private async Task ApplyV11Async()
-    {
-        // Fix node_property.node_id type: TEXT → INTEGER to match node.id
-        var sql = @"
-            -- Drop existing indexes
-            DROP INDEX IF EXISTS idx_node_property_node_id;
-            
-            -- Drop existing data (feature doesn't exist in SQLite, safe to clear)
-            TRUNCATE TABLE node_property CASCADE;
-            
-            -- Change node_id type from TEXT to INTEGER
-            ALTER TABLE node_property ALTER COLUMN node_id TYPE INTEGER USING node_id::integer;
-            
-            -- Add foreign key constraint
-            ALTER TABLE node_property ADD CONSTRAINT fk_node_property_node 
-                FOREIGN KEY (node_id) REFERENCES node(id) ON DELETE CASCADE;
-            
-            -- Recreate index
-            CREATE INDEX idx_node_property_node_id ON node_property (node_id);
-        ";
-
-        await _connection.ExecuteAsync(sql);
-    }
-
-    private async Task ApplyV12Async()
-    {
-        // Add scan_phase column for two-phase scanning (quick scan → deep metadata scan)
-        // Phase 0 (QuickScan) = only basic file info indexed
-        // Phase 1 (DeepScan) = full metadata extracted and embedded
-        // Existing images default to DeepScan (1) as they're already fully scanned
-        var sql = @"
-            -- Add scan_phase column to track metadata extraction completeness
-            ALTER TABLE image ADD COLUMN IF NOT EXISTS scan_phase INTEGER DEFAULT 1 NOT NULL;
-            
-            -- Create index for finding quick-scanned images needing deep scan
-            CREATE INDEX IF NOT EXISTS idx_image_scan_phase ON image (scan_phase) WHERE scan_phase = 0;
-            
-            -- Update all existing images to DeepScan (they already have metadata)
-            UPDATE image SET scan_phase = 1 WHERE scan_phase = 0 OR scan_phase IS NULL;
-        ";
-
-        await _connection.ExecuteAsync(sql);
-    }
-
-    private async Task ApplyV13Async()
-    {
-        // Model Resource Library - unified table for checkpoints, LoRAs, embeddings, VAEs, etc.
-        // Integrates with Civitai API for metadata enrichment
-        var sql = @"
-            -- Unified model resource library
-            CREATE TABLE IF NOT EXISTS model_resource (
-                id SERIAL PRIMARY KEY,
-                
-                -- File identification
-                file_path TEXT NOT NULL UNIQUE,
-                file_name TEXT NOT NULL,
-                file_hash TEXT,                          -- SHA256 or AutoV2 hash for Civitai lookup
-                file_size BIGINT,
-                
-                -- Resource classification
-                resource_type TEXT NOT NULL,             -- 'checkpoint', 'lora', 'embedding', 'vae', 'controlnet', 'upscaler', 'unet', 'clip', 'diffusion_model'
-                base_model TEXT,                         -- 'SDXL', 'Pony', 'Illustrious', 'SD1.5', 'Flux', 'SD3'
-                
-                -- Local metadata (from safetensors __metadata__ or .json sidecar)
-                local_metadata JSONB,
-                
-                -- Preview image flag (actual image stored in SQLite thumbnail cache)
-                has_preview_image BOOLEAN DEFAULT FALSE,
-                
-                -- Civitai enrichment (fetched via hash lookup)
-                civitai_id INT,
-                civitai_version_id INT,
-                civitai_name TEXT,
-                civitai_description TEXT,
-                civitai_tags TEXT[],
-                civitai_nsfw BOOLEAN DEFAULT FALSE,
-                civitai_trained_words TEXT[],            -- Trigger words for LoRAs
-                civitai_base_model TEXT,                 -- Civitai's base model classification
-                civitai_metadata JSONB,                  -- Full Civitai response cache
-                civitai_author TEXT,                     -- Creator username
-                civitai_cover_image_url TEXT,            -- First preview image URL
-                civitai_thumbnail BYTEA,                 -- Resized preview thumbnail (max 256px JPEG)
-                civitai_default_weight DECIMAL(5,3),     -- Recommended LoRA weight
-                civitai_default_clip_weight DECIMAL(5,3),-- Recommended CLIP weight
-                civitai_published_at TIMESTAMP,          -- Version publish date
-                
-                -- Embeddings for similarity search (LoRAs/embeddings with CLIP vectors)
-                clip_l_embedding vector(768),
-                clip_g_embedding vector(1280),
-                
-                -- Status tracking
-                unavailable BOOLEAN DEFAULT FALSE,       -- File no longer exists
-                scanned_at TIMESTAMP DEFAULT NOW(),
-                civitai_fetched_at TIMESTAMP,
-                created_at TIMESTAMP DEFAULT NOW()
-            );
-
-            -- Add has_preview_image column if it doesn't exist (migration for existing databases)
-            DO $$ 
-            BEGIN 
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
-                               WHERE table_name = 'model_resource' AND column_name = 'has_preview_image') 
-                THEN 
-                    ALTER TABLE model_resource ADD COLUMN has_preview_image BOOLEAN DEFAULT FALSE;
-                END IF; 
-            END $$;
-
-            -- Add extended Civitai fields if they don't exist (migration for v1.1+)
-            DO $$ 
-            BEGIN 
-                IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
-                               WHERE table_name = 'model_resource' AND column_name = 'civitai_author') 
-                THEN 
-                    ALTER TABLE model_resource ADD COLUMN civitai_author TEXT;
-                    ALTER TABLE model_resource ADD COLUMN civitai_cover_image_url TEXT;
-                    ALTER TABLE model_resource ADD COLUMN civitai_thumbnail BYTEA;
-                    ALTER TABLE model_resource ADD COLUMN civitai_default_weight DECIMAL(5,3);
-                    ALTER TABLE model_resource ADD COLUMN civitai_default_clip_weight DECIMAL(5,3);
-                    ALTER TABLE model_resource ADD COLUMN civitai_published_at TIMESTAMP;
-                END IF; 
-            END $$;
-
-            -- Indexes for model resource lookups
-            CREATE INDEX IF NOT EXISTS idx_model_resource_hash ON model_resource(file_hash);
-            CREATE INDEX IF NOT EXISTS idx_model_resource_type ON model_resource(resource_type);
-            CREATE INDEX IF NOT EXISTS idx_model_resource_base_model ON model_resource(base_model);
-            CREATE INDEX IF NOT EXISTS idx_model_resource_civitai_id ON model_resource(civitai_id);
-            CREATE INDEX IF NOT EXISTS idx_model_resource_name ON model_resource(file_name);
-            CREATE INDEX IF NOT EXISTS idx_model_resource_unavailable ON model_resource(unavailable);
-            
-            -- Vector indexes for LoRA/embedding similarity
-            CREATE INDEX IF NOT EXISTS idx_model_resource_clip_l ON model_resource 
-                USING ivfflat (clip_l_embedding vector_cosine_ops) WITH (lists = 50)
-                WHERE clip_l_embedding IS NOT NULL;
-            CREATE INDEX IF NOT EXISTS idx_model_resource_clip_g ON model_resource 
-                USING ivfflat (clip_g_embedding vector_cosine_ops) WITH (lists = 50)
-                WHERE clip_g_embedding IS NOT NULL;
-
-            -- Image-to-resource junction table (tracks which resources were used in each image)
-            CREATE TABLE IF NOT EXISTS image_resource (
-                id SERIAL PRIMARY KEY,
-                image_id INT NOT NULL REFERENCES image(id) ON DELETE CASCADE,
-                resource_id INT REFERENCES model_resource(id) ON DELETE SET NULL,
-                
-                -- Resource reference (preserved even if resource file deleted)
-                resource_name TEXT NOT NULL,             -- 'BadPonyHD', 'my_lora', 'SDXL_base'
-                resource_type TEXT NOT NULL,             -- 'lora', 'embedding', 'checkpoint', 'vae'
-                strength DECIMAL(5,3),                   -- For LoRAs: weight value
-                
-                created_at TIMESTAMP DEFAULT NOW(),
-                UNIQUE(image_id, resource_name, resource_type)
-            );
-
-            -- Indexes for image-resource queries
-            CREATE INDEX IF NOT EXISTS idx_image_resource_image ON image_resource(image_id);
-            CREATE INDEX IF NOT EXISTS idx_image_resource_resource ON image_resource(resource_id);
-            CREATE INDEX IF NOT EXISTS idx_image_resource_name ON image_resource(resource_name);
-            CREATE INDEX IF NOT EXISTS idx_image_resource_type ON image_resource(resource_type);
-            
-            -- Model folder configuration table
-            CREATE TABLE IF NOT EXISTS model_folder (
-                id SERIAL PRIMARY KEY,
-                path TEXT NOT NULL UNIQUE,
-                resource_type TEXT NOT NULL,             -- Default type for this folder
-                recursive BOOLEAN DEFAULT TRUE,
-                enabled BOOLEAN DEFAULT TRUE,
-                last_scanned TIMESTAMP,
-                created_at TIMESTAMP DEFAULT NOW()
-            );
-        ";
-
+    
         await _connection.ExecuteAsync(sql);
     }
 }

@@ -14,7 +14,7 @@ using System.Windows.Input;
 using Diffusion.Common;
 using Diffusion.Toolkit.Behaviors;
 using Diffusion.Toolkit.Services;
-using Diffusion.Database.Models;
+using Diffusion.Database.PostgreSQL.Models;
 using Diffusion.Civitai.Models;
 using Microsoft.WindowsAPICodePack.Dialogs;
 

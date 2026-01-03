@@ -29,13 +29,15 @@
         <StackPanel Grid.Row="1" Margin="0,0,0,20">
             <CheckBox x:Name="JoyTagCheckBox" Content="JoyTag (Multi-label ONNX - Booru Tags)" 
                       IsChecked="True" Margin="0,5" FontSize="14"
-                      IsEnabled="{Binding JoyTagAvailable}"/>
+                      IsEnabled="{Binding JoyTagAvailable}"
+                      Checked="JoyTagCheckBox_CheckedChanged" Unchecked="JoyTagCheckBox_CheckedChanged"/>
             <TextBlock Text="{Binding JoyTagStatus}" Margin="25,0,0,5" 
                        Foreground="{DynamicResource TextBrush}" Opacity="0.7" FontSize="11"/>
             
             <CheckBox x:Name="WDTagCheckBox" Content="WD v3 Large (Multi-label ONNX - Booru Tags)" 
                       IsChecked="True" Margin="0,5" FontSize="14"
-                      IsEnabled="{Binding WDTagAvailable}"/>
+                      IsEnabled="{Binding WDTagAvailable}"
+                      Checked="WDTagCheckBox_CheckedChanged" Unchecked="WDTagCheckBox_CheckedChanged"/>
             <TextBlock Text="{Binding WDTagStatus}" Margin="25,0,0,5" 
                        Foreground="{DynamicResource TextBrush}" Opacity="0.7" FontSize="11"/>
             

@@ -1,7 +1,6 @@
-﻿using Diffusion.Database;
+﻿using Diffusion.Common.Query;
 using Diffusion.Database.PostgreSQL;
 using PgImagePath = Diffusion.Database.PostgreSQL.Models.ImagePath;
-using DbImagePath = Diffusion.Database.ImagePath;
 using Diffusion.Database.PostgreSQL.Models;
 using Diffusion.Toolkit.Classes;
 using System;
@@ -23,7 +22,6 @@ using Diffusion.Toolkit.Pages;
 using Diffusion.Common;
 using Diffusion.Toolkit.Localization;
 using Settings = Diffusion.Toolkit.Configuration.Settings;
-using Diffusion.Database.Models;
 using System.Reflection;
 using FontAwesome.Sharp;
 
@@ -682,7 +680,7 @@ namespace Diffusion.Toolkit.Controls
                         {
                             try
                             {
-                                var files = imageEntries.Select(d => new DbImagePath() { Id = d.Id, Path = d.Path }).ToList();
+                                var files = imageEntries.Select(d => new PgImagePath() { Id = d.Id, Path = d.Path }).ToList();
 
                                 await ServiceLocator.FileService.DeleteFiles(files,
                                     ServiceLocator.ProgressService.CancellationToken);
@@ -823,6 +821,37 @@ namespace Diffusion.Toolkit.Controls
         private void Unrate_OnClick(object sender, RoutedEventArgs e)
         {
             UnrateSelected();
+        }
+
+        private void TagCaption_OnClick(object sender, RoutedEventArgs e)
+        {
+            var selectedImages = ThumbnailListView.SelectedItems.Cast<ImageEntry>()
+                .Where(img => img.Id > 0)
+                .Select(img => img.Id)
+                .ToList();
+
+            if (selectedImages.Count == 0)
+            {
+                MessageBox.Show("No images selected.", "Tag/Caption", 
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            var window = new Diffusion.Toolkit.Windows.TaggingWindow(selectedImages)
+            {
+                Owner = Window.GetWindow(this)
+            };
+            
+            if (window.ShowDialog() == true)
+            {
+                // Refresh the current view
+                if (ServiceLocator.ToastService != null)
+                {
+                    ServiceLocator.ToastService.Toast(
+                        $"Successfully processed {selectedImages.Count} image(s)", 
+                        "Complete");
+                }
+            }
         }
 
         private void AutoTag_OnClick(object sender, RoutedEventArgs e)

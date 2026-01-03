@@ -1,5 +1,5 @@
 ﻿using Diffusion.Common;
-using Diffusion.Database;
+using Diffusion.Common.Query;
 using Diffusion.Database.PostgreSQL;
 using Diffusion.Toolkit.Models;
 using System;
@@ -39,7 +39,7 @@ using Diffusion.Toolkit.Services;
 using Diffusion.Toolkit.Common;
 using Diffusion.Toolkit.Configuration;
 using Settings = Diffusion.Toolkit.Configuration.Settings;
-using Diffusion.Database.Models;
+using Diffusion.Database.PostgreSQL.Models;
 using Image = System.Windows.Controls.Image;
 using System.Windows.Media;
 using SixLabors.ImageSharp;
@@ -127,6 +127,20 @@ namespace Diffusion.Toolkit
 
                 _model.CancelCommand = new AsyncCommand<object>((o) => CancelProgress());
                 _model.AboutCommand = new RelayCommand<object>((o) => ShowAbout());
+
+                // Background tagging/captioning commands
+                _model.ToggleBackgroundPauseCommand = new RelayCommand<object>((o) => ToggleBackgroundPause());
+                _model.StopBackgroundProcessingCommand = new RelayCommand<object>((o) => StopBackgroundProcessing());
+                _model.ReleaseModelsCommand = new RelayCommand<object>((o) => ReleaseModels());
+                
+                // Subscribe to background tagging service events
+                if (ServiceLocator.BackgroundTaggingService != null)
+                {
+                    ServiceLocator.BackgroundTaggingService.TaggingProgressChanged += OnTaggingProgressChanged;
+                    ServiceLocator.BackgroundTaggingService.CaptioningProgressChanged += OnCaptioningProgressChanged;
+                    ServiceLocator.BackgroundTaggingService.TaggingCompleted += OnTaggingCompleted;
+                    ServiceLocator.BackgroundTaggingService.CaptioningCompleted += OnCaptioningCompleted;
+                }
 
                 InitEvents();
                 InitAlbums();
@@ -633,10 +647,6 @@ namespace Diffusion.Toolkit
                 }
             }
 
-            // Keep SQLite for thumbnail caching only
-            var thumbnailDataStore = new DataStore(AppInfo.DatabasePath);
-            ServiceLocator.SetThumbnailDataStore(thumbnailDataStore);
-
             // === PHASE 3: Version Checks and UI Setup ===
             if (!SemanticVersion.TryParse(_settings.Version, out var semVer))
             {
@@ -742,22 +752,6 @@ namespace Diffusion.Toolkit
             ServiceLocator.SetSettings(_settings);
 
             Logger.Log($"Initializing pages");
-
-
-            await thumbnailDataStore.Create(
-                () => Dispatcher.Invoke(() => _messagePopupManager.ShowMessage("Please wait while we update your database", "Updating Database")),
-                (handle) =>
-                {
-                    Dispatcher.Invoke(() =>
-                    {
-                        // Fire-and-forget: intentionally not awaited - popup close is best-effort
-                        _ = ((MessagePopupHandle)handle).CloseAsync();
-                        //ServiceLocator.MessageService.CloseHandle((MessagePopupHandle)handle);
-                    });
-                }
-            );
-
-
 
             //var total = _dataStore.GetTotal();
 
@@ -1334,6 +1328,92 @@ namespace Diffusion.Toolkit
                     }
             }
             return 0;
+        }
+    }
+
+    // MainWindow partial - Background tagging event handlers
+    public partial class MainWindow
+    {
+        private void OnTaggingProgressChanged(object? sender, Services.ProgressEventArgs e)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                _model.IsTaggingActive = true;
+                _model.TaggingStatus = $"Tagging: {e.Current}/{e.Total} ({e.Percentage:F1}%)";
+            });
+        }
+
+        private void OnCaptioningProgressChanged(object? sender, Services.ProgressEventArgs e)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                _model.IsCaptioningActive = true;
+                _model.CaptioningStatus = $"Captioning: {e.Current}/{e.Total} ({e.Percentage:F1}%)";
+            });
+        }
+
+        private void OnTaggingCompleted(object? sender, EventArgs e)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                _model.IsTaggingActive = false;
+                _model.TaggingStatus = "";
+                ServiceLocator.ToastService?.Toast("Tagging completed", "Background Tagging");
+            });
+        }
+
+        private void OnCaptioningCompleted(object? sender, EventArgs e)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                _model.IsCaptioningActive = false;
+                _model.CaptioningStatus = "";
+                ServiceLocator.ToastService?.Toast("Captioning completed", "Background Captioning");
+            });
+        }
+
+        private void ToggleBackgroundPause()
+        {
+            var service = ServiceLocator.BackgroundTaggingService;
+            if (service == null) return;
+
+            if (service.IsTaggingPaused || service.IsCaptioningPaused)
+            {
+                service.ResumeTagging();
+                service.ResumeCaptioning();
+            }
+            else
+            {
+                service.PauseTagging();
+                service.PauseCaptioning();
+            }
+        }
+
+        private void StopBackgroundProcessing()
+        {
+            var service = ServiceLocator.BackgroundTaggingService;
+            if (service == null) return;
+
+            service.StopTagging();
+            service.StopCaptioning();
+            
+            _model.IsTaggingActive = false;
+            _model.IsCaptioningActive = false;
+            _model.TaggingStatus = "";
+            _model.CaptioningStatus = "";
+        }
+
+        private void ReleaseModels()
+        {
+            // Release small tagging models immediately
+            ServiceLocator.JoyTagService?.ReleaseModel();
+            ServiceLocator.WDTagService?.ReleaseModel();
+            
+            // Release caption model (will be reloaded when needed)
+            ServiceLocator.CaptionService?.ReleaseModel();
+            
+            ServiceLocator.ToastService?.Toast("Models released from VRAM", "Memory Management");
+            Logger.Log("All models released from VRAM");
         }
     }
 }

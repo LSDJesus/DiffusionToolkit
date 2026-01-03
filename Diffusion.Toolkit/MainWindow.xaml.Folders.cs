@@ -3,12 +3,11 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Diffusion.Common;
-using Diffusion.Database;
+using Diffusion.Common.Query;
 using Diffusion.Toolkit.Classes;
 using Diffusion.Toolkit.Models;
 using Diffusion.Toolkit.Services;
 using Diffusion.Toolkit.Thumbnails;
-using SQLite;
 using Path = System.IO.Path;
 
 namespace Diffusion.Toolkit
@@ -146,12 +145,12 @@ namespace Diffusion.Toolkit
 
             _model.TagFolderWithBothCommand = new AsyncCommand<FolderViewModel>(async (folder) =>
             {
-                await TagFolder(folder, tagWithJoyTag: true, tagWithWD: true, caption: false);
+                await QueueFolderForBackgroundProcessing(folder);
             });
 
             _model.CaptionFolderCommand = new AsyncCommand<FolderViewModel>(async (folder) =>
             {
-                await TagFolder(folder, tagWithJoyTag: false, tagWithWD: false, caption: true);
+                await QueueFolderForBackgroundProcessing(folder, captionOnly: true);
             });
 
             _model.ImportSidecarsCommand = new AsyncCommand<FolderViewModel>(async (folder) =>
@@ -171,6 +170,50 @@ namespace Diffusion.Toolkit
 
             await ServiceLocator.FolderService.LoadFolders();
 
+        }
+
+        /// <summary>
+        /// Queue folder images for background tagging/captioning
+        /// </summary>
+        private async Task QueueFolderForBackgroundProcessing(FolderViewModel folder, bool captionOnly = false)
+        {
+            if (folder == null) return;
+
+            var dataStore = ServiceLocator.DataStore;
+            var bgService = ServiceLocator.BackgroundTaggingService;
+            
+            if (dataStore == null || bgService == null)
+            {
+                System.Windows.MessageBox.Show("Background service not available.", 
+                    "Error", 
+                    System.Windows.MessageBoxButton.OK, 
+                    System.Windows.MessageBoxImage.Error);
+                return;
+            }
+
+            // Queue for tagging (only images without tags)
+            int taggedQueued = 0;
+            int captionQueued = 0;
+            
+            if (!captionOnly)
+            {
+                taggedQueued = await dataStore.QueueFolderForTagging(folder.Id, includeSubfolders: true);
+                if (taggedQueued > 0)
+                {
+                    bgService.StartTagging();
+                }
+            }
+
+            // Queue for captioning (only images without captions)
+            captionQueued = await dataStore.QueueFolderForCaptioning(folder.Id, includeSubfolders: true);
+            if (captionQueued > 0)
+            {
+                bgService.StartCaptioning();
+            }
+
+            var message = $"Queued {taggedQueued} images for tagging, {captionQueued} for captioning in '{folder.Name}'";
+            ServiceLocator.ToastService?.Toast(message, "Background Processing");
+            Logger.Log(message);
         }
 
         private async Task TagFolder(FolderViewModel folder, bool tagWithJoyTag, bool tagWithWD, bool caption)

@@ -53,6 +53,9 @@ public class MainModel : BaseNotify
     private ICommand _clearAlbums;
     private ICommand _refresh;
     private ICommand _quickCopy;
+    private ICommand _toggleBackgroundPauseCommand;
+    private ICommand _stopBackgroundProcessingCommand;
+    private ICommand _releaseModelsCommand;
     private int _thumbnailSize;
     private ICommand _escape;
     private ICommand _downloadCivitai;
@@ -128,6 +131,51 @@ public class MainModel : BaseNotify
     {
         get => _isDatabaseConnected;
         set => SetField(ref _isDatabaseConnected, value);
+    }
+
+    // Background tagging/captioning status
+    private bool _isBackgroundProcessingActive;
+    private bool _isTaggingActive;
+    private bool _isCaptioningActive;
+    private string _taggingStatus = "";
+    private string _captioningStatus = "";
+
+    public bool IsBackgroundProcessingActive
+    {
+        get => _isBackgroundProcessingActive;
+        set => SetField(ref _isBackgroundProcessingActive, value);
+    }
+
+    public bool IsTaggingActive
+    {
+        get => _isTaggingActive;
+        set
+        {
+            SetField(ref _isTaggingActive, value);
+            IsBackgroundProcessingActive = _isTaggingActive || _isCaptioningActive;
+        }
+    }
+
+    public bool IsCaptioningActive
+    {
+        get => _isCaptioningActive;
+        set
+        {
+            SetField(ref _isCaptioningActive, value);
+            IsBackgroundProcessingActive = _isTaggingActive || _isCaptioningActive;
+        }
+    }
+
+    public string TaggingStatus
+    {
+        get => _taggingStatus;
+        set => SetField(ref _taggingStatus, value);
+    }
+
+    public string CaptioningStatus
+    {
+        get => _captioningStatus;
+        set => SetField(ref _captioningStatus, value);
     }
 
     public QueryOptions QueryOptions
@@ -260,6 +308,24 @@ public class MainModel : BaseNotify
     {
         get => _cancelCommand;
         set => SetField(ref _cancelCommand, value);
+    }
+
+    public ICommand ToggleBackgroundPauseCommand
+    {
+        get => _toggleBackgroundPauseCommand;
+        set => SetField(ref _toggleBackgroundPauseCommand, value);
+    }
+
+    public ICommand StopBackgroundProcessingCommand
+    {
+        get => _stopBackgroundProcessingCommand;
+        set => SetField(ref _stopBackgroundProcessingCommand, value);
+    }
+
+    public ICommand ReleaseModelsCommand
+    {
+        get => _releaseModelsCommand;
+        set => SetField(ref _releaseModelsCommand, value);
     }
 
     public ICommand AboutCommand

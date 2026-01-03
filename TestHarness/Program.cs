@@ -9,8 +9,7 @@ using System.Text.Json.Serialization;
 using Diffusion.Civitai;
 using Diffusion.Civitai.Models;
 using Diffusion.Common;
-using Diffusion.Database;
-using SQLite;
+// SQLite DataStore removed - use PostgreSQL instead
 
 //var dbPath = @"C:\Users\ruper\AppData\Roaming\DiffusionToolkit\Backup-20240420-020535.db";
 

@@ -321,6 +321,14 @@ public class JoyCaptionService : IDisposable, ICaptionService
         }
     }
 
+    /// <summary>
+    /// Release models from VRAM (alias for UnloadModels for consistency)
+    /// </summary>
+    public void ReleaseModel()
+    {
+        UnloadModels();
+    }
+
     public void Dispose()
     {
         UnloadModels();

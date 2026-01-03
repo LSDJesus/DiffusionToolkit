@@ -4,7 +4,7 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Windows.Data;
 using System.Windows.Input;
-using Diffusion.Database.Models;
+using Diffusion.Database.PostgreSQL.Models;
 using Diffusion.Toolkit.Models;
 using PgAlbum = Diffusion.Database.PostgreSQL.Models.Album;
 

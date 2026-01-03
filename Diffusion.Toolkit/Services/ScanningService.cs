@@ -8,14 +8,13 @@ using System.Threading;
 using System.Threading.Tasks;
 using Dapper;
 using Diffusion.Common;
-using Diffusion.Database;
+using Diffusion.Common.Query;
 using Diffusion.Database.PostgreSQL;
 using Diffusion.Database.PostgreSQL.Models;
 using Diffusion.IO;
 using Diffusion.Toolkit.Configuration;
 using Diffusion.Toolkit.Localization;
 using Diffusion.Toolkit.Models;
-using DBModels = Diffusion.Database.Models;
 
 namespace Diffusion.Toolkit.Services;
 
@@ -395,7 +394,7 @@ public class ScanningService
             WorkflowId = file.WorkflowId,
             HasError = file.HasError,
             Hash = file.Hash,
-            ScanPhase = (int)DBModels.ScanPhase.DeepScan  // Mark as fully scanned with metadata
+            ScanPhase = 1  // Mark as fully scanned with metadata (DeepScan)
         };
 
         if (storeMetadata)

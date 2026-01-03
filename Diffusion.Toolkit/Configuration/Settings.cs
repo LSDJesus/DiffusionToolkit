@@ -98,12 +98,23 @@ public class Settings : SettingsContainer, IScanOptions
     private string _wdV3LargeModelPath;
     private string _wdV3LargeTagsPath;
     private float _wdV3LargeThreshold;
+    // Tagging/Captioning dialog checkbox states
+    private bool _tagDialogJoyTagEnabled = true;
+    private bool _tagDialogWDTagEnabled = true;
+    private bool _tagDialogCaptionEnabled;
     private string _joyCaptionDefaultPrompt;
     private string _databaseSchema;
     private bool _autoWriteMetadata;
     private bool _createMetadataBackup;
     private bool _writeTagsToMetadata;
     private bool _writeCaptionsToMetadata;
+    // Parallel processing settings
+    private int _taggingConcurrentWorkers = 4;
+    private int _taggingGpuDeviceId = 0;
+    private bool _skipAlreadyTaggedImages = true;
+    private int _captioningModelTTLMinutes = 2;
+    private string _taggingGpuDevices = "0";
+    private string _taggingGpuVramRatios = "0";
     private bool _writeGenerationParamsToMetadata;
     private CaptionHandlingMode _captionHandlingMode;
 
@@ -694,6 +705,59 @@ public class Settings : SettingsContainer, IScanOptions
         set => UpdateValue(ref _wdV3LargeThreshold, value);
     }
 
+    public bool TagDialogJoyTagEnabled
+    {
+        get => _tagDialogJoyTagEnabled;
+        set => UpdateValue(ref _tagDialogJoyTagEnabled, value);
+    }
+
+    public bool TagDialogWDTagEnabled
+    {
+        get => _tagDialogWDTagEnabled;
+        set => UpdateValue(ref _tagDialogWDTagEnabled, value);
+    }
+
+    public bool TagDialogCaptionEnabled
+    {
+        get => _tagDialogCaptionEnabled;
+        set => UpdateValue(ref _tagDialogCaptionEnabled, value);
+    }
+
+    public int TaggingConcurrentWorkers
+    {
+        get => _taggingConcurrentWorkers;
+        set => UpdateValue(ref _taggingConcurrentWorkers, Math.Max(1, Math.Min(16, value))); // 1-16 workers
+    }
+
+    public int TaggingGpuDeviceId
+    {
+        get => _taggingGpuDeviceId;
+        set => UpdateValue(ref _taggingGpuDeviceId, Math.Max(0, value)); // 0+
+    }
+
+    public bool SkipAlreadyTaggedImages
+    {
+        get => _skipAlreadyTaggedImages;
+        set => UpdateValue(ref _skipAlreadyTaggedImages, value);
+    }
+
+    public int CaptioningModelTTLMinutes
+    {
+        get => _captioningModelTTLMinutes;
+        set => UpdateValue(ref _captioningModelTTLMinutes, Math.Max(-1, Math.Min(10, value))); // -1=keep loaded, 0=instant, 1-10 min
+    }
+
+    public string TaggingGpuDevices
+    {
+        get => _taggingGpuDevices;
+        set => UpdateValue(ref _taggingGpuDevices, value ?? "0");
+    }
+
+    public string TaggingGpuVramRatios
+    {
+        get => _taggingGpuVramRatios;
+        set => UpdateValue(ref _taggingGpuVramRatios, value ?? "0");
+    }
     public string JoyCaptionDefaultPrompt
     {
         get => _joyCaptionDefaultPrompt;

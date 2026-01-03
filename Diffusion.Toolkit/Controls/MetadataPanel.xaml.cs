@@ -4,7 +4,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using Diffusion.Common;
-using Diffusion.Database.Models;
+using Diffusion.Database.PostgreSQL.Models;
 using Diffusion.Toolkit.Configuration;
 
 namespace Diffusion.Toolkit.Controls

@@ -12,7 +12,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Diffusion.Common\Diffusion.Common.csproj" />
-    <ProjectReference Include="..\Diffusion.Database\Diffusion.Database.csproj" />
     <ProjectReference Include="..\Diffusion.Database.PostgreSQL\Diffusion.Database.PostgreSQL.csproj" />
     <ProjectReference Include="..\Diffusion.Scanner\Diffusion.IO.csproj" />
   </ItemGroup>

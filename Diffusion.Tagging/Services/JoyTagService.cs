@@ -178,8 +178,18 @@ public class JoyTagService : IDisposable
         return 1.0f / (1.0f + MathF.Exp(-x));
     }
 
-    public void Dispose()
+    /// <summary>
+    /// Release the ONNX model from memory to free VRAM
+    /// </summary>
+    public void ReleaseModel()
     {
         _session?.Dispose();
+        _session = null;
+        _isInitialized = false;
+    }
+
+    public void Dispose()
+    {
+        ReleaseModel();
     }
 }

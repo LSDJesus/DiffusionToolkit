@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using Dapper;
 using Diffusion.Common;
-using Diffusion.Database.Models;
+using Diffusion.Database.PostgreSQL.Models;
 using Diffusion.Toolkit.Services;
 
 namespace Diffusion.Toolkit.Windows;

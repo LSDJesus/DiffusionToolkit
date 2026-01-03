@@ -5,7 +5,6 @@ using System.Windows;
 using System.Windows.Navigation;
 using System.Windows.Threading;
 using Diffusion.Common;
-using Diffusion.Database;
 using Diffusion.Database.PostgreSQL;
 using Diffusion.Toolkit.Common;
 using Diffusion.Toolkit.Configuration;
@@ -41,7 +40,6 @@ public class ServiceLocator
     private static MetadataScannerService? _metadataScannerService;
     private static FolderService? _folderService;
     private static ProgressService? _progressService;
-    private static DataStore? _thumbnailDataStore; // SQLite for thumbnail caching only
     private static PostgreSQLDataStore? _dataStore; // Primary PostgreSQL database
 
     //private static ScanService? _scanManager;
@@ -57,21 +55,19 @@ public class ServiceLocator
     private static JoyCaptionService? _joyCaptionService;
     private static ICaptionService? _captionService;
     private static ModelResourceService? _modelResourceService;
+    private static BackgroundTaggingService? _backgroundTaggingService;
 
     public static PostgreSQLDataStore? DataStore => _dataStore; // Primary PostgreSQL database
-    public static DataStore? ThumbnailDataStore => _thumbnailDataStore; // SQLite for thumbnails only
     public static Settings? Settings => _settings;
     public static ToastService? ToastService { get; set; }
     public static Dispatcher? Dispatcher { get; set; }
+    public static BackgroundTaggingService? BackgroundTaggingService => _backgroundTaggingService;
 
     public static void SetDataStore(PostgreSQLDataStore dataStore)
     {
         _dataStore = dataStore;
-    }
-
-    public static void SetThumbnailDataStore(DataStore dataStore)
-    {
-        _thumbnailDataStore = dataStore;
+        // Initialize BackgroundTaggingService when DataStore is set
+        _backgroundTaggingService = new BackgroundTaggingService(dataStore);
     }
 
     public static void SetSettings(Settings? settings)

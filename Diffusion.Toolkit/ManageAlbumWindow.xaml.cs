@@ -11,8 +11,8 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
-using Diffusion.Database;
-using Diffusion.Database.Models;
+using Diffusion.Database.PostgreSQL;
+using Diffusion.Database.PostgreSQL.Models;
 using Diffusion.Toolkit.Classes;
 using Diffusion.Toolkit.Models;
 
@@ -42,10 +42,10 @@ namespace Diffusion.Toolkit
     public partial class ManageAlbumWindow : BorderlessWindow
     {
         private readonly ManageAlbumModel _model;
-        private readonly DataStore _dataStore;
+        private readonly PostgreSQLDataStore _dataStore;
 
 
-        public ManageAlbumWindow(DataStore dataStore)
+        public ManageAlbumWindow(PostgreSQLDataStore dataStore)
         {
             _dataStore = dataStore;
             _model = new ManageAlbumModel();

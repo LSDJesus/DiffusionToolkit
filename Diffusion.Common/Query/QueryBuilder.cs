@@ -1,10 +1,11 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Globalization;
 using System.Linq;
 using System.Text.RegularExpressions;
 
-namespace Diffusion.Database;
+namespace Diffusion.Common.Query;
 
 public static partial class QueryBuilder
 {

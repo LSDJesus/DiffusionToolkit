@@ -150,7 +150,6 @@
   <ItemGroup>
     <ProjectReference Include="..\Diffusion.Civitai\Diffusion.Civitai.csproj" />
     <ProjectReference Include="..\Diffusion.Common\Diffusion.Common.csproj" />
-    <ProjectReference Include="..\Diffusion.Database\Diffusion.Database.csproj" />
     <ProjectReference Include="..\Diffusion.Database.PostgreSQL\Diffusion.Database.PostgreSQL.csproj" />
     <ProjectReference Include="..\Diffusion.Embeddings\Diffusion.Embeddings.csproj" />
     <ProjectReference Include="..\Diffusion.Scanner\Diffusion.IO.csproj" />

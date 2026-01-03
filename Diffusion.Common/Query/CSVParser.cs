@@ -1,4 +1,7 @@
-﻿namespace Diffusion.Database;
+﻿using System;
+using System.Collections.Generic;
+
+namespace Diffusion.Common.Query;
 
 public class CSVParser
 {

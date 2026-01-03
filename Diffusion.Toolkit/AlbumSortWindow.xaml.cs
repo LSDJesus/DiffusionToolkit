@@ -4,7 +4,7 @@ using System.Linq;
 using System.Windows;
 using Diffusion.Common;
 using Diffusion.Database;
-using Diffusion.Database.Models;
+using Diffusion.Database.PostgreSQL.Models;
 using Diffusion.Database.PostgreSQL;
 using Diffusion.Toolkit.Classes;
 using Diffusion.Toolkit.Configuration;

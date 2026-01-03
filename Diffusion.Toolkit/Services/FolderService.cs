@@ -12,7 +12,8 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
 using Diffusion.Common;
-using Diffusion.Database;
+using Diffusion.Common.Query;
+using Diffusion.Database.PostgreSQL.Models;
 using Diffusion.Database.PostgreSQL;
 using Diffusion.Database.PostgreSQL.Models;
 using Diffusion.IO;
@@ -862,7 +863,8 @@ namespace Diffusion.Toolkit.Services
                 };
                 watcher.Created += WatcherOnCreated;
                 watcher.Renamed += WatcherOnRenamed;
-                watcher.Changed += WatcherOnChanged;
+                // Don't watch Changed events - database is source of truth
+                // watcher.Changed += WatcherOnChanged;
                 watcher.Deleted += WatcherOnDeleted;
                 _watchers.Add(watcher);
             }
@@ -1428,10 +1430,10 @@ namespace Diffusion.Toolkit.Services
             }
         }
 
-        public IEnumerable<Diffusion.Database.ImagePath> GetFiles(int folderId, bool recursive)
+        public IEnumerable<Diffusion.Database.PostgreSQL.Models.ImagePath> GetFiles(int folderId, bool recursive)
         {
             var pgImages = ServiceLocator.DataStore.GetFolderImages(folderId, recursive);
-            return pgImages.Select(img => new Diffusion.Database.ImagePath { Id = img.Id, Path = img.Path, FolderId = img.FolderId, Unavailable = img.Unavailable });
+            return pgImages.Select(img => new Diffusion.Database.PostgreSQL.Models.ImagePath { Id = img.Id, Path = img.Path, FolderId = img.FolderId, Unavailable = img.Unavailable });
         }
 
         public void UpdateRootFolder(int id, string path, bool watched, bool recursive, string propertyName)

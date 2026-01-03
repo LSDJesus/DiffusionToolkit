@@ -223,8 +223,7 @@
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
-            <TabItem Header="{lex:Loc Metadata.TagsCaption.Tab}" Background="Transparent" GotFocus="UIElement_OnGotFocus" HorizontalContentAlignment="Stretch"
-                     Visibility="{Binding HasTags, Converter={StaticResource boolToVis}}">
+            <TabItem Header="{lex:Loc Metadata.TagsCaption.Tab}" Background="Transparent" GotFocus="UIElement_OnGotFocus" HorizontalContentAlignment="Stretch">
                 <ScrollViewer Background="Transparent" VerticalScrollBarVisibility="Auto">
                     <StackPanel Background="Transparent">
                         

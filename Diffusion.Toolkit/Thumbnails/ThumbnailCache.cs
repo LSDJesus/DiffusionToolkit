@@ -1,280 +1,299 @@
-﻿using Diffusion.Common;
-using SQLite;
 using System;
 using System.Collections.Concurrent;
 using System.IO;
 using System.Linq;
 using System.Windows.Media.Imaging;
+using Diffusion.Database.PostgreSQL;
+using Diffusion.Toolkit.Services;
 
 namespace Diffusion.Toolkit.Thumbnails;
 
-public class CacheEntry
+/// <summary>
+/// PostgreSQL-backed thumbnail cache with in-memory LRU layer.
+/// Replaces SQLite dt_thumbnails.db files scattered across folders.
+/// </summary>
+public class ThumbnailCache
 {
-    public DateTime Created { get; set; }
-    public BitmapSource BitmapSource { get; set; }
-}
+    private static ThumbnailCache? _instance;
+    public static ThumbnailCache Instance => _instance ?? throw new InvalidOperationException("ThumbnailCache not initialized");
 
-public class ThumbnailCacheOld
-{
-    private readonly int _maxItems;
-    private readonly int _evictItems;
-    private ConcurrentDictionary<string, CacheEntry> _cache = new ConcurrentDictionary<string, CacheEntry>();
+    private readonly ConcurrentDictionary<string, CacheEntry> _memoryCache;
+    private readonly int _maxMemoryItems;
+    private readonly int _evictCount;
+    private readonly object _lock = new object();
 
-    private object _lock = new object();
-    private static ThumbnailCacheOld _instance;
-
-    public static ThumbnailCacheOld Instance => _instance;
-
-    private ThumbnailCacheOld(int maxItems, int evictItems)
+    private ThumbnailCache(int maxMemoryItems, int evictCount)
     {
-        _maxItems = maxItems;
-        _evictItems = evictItems;
+        _maxMemoryItems = maxMemoryItems;
+        _evictCount = evictCount;
+        _memoryCache = new ConcurrentDictionary<string, CacheEntry>();
     }
 
-    public bool TryGetThumbnail(string path, out BitmapSource? thumbnail)
+    private static string GetCacheKey(string path, int size) => $"{path}|{size}";
+
+    private PostgreSQLDataStore? DataStore => ServiceLocator.DataStore;
+
+    /// <summary>
+    /// Try to get a thumbnail from cache (memory first, then PostgreSQL)
+    /// </summary>
+    public bool TryGetThumbnail(string path, int size, out BitmapSource? thumbnail)
     {
-        lock (_lock)
+        thumbnail = null;
+        var key = GetCacheKey(path, size);
+
+        // Check memory cache first
+        if (_memoryCache.TryGetValue(key, out var entry))
         {
-            if (_cache.TryGetValue(path, out var cacheEntry))
-            {
-                thumbnail = cacheEntry.BitmapSource;
-                return true;
-            }
-
-            thumbnail = null;
-
-            return false;
+            thumbnail = entry.BitmapSource;
+            return true;
         }
-    }
 
-    public void AddThumbnail(string path, BitmapSource? thumbnail)
-    {
-        lock (_lock)
+        // Check PostgreSQL
+        var dataStore = DataStore;
+        if (dataStore == null) return false;
+
+        try
         {
-            if (_cache.Count + 1 > _maxItems)
+            var data = dataStore.GetThumbnail(path, size);
+            if (data != null && data.Length > 0)
             {
-                var evictions = _cache.OrderByDescending(c => c.Value.Created).Take(_evictItems);
-
-                foreach (var eviction in evictions)
+                var bitmap = BytesToBitmap(data);
+                if (bitmap != null)
                 {
-                    _cache.TryRemove(eviction);
+                    // Add to memory cache
+                    AddToMemoryCache(key, bitmap);
+                    thumbnail = bitmap;
+                    return true;
                 }
             }
         }
-
-
-        if (!_cache.TryAdd(path, new CacheEntry()
+        catch (Exception)
         {
-            BitmapSource = thumbnail,
-            Created = DateTime.Now
-        }))
-        {
-
-        }
-    }
-
-    //public static void CreateInstance()
-    //{
-    //    _instance = new ThumbnailCache(500, 100);
-    //}
-
-
-    public static void CreateInstance(int maxItems, int evictItems)
-    {
-        _instance = new ThumbnailCacheOld(maxItems, evictItems);
-    }
-
-    public void Clear()
-    {
-        _cache.Clear();
-    }
-}
-
-public class Thumbnail
-{
-    public string Filename { get; set; }
-    public byte[] Data { get; set; }
-    public int Size { get; set; }
-}
-
-
-public class ConnectionCacheEntry
-{
-    private readonly string _path;
-    private readonly ConcurrentDictionary<string, ConnectionCacheEntry> _connectionPool;
-    private readonly SQLiteConnection _connection;
-    private Action _timeout;
-
-    public ConnectionCacheEntry(string path, ConcurrentDictionary<string, ConnectionCacheEntry> connectionPool, SQLiteConnection connection)
-    {
-        _path = path;
-        _connectionPool = connectionPool;
-        _connection = connection;
-        _timeout = Utility.Debounce(() =>
-        {
-            if (_connectionPool.TryRemove(_path, out var cacheEntry))
-            {
-                Connection.Close();
-            }
-        }, 2000);
-    }
-
-    public SQLiteConnection Connection => _connection;
-
-
-    public void ResetTimeout()
-    {
-        _timeout();
-    }
-
-}
-
-public class ThumbnailCache
-{
-    private static ThumbnailCache _instance;
-
-    public static ThumbnailCache Instance => _instance;
-
-    private readonly ConcurrentDictionary<string, ConnectionCacheEntry> _connectionPool;
-
-    private ThumbnailCache()
-    {
-        _connectionPool = new ConcurrentDictionary<string, ConnectionCacheEntry>();
-    }
-
-    private object _lock = new object();
-
-    private bool TryOpenConnection(string path, out SQLiteConnection connection)
-    {
-        var dbPath = Path.GetDirectoryName(path);
-
-        if (Directory.Exists(dbPath))
-        {
-            if (!_connectionPool.TryGetValue(dbPath, out var cacheItem))
-            {
-                var dbFile = Path.Combine(dbPath, "dt_thumbnails.db");
-
-                var db = new SQLiteConnection(dbFile);
-                db.CreateTable<Thumbnail>();
-                db.CreateIndex<Thumbnail>(t => t.Filename, true);
-
-                cacheItem = new ConnectionCacheEntry(dbPath, _connectionPool, db);
-
-                _connectionPool[dbPath] = cacheItem;
-            }
-
-            cacheItem.ResetTimeout();
-
-            connection =  cacheItem.Connection;
-            return true;
-        }
-
-        connection = null;
-        return false;
-    }
-
-
-    public bool Unload(string path)
-    {
-        if (_connectionPool.TryRemove(path, out var cacheEntry))
-        {
-            cacheEntry.Connection.Close();
-            return true;
+            // Database error - return false
         }
 
         return false;
     }
 
-    public bool TryGetThumbnail(string path, int size, out BitmapSource? thumbnail)
-    {
-        var result = false;
-        thumbnail = null;
-
-        if (TryOpenConnection(path, out var db))
-        {
-            var filename = Path.GetFileName(path);
-
-            var data = db.Query<Thumbnail>("SELECT Filename, Data FROM Thumbnail WHERE Filename = ? AND Size = ?", filename, size);
-
-            if (data.Count > 0)
-            {
-                var bitmap = new BitmapImage();
-                bitmap.BeginInit();
-                bitmap.StreamSource = new MemoryStream(data[0].Data);
-                result = true;
-                bitmap.EndInit();
-                bitmap.Freeze();
-                thumbnail = bitmap;
-            }
-        }
-       
-        return result;
-    }
-
+    /// <summary>
+    /// Add thumbnail to both memory cache and PostgreSQL
+    /// </summary>
     public void AddThumbnail(string path, int size, BitmapImage bitmapImage)
     {
-        if (File.Exists(path))
-        {
-            if (TryOpenConnection(path, out var db))
-            {
-                var filename = Path.GetFileName(path);
-                var data = ((MemoryStream)bitmapImage.StreamSource).ToArray();
+        if (!File.Exists(path)) return;
 
-                var command = db.CreateCommand("REPLACE INTO Thumbnail (Filename, Data, Size) VALUES (@Filename, @Data, @Size)");
-                command.Bind("@Filename", filename);
-                command.Bind("@Data", data);
-                command.Bind("@Size", size);
-                command.ExecuteNonQuery();
+        var key = GetCacheKey(path, size);
+        
+        // Add to memory cache
+        AddToMemoryCache(key, bitmapImage);
+
+        // Persist to PostgreSQL
+        var dataStore = DataStore;
+        if (dataStore == null) return;
+
+        try
+        {
+            var data = BitmapToBytes(bitmapImage);
+            if (data != null && data.Length > 0)
+            {
+                dataStore.SetThumbnail(path, size, data);
             }
+        }
+        catch (Exception)
+        {
+            // Database error - thumbnail still in memory cache
         }
     }
 
     /// <summary>
-    /// Add a thumbnail from raw bytes (for embedded previews in model files)
+    /// Add thumbnail from raw bytes (for embedded previews in model files)
     /// </summary>
     public bool AddThumbnailFromBytes(string path, int size, byte[] imageData)
     {
         if (!File.Exists(path)) return false;
-        
-        if (TryOpenConnection(path, out var db))
+
+        var dataStore = DataStore;
+        if (dataStore == null) return false;
+
+        try
         {
-            var filename = Path.GetFileName(path);
+            dataStore.SetThumbnail(path, size, imageData);
             
-            var command = db.CreateCommand("REPLACE INTO Thumbnail (Filename, Data, Size) VALUES (@Filename, @Data, @Size)");
-            command.Bind("@Filename", filename);
-            command.Bind("@Data", imageData);
-            command.Bind("@Size", size);
-            command.ExecuteNonQuery();
+            // Also add to memory cache
+            var bitmap = BytesToBitmap(imageData);
+            if (bitmap != null)
+            {
+                var key = GetCacheKey(path, size);
+                AddToMemoryCache(key, bitmap);
+            }
+            
             return true;
         }
-        
-        return false;
+        catch (Exception)
+        {
+            return false;
+        }
     }
 
     /// <summary>
-    /// Check if a thumbnail exists in the cache
+    /// Check if thumbnail exists in cache (memory or PostgreSQL)
     /// </summary>
     public bool HasThumbnail(string path, int size)
     {
-        if (!File.Exists(path)) return false;
+        var key = GetCacheKey(path, size);
         
-        if (TryOpenConnection(path, out var db))
+        // Check memory first
+        if (_memoryCache.ContainsKey(key)) return true;
+
+        // Check PostgreSQL
+        var dataStore = DataStore;
+        if (dataStore == null) return false;
+
+        try
         {
-            var filename = Path.GetFileName(path);
-            var count = db.ExecuteScalar<int>("SELECT COUNT(*) FROM Thumbnail WHERE Filename = ? AND Size = ?", filename, size);
-            return count > 0;
+            return dataStore.HasThumbnail(path, size);
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Remove thumbnail from cache when file is deleted/moved
+    /// </summary>
+    public bool Unload(string path)
+    {
+        // Remove all sizes from memory cache
+        var keysToRemove = new System.Collections.Generic.List<string>();
+        foreach (var key in _memoryCache.Keys)
+        {
+            if (key.StartsWith(path + "|"))
+            {
+                keysToRemove.Add(key);
+            }
         }
         
-        return false;
+        foreach (var key in keysToRemove)
+        {
+            _memoryCache.TryRemove(key, out _);
+        }
+
+        // Remove from PostgreSQL
+        var dataStore = DataStore;
+        if (dataStore == null) return keysToRemove.Count > 0;
+
+        try
+        {
+            dataStore.DeleteThumbnail(path);
+            return true;
+        }
+        catch (Exception)
+        {
+            return keysToRemove.Count > 0;
+        }
     }
 
-
-    public static void CreateInstance(int maxItems, int evictItems)
-    {
-        _instance = new ThumbnailCache();
-    }
-
+    /// <summary>
+    /// Clear memory cache only (PostgreSQL cache persists)
+    /// </summary>
     public void Clear()
     {
+        _memoryCache.Clear();
     }
+
+    /// <summary>
+    /// Clear entire cache including PostgreSQL
+    /// </summary>
+    public int ClearAll()
+    {
+        _memoryCache.Clear();
+
+        var dataStore = DataStore;
+        if (dataStore == null) return 0;
+
+        try
+        {
+            return dataStore.ClearThumbnailCache();
+        }
+        catch (Exception)
+        {
+            return 0;
+        }
+    }
+
+    private void AddToMemoryCache(string key, BitmapSource bitmap)
+    {
+        lock (_lock)
+        {
+            // Evict old entries if at capacity
+            if (_memoryCache.Count >= _maxMemoryItems)
+            {
+                var toEvict = _memoryCache
+                    .OrderBy(x => x.Value.Created)
+                    .Take(_evictCount)
+                    .Select(x => x.Key)
+                    .ToList();
+
+                foreach (var evictKey in toEvict)
+                {
+                    _memoryCache.TryRemove(evictKey, out _);
+                }
+            }
+        }
+
+        _memoryCache.TryAdd(key, new CacheEntry
+        {
+            BitmapSource = bitmap,
+            Created = DateTime.UtcNow
+        });
+    }
+
+    private static byte[]? BitmapToBytes(BitmapImage bitmapImage)
+    {
+        if (bitmapImage.StreamSource is MemoryStream ms)
+        {
+            return ms.ToArray();
+        }
+
+        // Encode to JPEG if not already a memory stream
+        var encoder = new JpegBitmapEncoder { QualityLevel = 85 };
+        encoder.Frames.Add(BitmapFrame.Create(bitmapImage));
+        
+        using var stream = new MemoryStream();
+        encoder.Save(stream);
+        return stream.ToArray();
+    }
+
+    private static BitmapImage? BytesToBitmap(byte[] data)
+    {
+        try
+        {
+            var bitmap = new BitmapImage();
+            bitmap.BeginInit();
+            bitmap.StreamSource = new MemoryStream(data);
+            bitmap.CacheOption = BitmapCacheOption.OnLoad;
+            bitmap.EndInit();
+            bitmap.Freeze();
+            return bitmap;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public static void CreateInstance(int maxMemoryItems, int evictCount)
+    {
+        _instance = new ThumbnailCache(maxMemoryItems, evictCount);
+    }
+}
+
+/// <summary>
+/// In-memory cache entry for thumbnails
+/// </summary>
+public class CacheEntry
+{
+    public DateTime Created { get; set; }
+    public BitmapSource BitmapSource { get; set; } = null!;
 }

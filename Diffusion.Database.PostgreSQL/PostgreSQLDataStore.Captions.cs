@@ -16,6 +16,8 @@ public partial class PostgreSQLDataStore
     {
         ArgumentNullException.ThrowIfNull(caption);
         
+        Logger.Log($"StoreCaptionAsync called: imageId={imageId}, captionLen={caption.Length}, source={source}");
+        
         const string sql = @"
             INSERT INTO image_captions (image_id, caption, source, prompt_used, token_count, generation_time_ms)
             VALUES (@imageId, @caption, @source, @promptUsed, @tokenCount, @generationTimeMs);
@@ -23,7 +25,7 @@ public partial class PostgreSQLDataStore
 
         await using var connection = await OpenConnectionAsync().ConfigureAwait(false);
 
-        await connection.ExecuteAsync(sql, new 
+        var rowsAffected = await connection.ExecuteAsync(sql, new 
         { 
             imageId, 
             caption, 
@@ -32,6 +34,12 @@ public partial class PostgreSQLDataStore
             tokenCount, 
             generationTimeMs 
         }).ConfigureAwait(false);
+        
+        Logger.Log($"StoreCaptionAsync: {rowsAffected} rows inserted");
+        
+        // Verify it was saved
+        var verify = await GetLatestCaptionAsync(imageId, source).ConfigureAwait(false);
+        Logger.Log($"StoreCaptionAsync verification: caption found={verify != null}, len={verify?.Caption?.Length ?? 0}");
     }
 
     /// <summary>

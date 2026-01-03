@@ -1,4 +1,4 @@
-﻿using Diffusion.Database;
+﻿using Diffusion.Common.Query;
 using Diffusion.Toolkit.Models;
 using System;
 using System.ComponentModel;

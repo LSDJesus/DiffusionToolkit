@@ -12,7 +12,6 @@ using Diffusion.Toolkit.Configuration;
 using Diffusion.Toolkit.Models;
 using Diffusion.Toolkit.Services;
 using Microsoft.WindowsAPICodePack.Dialogs;
-using SQLite;
 
 namespace Diffusion.Toolkit
 {
@@ -106,22 +105,6 @@ namespace Diffusion.Toolkit
 
         public IReadOnlyList<string> SelectedPaths { get; private set; }
 
-
-        private class MinimalFolder
-        {
-            public string Path { get; set; }
-        }
-
-
-        List<MinimalFolder> FindRootFolders(SQLiteConnection db)
-        {
-            var allFolders = db.Query<MinimalFolder>("SELECT Path FROM Folder").ToList();
-
-            var rootFolders = allFolders.Where(d => !allFolders.Any(p => d.Path.StartsWith(p.Path) && p.Path != d.Path)).ToList();
-
-            return rootFolders;
-        }
-
         public WelcomeWindow(Settings settings)
         {
             _settings = settings;
@@ -132,41 +115,20 @@ namespace Diffusion.Toolkit
 
             try
             {
-                // For 1.9+ users starting with no config, but with an existing database
-                // Try to load the current root folders
-                using var db = ServiceLocator.ThumbnailDataStore.OpenConnection();
-
-                List<MinimalFolder> folders = new List<MinimalFolder>();
-
-
-                if (db.TableExist("Folder"))
+                // For existing users with a PostgreSQL database, try to load the current root folders
+                var dataStore = ServiceLocator.DataStore;
+                if (dataStore != null)
                 {
-                    try
+                    var folders = dataStore.GetRootFolders();
+                    if (folders.Any())
                     {
-                        var hasIsRoot = db.HasColumn("Folder", "IsRoot");
-                        if (hasIsRoot)
-                        {
-                            folders = db.Query<MinimalFolder>("SELECT Path FROM Folder WHERE IsRoot = 1").ToList();
-                        }
-                        else
-                        {
-                            folders = FindRootFolders(db);
-                        }
+                        _model.ImagePaths = new ObservableCollection<string>(folders.Select(d => d.Path));
                     }
-                    catch (Exception e)
-                    {
-                        folders = FindRootFolders(db);
-                    }
-                }
-
-                if (folders.Any())
-                {
-                    _model.ImagePaths = new ObservableCollection<string>(folders.Select(d => d.Path));
                 }
             }
-            catch (Exception e)
+            catch (Exception)
             {
-                // Swallow exceptions in case the schema hasn't been updated yet
+                // Swallow exceptions in case the database isn't connected yet
             }
 
             Closing += (sender, args) =>

@@ -1,8 +1,8 @@
 ﻿using System.ComponentModel;
 using System.Linq;
 using System.Windows;
-using Diffusion.Database;
-using Diffusion.Database.Models;
+using Diffusion.Common.Query;
+using Diffusion.Database.PostgreSQL.Models;
 using Diffusion.Database.PostgreSQL;
 using Diffusion.Toolkit.Classes;
 using PgAlbum = Diffusion.Database.PostgreSQL.Models.Album;

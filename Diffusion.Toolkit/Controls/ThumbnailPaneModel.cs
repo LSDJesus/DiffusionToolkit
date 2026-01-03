@@ -1,6 +1,6 @@
 ﻿using System.Collections.ObjectModel;
 using System.Windows.Input;
-using Diffusion.Database;
+using Diffusion.Database.PostgreSQL;
 using Diffusion.Toolkit.Models;
 
 namespace Diffusion.Toolkit.Controls;
@@ -58,7 +58,7 @@ public class ThumbnailPaneModel : BaseNotify
         _searchHint = "Search for the answer to the the question of life, the universe, and everything";
     }
 
-    public DataStore DataStore
+    public PostgreSQLDataStore DataStore
     {
         get;
         set;

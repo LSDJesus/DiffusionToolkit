@@ -30,7 +30,10 @@ public partial class PostgreSQLDataStore : IDisposable
         {
             var oldValue = _currentSchema;
             _currentSchema = value ?? "public";
-            Logger.Log($"CurrentSchema changed: '{oldValue}' -> '{_currentSchema}' (instance: {GetHashCode()})");
+            if (oldValue != _currentSchema)
+            {
+                Logger.Log($"CurrentSchema changed: '{oldValue}' -> '{_currentSchema}'");
+            }
         }
     }
 
@@ -199,6 +202,12 @@ public partial class PostgreSQLDataStore : IDisposable
         }
         catch (Exception ex)
         {
+            Logger.Log($"PostgreSQL initialization failed: {ex.Message}");
+            Logger.Log($"Stack trace: {ex.StackTrace}");
+            if (ex.InnerException != null)
+            {
+                Logger.Log($"Inner exception: {ex.InnerException.Message}");
+            }
             throw new InvalidOperationException("Failed to initialize PostgreSQL database", ex);
         }
     }

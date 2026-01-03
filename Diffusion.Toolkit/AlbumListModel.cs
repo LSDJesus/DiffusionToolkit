@@ -1,6 +1,6 @@
 ﻿using System.Collections.Generic;
 using System.Windows.Input;
-using Diffusion.Database.Models;
+using Diffusion.Database.PostgreSQL.Models;
 using Diffusion.Toolkit.Models;
 using PgAlbum = Diffusion.Database.PostgreSQL.Models.Album;
 

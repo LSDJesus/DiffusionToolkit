@@ -7,7 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Diffusion.Common;
 using Diffusion.Database.PostgreSQL;
-using Diffusion.Database.Models;
+using Diffusion.Database.PostgreSQL.Models;
 using Npgsql;
 using Dapper;
 using DBModels = Diffusion.Database.PostgreSQL.Models;

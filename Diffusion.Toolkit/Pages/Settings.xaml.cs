@@ -590,13 +590,20 @@ namespace Diffusion.Toolkit.Pages
             var comboBox = (ComboBox)sender;
             if (comboBox.SelectedItem is ComboBoxItem item && item.Tag is string schema)
             {
+                // Only show toast if schema is actually changing (not same as current)
+                var oldSchema = _settings.DatabaseSchema;
+                
                 _settings.DatabaseSchema = schema;
                 _dataStore.CurrentSchema = schema;
                 
-                // Refresh the search results to show images from new schema
-                ServiceLocator.SearchService?.RefreshResults();
-                
-                ServiceLocator.ToastService?.Toast($"Switched to '{item.Content}' collection", "Schema Changed");
+                // Only show notification and refresh if schema actually changed
+                if (oldSchema != schema)
+                {
+                    // Refresh the search results to show images from new schema
+                    ServiceLocator.SearchService?.RefreshResults();
+                    
+                    ServiceLocator.ToastService?.Toast($"Switched to '{item.Content}' collection", "Schema Changed");
+                }
             }
         }
 

@@ -12,9 +12,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="PostgreSQLMigrations_V1_Schema.sql" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Diffusion.Common\Diffusion.Common.csproj" />
     <ProjectReference Include="..\Diffusion.Scanner\Diffusion.IO.csproj" />
-    <ProjectReference Include="..\Diffusion.Database\Diffusion.Database.csproj" />
   </ItemGroup>
 
 </Project>

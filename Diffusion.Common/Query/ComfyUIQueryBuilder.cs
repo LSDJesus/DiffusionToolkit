@@ -1,7 +1,11 @@
 ﻿using System.Linq;
 using Diffusion.Common.Query;
 
-namespace Diffusion.Database;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+namespace Diffusion.Common.Query;
 
 public static class ComfyUIQueryBuilder
 {

@@ -32,7 +32,7 @@ using System.Windows.Media;
 using Diffusion.Common;
 using Diffusion.Toolkit.Localization;
 using Diffusion.Toolkit.Services;
-using Diffusion.Database.Models;
+using Diffusion.Database.PostgreSQL.Models;
 using Diffusion.Toolkit.Configuration;
 using SearchView = Diffusion.Common.SearchView;
 using Diffusion.Civitai.Models;
@@ -1104,38 +1104,36 @@ namespace Diffusion.Toolkit.Pages
                     {
                         try
                         {
+                            // Load actual caption from image_captions table
+                            var caption = await ServiceLocator.DataStore.GetLatestCaptionAsync(image.Id);
+                            
+                            // Load tags from image_tags table
                             var tags = await ServiceLocator.DataStore.GetImageTagsAsync(image.Id);
-                            if (tags.Count > 0)
+                            
+                            await Dispatcher.InvokeAsync(() =>
                             {
-                                // Separate captions (usually from joycaption source) from tags
-                                var captionTags = tags.Where(t => t.Source?.Contains("caption", StringComparison.OrdinalIgnoreCase) == true).ToList();
-                                var regularTags = tags.Where(t => t.Source?.Contains("caption", StringComparison.OrdinalIgnoreCase) != true).ToList();
-
-                                await Dispatcher.InvokeAsync(() =>
+                                if (caption != null && !string.IsNullOrWhiteSpace(caption.Caption))
                                 {
-                                    if (captionTags.Count > 0)
-                                    {
-                                        imageViewModel.Caption = string.Join("\n\n", captionTags.Select(t => t.Tag));
-                                    }
-                                    if (regularTags.Count > 0)
-                                    {
-                                        imageViewModel.Tags = string.Join(", ", regularTags.OrderByDescending(t => t.Confidence).Select(t => t.Tag));
-                                    }
-                                    imageViewModel.HasTags = captionTags.Count > 0 || regularTags.Count > 0;
-                                    
-                                    // Set up copy commands
-                                    imageViewModel.CopyTagsCommand = new RelayCommand<object>(_ =>
-                                    {
-                                        if (!string.IsNullOrEmpty(imageViewModel.Tags))
-                                            Clipboard.SetText(imageViewModel.Tags);
-                                    });
-                                    imageViewModel.CopyCaptionCommand = new RelayCommand<object>(_ =>
-                                    {
-                                        if (!string.IsNullOrEmpty(imageViewModel.Caption))
-                                            Clipboard.SetText(imageViewModel.Caption);
-                                    });
+                                    imageViewModel.Caption = caption.Caption;
+                                }
+                                if (tags.Count > 0)
+                                {
+                                    imageViewModel.Tags = string.Join(", ", tags.OrderByDescending(t => t.Confidence).Select(t => t.Tag));
+                                }
+                                imageViewModel.HasTags = (caption != null && !string.IsNullOrWhiteSpace(caption.Caption)) || tags.Count > 0;
+                                
+                                // Set up copy commands
+                                imageViewModel.CopyTagsCommand = new RelayCommand<object>(_ =>
+                                {
+                                    if (!string.IsNullOrEmpty(imageViewModel.Tags))
+                                        Clipboard.SetText(imageViewModel.Tags);
                                 });
-                            }
+                                imageViewModel.CopyCaptionCommand = new RelayCommand<object>(_ =>
+                                {
+                                    if (!string.IsNullOrEmpty(imageViewModel.Caption))
+                                        Clipboard.SetText(imageViewModel.Caption);
+                                });
+                            });
                         }
                         catch (Exception ex)
                         {

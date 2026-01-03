@@ -84,6 +84,11 @@ public class HttpCaptionService : ICaptionService, IDisposable
         return new CaptionResult(caption, prompt, tokenCount: 0, generationTimeMs: sw.Elapsed.TotalMilliseconds);
     }
 
+    public void ReleaseModel()
+    {
+        // HTTP-based services don't hold models locally, nothing to release
+    }
+
     public void Dispose()
     {
         _http.Dispose();

@@ -4,7 +4,7 @@ using System;
 using System.Linq;
 using System.Threading.Tasks;
 using Diffusion.Toolkit.Services;
-using Diffusion.Database.Models;
+using Diffusion.Database.PostgreSQL.Models;
 using PgAlbum = Diffusion.Database.PostgreSQL.Models.Album;
 using PgImageView = Diffusion.Database.PostgreSQL.ImageView;
 

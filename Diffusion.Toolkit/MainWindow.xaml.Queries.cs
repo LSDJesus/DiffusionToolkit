@@ -1,5 +1,4 @@
-using Diffusion.Database;
-using SQLite;
+using Diffusion.Common.Query;
 using System.Linq;
 using System.Collections.ObjectModel;
 using System.Threading.Tasks;

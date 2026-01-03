@@ -1,7 +1,9 @@
-﻿using System.Globalization;
-using Diffusion.Common.Query;
+﻿using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
 
-namespace Diffusion.Database
+namespace Diffusion.Common.Query
 {
     public static partial class QueryBuilder
     {
