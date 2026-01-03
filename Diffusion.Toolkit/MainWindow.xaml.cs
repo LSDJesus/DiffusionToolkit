@@ -133,6 +133,14 @@ namespace Diffusion.Toolkit
                 _model.StopBackgroundProcessingCommand = new RelayCommand<object>((o) => StopBackgroundProcessing());
                 _model.ReleaseModelsCommand = new RelayCommand<object>((o) => ReleaseModels());
                 
+                _model.StartTaggingCommand = new RelayCommand<object>((o) => StartTagging());
+                _model.PauseTaggingCommand = new RelayCommand<object>((o) => PauseTagging());
+                _model.StopTaggingCommand = new RelayCommand<object>((o) => StopTagging());
+                
+                _model.StartCaptioningCommand = new RelayCommand<object>((o) => StartCaptioning());
+                _model.PauseCaptioningCommand = new RelayCommand<object>((o) => PauseCaptioning());
+                _model.StopCaptioningCommand = new RelayCommand<object>((o) => StopCaptioning());
+                
                 // Subscribe to background tagging service events
                 if (ServiceLocator.BackgroundTaggingService != null)
                 {
@@ -140,6 +148,7 @@ namespace Diffusion.Toolkit
                     ServiceLocator.BackgroundTaggingService.CaptioningProgressChanged += OnCaptioningProgressChanged;
                     ServiceLocator.BackgroundTaggingService.TaggingCompleted += OnTaggingCompleted;
                     ServiceLocator.BackgroundTaggingService.CaptioningCompleted += OnCaptioningCompleted;
+                    ServiceLocator.BackgroundTaggingService.StatusChanged += OnBackgroundStatusChanged;
                 }
 
                 InitEvents();
@@ -992,11 +1001,53 @@ namespace Diffusion.Toolkit
 
             Logger.Log($"Init completed");
 
+            // Check for pending tagged/captioned images
+            await CheckPendingQueueAsync();
+
             if (_showReleaseNotes)
             {
                 ShowReleaseNotes();
             }
             // Cleanup();
+        }
+
+        private async Task CheckPendingQueueAsync()
+        {
+            try
+            {
+                var dataStore = ServiceLocator.DataStore;
+                if (dataStore == null) return;
+
+                var pendingTagging = await dataStore.CountImagesNeedingTagging();
+                var pendingCaptioning = await dataStore.CountImagesNeedingCaptioning();
+
+                if (pendingTagging > 0 || pendingCaptioning > 0)
+                {
+                    // Show status but don't start processing
+                    if (pendingTagging > 0)
+                    {
+                        _model.IsTaggingActive = true;
+                        _model.TaggingStatus = $"Queue: {pendingTagging} images";
+                        Logger.Log($"Found {pendingTagging} images pending tagging");
+                    }
+
+                    if (pendingCaptioning > 0)
+                    {
+                        _model.IsCaptioningActive = true;
+                        _model.CaptioningStatus = $"Queue: {pendingCaptioning} images";
+                        Logger.Log($"Found {pendingCaptioning} images pending captioning");
+                    }
+
+                    // Optionally notify user
+                    ServiceLocator.ToastService?.Toast(
+                        $"Found {pendingTagging} images queued for tagging, {pendingCaptioning} for captioning.\nClick ▶ buttons in status bar to start processing.",
+                        "Pending Queue");
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"Error checking pending queue: {ex.Message}");
+            }
         }
 
         private async Task Cleanup()
@@ -1336,19 +1387,35 @@ namespace Diffusion.Toolkit
     {
         private void OnTaggingProgressChanged(object? sender, Services.ProgressEventArgs e)
         {
+            // Status is updated via StatusChanged event with ETA
             Dispatcher.Invoke(() =>
             {
                 _model.IsTaggingActive = true;
-                _model.TaggingStatus = $"Tagging: {e.Current}/{e.Total} ({e.Percentage:F1}%)";
             });
         }
 
         private void OnCaptioningProgressChanged(object? sender, Services.ProgressEventArgs e)
         {
+            // Status is updated via StatusChanged event with ETA
             Dispatcher.Invoke(() =>
             {
                 _model.IsCaptioningActive = true;
-                _model.CaptioningStatus = $"Captioning: {e.Current}/{e.Total} ({e.Percentage:F1}%)";
+            });
+        }
+
+        private void OnBackgroundStatusChanged(object? sender, string status)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                // Update appropriate status based on content
+                if (status.StartsWith("Tagging:"))
+                {
+                    _model.TaggingStatus = status;
+                }
+                else if (status.StartsWith("Captioning:"))
+                {
+                    _model.CaptioningStatus = status;
+                }
             });
         }
 
@@ -1414,6 +1481,82 @@ namespace Diffusion.Toolkit
             
             ServiceLocator.ToastService?.Toast("Models released from VRAM", "Memory Management");
             Logger.Log("All models released from VRAM");
+        }
+
+        private void StartTagging()
+        {
+            var service = ServiceLocator.BackgroundTaggingService;
+            if (service == null) return;
+
+            service.StartTagging();
+            _model.IsTaggingActive = true;
+            Logger.Log("Started tagging from UI");
+        }
+
+        private void PauseTagging()
+        {
+            var service = ServiceLocator.BackgroundTaggingService;
+            if (service == null) return;
+
+            if (service.IsTaggingPaused)
+            {
+                service.ResumeTagging();
+                Logger.Log("Resumed tagging");
+            }
+            else
+            {
+                service.PauseTagging();
+                Logger.Log("Paused tagging");
+            }
+        }
+
+        private void StopTagging()
+        {
+            var service = ServiceLocator.BackgroundTaggingService;
+            if (service == null) return;
+
+            service.StopTagging();
+            _model.IsTaggingActive = false;
+            _model.TaggingStatus = "";
+            Logger.Log("Stopped tagging from UI");
+        }
+
+        private void StartCaptioning()
+        {
+            var service = ServiceLocator.BackgroundTaggingService;
+            if (service == null) return;
+
+            service.StartCaptioning();
+            _model.IsCaptioningActive = true;
+            Logger.Log("Started captioning from UI");
+        }
+
+        private void PauseCaptioning()
+        {
+            var service = ServiceLocator.BackgroundTaggingService;
+            if (service == null) return;
+
+            if (service.IsCaptioningPaused)
+            {
+                service.ResumeCaptioning();
+                Logger.Log("Resumed captioning");
+            }
+            else
+            {
+                service.PauseCaptioning();
+                Logger.Log("Paused captioning");
+            }
+        }
+
+        private void StopCaptioning()
+        {
+            var service = ServiceLocator.BackgroundTaggingService;
+            if (service == null) return;
+
+            service.StopCaptioning();
+            _model.IsCaptioningActive = false;
+            _model.CaptioningStatus = "";
+            Logger.Log("Stopped captioning from UI");
         }
     }
 }

@@ -108,13 +108,19 @@ public class Settings : SettingsContainer, IScanOptions
     private bool _createMetadataBackup;
     private bool _writeTagsToMetadata;
     private bool _writeCaptionsToMetadata;
-    // Parallel processing settings
+    
+    // Tagging settings
     private int _taggingConcurrentWorkers = 4;
-    private int _taggingGpuDeviceId = 0;
-    private bool _skipAlreadyTaggedImages = true;
-    private int _captioningModelTTLMinutes = 2;
+    private bool _skipAlreadyTaggedImages = false;
     private string _taggingGpuDevices = "0";
-    private string _taggingGpuVramRatios = "0";
+    private string _taggingGpuVramRatios = "32";
+    
+    // Captioning settings
+    private bool _skipAlreadyCaptionedImages = false;
+    private string _captioningGpuDevices = "0";
+    private string _captioningModelsPerDevice = "3";
+    private int _captioningModelTTLMinutes = 2;
+    
     private bool _writeGenerationParamsToMetadata;
     private CaptionHandlingMode _captionHandlingMode;
 
@@ -729,22 +735,10 @@ public class Settings : SettingsContainer, IScanOptions
         set => UpdateValue(ref _taggingConcurrentWorkers, Math.Max(1, Math.Min(16, value))); // 1-16 workers
     }
 
-    public int TaggingGpuDeviceId
-    {
-        get => _taggingGpuDeviceId;
-        set => UpdateValue(ref _taggingGpuDeviceId, Math.Max(0, value)); // 0+
-    }
-
     public bool SkipAlreadyTaggedImages
     {
         get => _skipAlreadyTaggedImages;
         set => UpdateValue(ref _skipAlreadyTaggedImages, value);
-    }
-
-    public int CaptioningModelTTLMinutes
-    {
-        get => _captioningModelTTLMinutes;
-        set => UpdateValue(ref _captioningModelTTLMinutes, Math.Max(-1, Math.Min(10, value))); // -1=keep loaded, 0=instant, 1-10 min
     }
 
     public string TaggingGpuDevices
@@ -756,8 +750,33 @@ public class Settings : SettingsContainer, IScanOptions
     public string TaggingGpuVramRatios
     {
         get => _taggingGpuVramRatios;
-        set => UpdateValue(ref _taggingGpuVramRatios, value ?? "0");
+        set => UpdateValue(ref _taggingGpuVramRatios, value ?? "32");
     }
+
+    public bool SkipAlreadyCaptionedImages
+    {
+        get => _skipAlreadyCaptionedImages;
+        set => UpdateValue(ref _skipAlreadyCaptionedImages, value);
+    }
+
+    public string CaptioningGpuDevices
+    {
+        get => _captioningGpuDevices;
+        set => UpdateValue(ref _captioningGpuDevices, value ?? "0");
+    }
+
+    public string CaptioningModelsPerDevice
+    {
+        get => _captioningModelsPerDevice;
+        set => UpdateValue(ref _captioningModelsPerDevice, value ?? "3");
+    }
+
+    public int CaptioningModelTTLMinutes
+    {
+        get => _captioningModelTTLMinutes;
+        set => UpdateValue(ref _captioningModelTTLMinutes, Math.Max(-1, Math.Min(60, value))); // -1=keep loaded, 0=instant, 1-60 min
+    }
+
     public string JoyCaptionDefaultPrompt
     {
         get => _joyCaptionDefaultPrompt;

@@ -99,6 +99,15 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
 
     public int ImageCount { get; }
 
+    public enum ProcessMode
+    {
+        None,
+        ProcessNow,  // High priority / front of queue
+        AddToQueue   // Background queue
+    }
+
+    public ProcessMode SelectedProcessMode { get; private set; } = ProcessMode.None;
+
     public bool IsProcessing
     {
         get => _isProcessing;
@@ -152,6 +161,20 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
             _currentImageName = value;
             OnPropertyChanged();
         }
+    }
+
+    private async void ProcessNow_Click(object sender, RoutedEventArgs e)
+    {
+        SelectedProcessMode = ProcessMode.ProcessNow;
+        DialogResult = true;
+        Close();
+    }
+
+    private async void AddToQueue_Click(object sender, RoutedEventArgs e)
+    {
+        SelectedProcessMode = ProcessMode.AddToQueue;
+        DialogResult = true;
+        Close();
     }
 
     private async void Start_Click(object sender, RoutedEventArgs e)

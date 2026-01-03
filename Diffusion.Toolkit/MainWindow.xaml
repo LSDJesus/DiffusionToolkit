@@ -547,11 +547,22 @@
                                Foreground="{DynamicResource ForegroundBrush}" VerticalAlignment="Center"
                                Visibility="{Binding IsCaptioningActive, Converter={StaticResource boolToVisCol}}"/>
                     
-                    <Button Content="⏸" ToolTip="Pause/Resume" Width="20" Height="18" FontSize="10"
-                            Command="{Binding ToggleBackgroundPauseCommand}" Margin="5,0"/>
-                    <Button Content="⏹" ToolTip="Stop All" Width="20" Height="18" FontSize="10" 
-                            Command="{Binding StopBackgroundProcessingCommand}" Foreground="Red" Margin="0,0,10,0"/>
-                    <Button Content="🔓" ToolTip="Release Models" Width="20" Height="18" FontSize="10"
+                    <!-- Background Processing Controls -->
+                    <Button Content="▶ Tag" ToolTip="Start Tagging Queue" Width="50" Height="18" FontSize="9"
+                            Command="{Binding StartTaggingCommand}" Margin="5,0,2,0" Foreground="Green"/>
+                    <Button Content="⏸" ToolTip="Pause Tagging" Width="18" Height="18" FontSize="10"
+                            Command="{Binding PauseTaggingCommand}" Margin="0,0,2,0"/>
+                    <Button Content="⏹" ToolTip="Stop Tagging" Width="18" Height="18" FontSize="10" 
+                            Command="{Binding StopTaggingCommand}" Foreground="Red" Margin="0,0,10,0"/>
+                    
+                    <Button Content="▶ Cap" ToolTip="Start Captioning Queue" Width="50" Height="18" FontSize="9"
+                            Command="{Binding StartCaptioningCommand}" Margin="0,0,2,0" Foreground="Blue"/>
+                    <Button Content="⏸" ToolTip="Pause Captioning" Width="18" Height="18" FontSize="10"
+                            Command="{Binding PauseCaptioningCommand}" Margin="0,0,2,0"/>
+                    <Button Content="⏹" ToolTip="Stop Captioning" Width="18" Height="18" FontSize="10" 
+                            Command="{Binding StopCaptioningCommand}" Foreground="Red" Margin="0,0,10,0"/>
+                    
+                    <Button Content="🔓" ToolTip="Release Models from VRAM" Width="20" Height="18" FontSize="10"
                             Command="{Binding ReleaseModelsCommand}" Foreground="Orange"/>
                 </StackPanel>
                 
