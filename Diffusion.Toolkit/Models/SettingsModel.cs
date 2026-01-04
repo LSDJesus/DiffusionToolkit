@@ -81,6 +81,18 @@ public class SettingsModel : BaseNotify
     private bool _writeCaptionsToMetadata;
     private bool _writeGenerationParamsToMetadata;
     
+    // Tagging processing settings
+    private int _taggingConcurrentWorkers = 4;
+    private bool _skipAlreadyTaggedImages;
+    private string _taggingGpuDevices = "0";
+    private string _taggingGpuVramRatios = "32";
+    
+    // Captioning processing settings
+    private bool _skipAlreadyCaptionedImages;
+    private string _captioningGpuDevices = "0";
+    private string _captioningModelsPerDevice = "3";
+    private int _captioningModelTTLMinutes = 2;
+    
     // Caption provider & handling
     private Diffusion.Toolkit.Configuration.CaptionHandlingMode _captionHandlingMode;
     private Diffusion.Toolkit.Configuration.CaptionProviderType _captionProvider;
@@ -582,6 +594,56 @@ public class SettingsModel : BaseNotify
     {
         get => _externalCaptionApiKey;
         set => SetField(ref _externalCaptionApiKey, value);
+    }
+
+    // Tagging processing settings
+    public int TaggingConcurrentWorkers
+    {
+        get => _taggingConcurrentWorkers;
+        set => SetField(ref _taggingConcurrentWorkers, Math.Max(1, Math.Min(30, value))); // 1-30 workers
+    }
+
+    public bool SkipAlreadyTaggedImages
+    {
+        get => _skipAlreadyTaggedImages;
+        set => SetField(ref _skipAlreadyTaggedImages, value);
+    }
+
+    public string TaggingGpuDevices
+    {
+        get => _taggingGpuDevices;
+        set => SetField(ref _taggingGpuDevices, value);
+    }
+
+    public string TaggingGpuVramRatios
+    {
+        get => _taggingGpuVramRatios;
+        set => SetField(ref _taggingGpuVramRatios, value);
+    }
+
+    // Captioning processing settings
+    public bool SkipAlreadyCaptionedImages
+    {
+        get => _skipAlreadyCaptionedImages;
+        set => SetField(ref _skipAlreadyCaptionedImages, value);
+    }
+
+    public string CaptioningGpuDevices
+    {
+        get => _captioningGpuDevices;
+        set => SetField(ref _captioningGpuDevices, value);
+    }
+
+    public string CaptioningModelsPerDevice
+    {
+        get => _captioningModelsPerDevice;
+        set => SetField(ref _captioningModelsPerDevice, value);
+    }
+
+    public int CaptioningModelTTLMinutes
+    {
+        get => _captioningModelTTLMinutes;
+        set => SetField(ref _captioningModelTTLMinutes, value);
     }
 
     public ObservableCollection<string> AvailableModels

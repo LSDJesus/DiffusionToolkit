@@ -59,9 +59,11 @@ public class MainModel : BaseNotify
     private ICommand _startTaggingCommand;
     private ICommand _pauseTaggingCommand;
     private ICommand _stopTaggingCommand;
+    private ICommand _clearTaggingQueueCommand;
     private ICommand _startCaptioningCommand;
     private ICommand _pauseCaptioningCommand;
     private ICommand _stopCaptioningCommand;
+    private ICommand _clearCaptioningQueueCommand;
     private int _thumbnailSize;
     private ICommand _escape;
     private ICommand _downloadCivitai;
@@ -352,6 +354,12 @@ public class MainModel : BaseNotify
         set => SetField(ref _stopTaggingCommand, value);
     }
 
+    public ICommand ClearTaggingQueueCommand
+    {
+        get => _clearTaggingQueueCommand;
+        set => SetField(ref _clearTaggingQueueCommand, value);
+    }
+
     public ICommand StartCaptioningCommand
     {
         get => _startCaptioningCommand;
@@ -368,6 +376,12 @@ public class MainModel : BaseNotify
     {
         get => _stopCaptioningCommand;
         set => SetField(ref _stopCaptioningCommand, value);
+    }
+
+    public ICommand ClearCaptioningQueueCommand
+    {
+        get => _clearCaptioningQueueCommand;
+        set => SetField(ref _clearCaptioningQueueCommand, value);
     }
 
     public ICommand AboutCommand

@@ -417,5 +417,116 @@ namespace Diffusion.Toolkit
                 }
             }
         }
+
+        /// <summary>
+        /// Write tags/captions from database to image metadata files
+        /// </summary>
+        public async Task WriteImageMetadataToFilesAsync(List<int> imageIds)
+        {
+            if (imageIds == null || !imageIds.Any())
+            {
+                await _messagePopupManager.Show("No images selected.", "Write Metadata", PopupButtons.OK);
+                return;
+            }
+
+            var message = $"Write tags and captions from database to {imageIds.Count} image file(s)?\n\n" +
+                          $"Create backup: {(ServiceLocator.Settings?.CreateMetadataBackup == true ? "Yes" : "No")}\n" +
+                          $"Write tags: {(ServiceLocator.Settings?.WriteTagsToMetadata == true ? "Yes" : "No")}\n" +
+                          $"Write captions: {(ServiceLocator.Settings?.WriteCaptionsToMetadata == true ? "Yes" : "No")}\n" +
+                          $"Write generation params: {(ServiceLocator.Settings?.WriteGenerationParamsToMetadata == true ? "Yes" : "No")}";
+
+            var result = await _messagePopupManager.ShowCustom(message, "Write Metadata to Images", PopupButtons.YesNo, 600, 300);
+
+            if (result == PopupResult.Yes)
+            {
+                if (await ServiceLocator.ProgressService.TryStartTask())
+                {
+                    try
+                    {
+                        var progress = new Progress<(int Current, int Total)>(p =>
+                        {
+                            Dispatcher.Invoke(() =>
+                            {
+                                _model.TotalProgress = p.Total > 0 ? (int)((p.Current * 100.0) / p.Total) : 0;
+                                _model.CurrentProgress = p.Current;
+                                _model.Status = $"Writing metadata... {p.Current}/{p.Total}";
+                            });
+                        });
+
+                        var totalProcessed = 0;
+                        var totalSuccessful = 0;
+
+                        foreach (var imageId in imageIds)
+                        {
+                            if (ServiceLocator.ProgressService.CancellationToken.IsCancellationRequested) break;
+
+                            totalProcessed++;
+
+                            try
+                            {
+                                var image = _dataStore.GetImage(imageId);
+                                if (image == null || !File.Exists(image.Path))
+                                {
+                                    Logger.Log($"Image {imageId} not found or file doesn't exist");
+                                    continue;
+                                }
+
+                                // Get tags and caption from database
+                                var dbTags = await _dataStore.GetImageTagsAsync(imageId);
+                                var latestCaption = await _dataStore.GetLatestCaptionAsync(imageId);
+
+                                var request = new Scanner.MetadataWriteRequest
+                                {
+                                    Prompt = image.Prompt,
+                                    NegativePrompt = image.NegativePrompt,
+                                    Steps = image.Steps,
+                                    Sampler = image.Sampler,
+                                    CFGScale = image.CfgScale,
+                                    Seed = image.Seed,
+                                    Width = image.Width,
+                                    Height = image.Height,
+                                    Model = image.Model,
+                                    ModelHash = image.ModelHash,
+                                    Tags = (ServiceLocator.Settings?.WriteTagsToMetadata == true && dbTags != null) 
+                                        ? dbTags.Select(t => new Scanner.TagWithConfidence { Tag = t.Tag, Confidence = t.Confidence }).ToList() 
+                                        : null,
+                                    Caption = (ServiceLocator.Settings?.WriteCaptionsToMetadata == true) ? latestCaption?.Caption : null,
+                                    AestheticScore = image.AestheticScore > 0 ? (decimal?)image.AestheticScore : null,
+                                    CreateBackup = ServiceLocator.Settings?.CreateMetadataBackup ?? true
+                                };
+
+                                Scanner.MetadataWriter.WriteMetadata(image.Path, request);
+                                totalSuccessful++;
+                            }
+                            catch (Exception ex)
+                            {
+                                Logger.Log($"Error writing metadata to image {imageId}: {ex.Message}");
+                            }
+
+                            ((IProgress<(int, int)>)progress).Report((totalProcessed, imageIds.Count));
+                        }
+
+                        var resultMessage = $"Metadata written to {totalSuccessful}/{imageIds.Count} images successfully.";
+                        await _messagePopupManager.Show(resultMessage, "Write Complete", PopupButtons.OK);
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Log($"Error writing metadata: {ex.Message}");
+                        await _messagePopupManager.Show($"Error: {ex.Message}", "Write Failed", PopupButtons.OK);
+                    }
+                    finally
+                    {
+                        Dispatcher.Invoke(() =>
+                        {
+                            _model.TotalProgress = 100;
+                            _model.CurrentProgress = 0;
+                            _model.Status = "Write Complete";
+                        });
+
+                        ServiceLocator.ProgressService.CompleteTask();
+                    }
+                }
+            }
+        }
     }
 }

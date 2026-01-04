@@ -136,10 +136,12 @@ namespace Diffusion.Toolkit
                 _model.StartTaggingCommand = new RelayCommand<object>((o) => StartTagging());
                 _model.PauseTaggingCommand = new RelayCommand<object>((o) => PauseTagging());
                 _model.StopTaggingCommand = new RelayCommand<object>((o) => StopTagging());
+                _model.ClearTaggingQueueCommand = new RelayCommand<object>((o) => ClearTaggingQueue());
                 
                 _model.StartCaptioningCommand = new RelayCommand<object>((o) => StartCaptioning());
                 _model.PauseCaptioningCommand = new RelayCommand<object>((o) => PauseCaptioning());
                 _model.StopCaptioningCommand = new RelayCommand<object>((o) => StopCaptioning());
+                _model.ClearCaptioningQueueCommand = new RelayCommand<object>((o) => ClearCaptioningQueue());
                 
                 // Subscribe to background tagging service events
                 if (ServiceLocator.BackgroundTaggingService != null)
@@ -1521,6 +1523,24 @@ namespace Diffusion.Toolkit
             Logger.Log("Stopped tagging from UI");
         }
 
+        private async void ClearTaggingQueue()
+        {
+            var service = ServiceLocator.BackgroundTaggingService;
+            if (service == null) return;
+
+            var result = MessageBox.Show(
+                "Clear tagging queue? This will reset needs_tagging flags without removing existing tags.",
+                "Clear Tagging Queue",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+
+            if (result == MessageBoxResult.Yes)
+            {
+                await service.ClearTaggingQueue();
+                Logger.Log("Cleared tagging queue from UI");
+            }
+        }
+
         private void StartCaptioning()
         {
             var service = ServiceLocator.BackgroundTaggingService;
@@ -1558,5 +1578,22 @@ namespace Diffusion.Toolkit
             _model.CaptioningStatus = "";
             Logger.Log("Stopped captioning from UI");
         }
-    }
+
+        private async void ClearCaptioningQueue()
+        {
+            var service = ServiceLocator.BackgroundTaggingService;
+            if (service == null) return;
+
+            var result = MessageBox.Show(
+                "Clear captioning queue? This will reset needs_captioning flags without removing existing captions.",
+                "Clear Captioning Queue",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+
+            if (result == MessageBoxResult.Yes)
+            {
+                await service.ClearCaptioningQueue();
+                Logger.Log("Cleared captioning queue from UI");
+            }
+        }    }
 }

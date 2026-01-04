@@ -11,6 +11,7 @@ public class WDTagService : IDisposable
 {
     private readonly string _modelPath;
     private readonly string _tagsPath;
+    private readonly int _deviceId;
     private readonly WDImagePreprocessor _preprocessor;
     private InferenceSession? _session;
     private string[] _tags = Array.Empty<string>();
@@ -18,10 +19,11 @@ public class WDTagService : IDisposable
 
     public float Threshold { get; set; } = 0.5f;
 
-    public WDTagService(string modelPath, string tagsPath, float threshold = 0.5f)
+    public WDTagService(string modelPath, string tagsPath, float threshold = 0.5f, int deviceId = 0)
     {
         _modelPath = modelPath;
         _tagsPath = tagsPath;
+        _deviceId = deviceId;
         _preprocessor = new WDImagePreprocessor();
         Threshold = threshold;
     }
@@ -43,7 +45,7 @@ public class WDTagService : IDisposable
         // Try GPU first, fallback to CPU if it fails
         try
         {
-            sessionOptions.AppendExecutionProvider_CUDA(0);
+            sessionOptions.AppendExecutionProvider_CUDA(_deviceId);
             _session = new InferenceSession(_modelPath, sessionOptions);
         }
         catch

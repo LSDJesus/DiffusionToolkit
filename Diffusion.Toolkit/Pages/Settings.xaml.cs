@@ -143,11 +143,22 @@ namespace Diffusion.Toolkit.Pages
             
             // Tagging/Captioning output settings
             _model.StoreTagConfidence = _settings.StoreTagConfidence;
-            _model.AutoWriteMetadata = _settings.AutoWriteMetadata;
             _model.CreateMetadataBackup = _settings.CreateMetadataBackup;
             _model.WriteTagsToMetadata = _settings.WriteTagsToMetadata;
             _model.WriteCaptionsToMetadata = _settings.WriteCaptionsToMetadata;
             _model.WriteGenerationParamsToMetadata = _settings.WriteGenerationParamsToMetadata;
+            
+            // Tagging processing settings
+            _model.TaggingConcurrentWorkers = _settings.TaggingConcurrentWorkers;
+            _model.SkipAlreadyTaggedImages = _settings.SkipAlreadyTaggedImages;
+            _model.TaggingGpuDevices = _settings.TaggingGpuDevices;
+            _model.TaggingGpuVramRatios = _settings.TaggingGpuVramRatios;
+            
+            // Captioning processing settings
+            _model.SkipAlreadyCaptionedImages = _settings.SkipAlreadyCaptionedImages;
+            _model.CaptioningGpuDevices = _settings.CaptioningGpuDevices;
+            _model.CaptioningModelsPerDevice = _settings.CaptioningModelsPerDevice;
+            _model.CaptioningModelTTLMinutes = _settings.CaptioningModelTTLMinutes;
             
             // Initialize schema selector
             InitializeSchemaSelector();
@@ -568,11 +579,22 @@ namespace Diffusion.Toolkit.Pages
                 
                 // Tagging/Captioning output settings
                 _settings.StoreTagConfidence = _model.StoreTagConfidence;
-                _settings.AutoWriteMetadata = _model.AutoWriteMetadata;
                 _settings.CreateMetadataBackup = _model.CreateMetadataBackup;
                 _settings.WriteTagsToMetadata = _model.WriteTagsToMetadata;
                 _settings.WriteCaptionsToMetadata = _model.WriteCaptionsToMetadata;
                 _settings.WriteGenerationParamsToMetadata = _model.WriteGenerationParamsToMetadata;
+                
+                // Tagging processing settings
+                _settings.TaggingConcurrentWorkers = _model.TaggingConcurrentWorkers;
+                _settings.SkipAlreadyTaggedImages = _model.SkipAlreadyTaggedImages;
+                _settings.TaggingGpuDevices = _model.TaggingGpuDevices;
+                _settings.TaggingGpuVramRatios = _model.TaggingGpuVramRatios;
+                
+                // Captioning processing settings
+                _settings.SkipAlreadyCaptionedImages = _model.SkipAlreadyCaptionedImages;
+                _settings.CaptioningGpuDevices = _model.CaptioningGpuDevices;
+                _settings.CaptioningModelsPerDevice = _model.CaptioningModelsPerDevice;
+                _settings.CaptioningModelTTLMinutes = _model.CaptioningModelTTLMinutes;
 
                 var connection = _dataStore.GetConnection();
                 _model.Host = connection.Host ?? "";

@@ -115,7 +115,7 @@ class Program
         // Initialize JoyCaption
         Console.WriteLine("\n--- Initializing JoyCaption ---");
         var joyCaptionService = new JoyCaptionService(
-            @"d:\AI\Github_Desktop\DiffusionToolkit\models\Joycaption\llama-joycaption-beta-one-hf-llava.i1-Q6_K.gguf",
+            @"d:\AI\Github_Desktop\DiffusionToolkit\models\Joycaption\llama-joycaption-beta-one-hf-llava.i1-Q4_K_S.gguf",
             @"d:\AI\Github_Desktop\DiffusionToolkit\models\Joycaption\llama-joycaption-beta-one-llava-mmproj-model-f16.gguf");
 
         sw.Restart();
@@ -244,7 +244,7 @@ class Program
         Console.WriteLine("\n--- Initializing JoyCaption ---");
         
         var joyCaptionService = new JoyCaptionService(
-            @"d:\AI\Github_Desktop\DiffusionToolkit\models\Joycaption\llama-joycaption-beta-one-hf-llava.i1-Q6_K.gguf",
+            @"d:\AI\Github_Desktop\DiffusionToolkit\models\Joycaption\llama-joycaption-beta-one-hf-llava.i1-Q4_K_S.gguf",
             @"d:\AI\Github_Desktop\DiffusionToolkit\models\Joycaption\llama-joycaption-beta-one-llava-mmproj-model-f16.gguf");
 
         try
@@ -317,7 +317,7 @@ class Program
         Console.WriteLine($"JoyTag initialized in {sw.ElapsedMilliseconds}ms");
 
         var joyCaptionService = new JoyCaptionService(
-            @"d:\AI\Github_Desktop\DiffusionToolkit\models\Joycaption\llama-joycaption-beta-one-hf-llava.i1-Q6_K.gguf",
+            @"d:\AI\Github_Desktop\DiffusionToolkit\models\Joycaption\llama-joycaption-beta-one-hf-llava.i1-Q4_K_S.gguf",
             @"d:\AI\Github_Desktop\DiffusionToolkit\models\Joycaption\llama-joycaption-beta-one-llava-mmproj-model-f16.gguf");
         
         try
@@ -619,7 +619,7 @@ class Program
 
         Console.WriteLine("--- Initializing JoyCaption ---");
         var joyCaptionService = new JoyCaptionService(
-            @"d:\AI\Github_Desktop\DiffusionToolkit\models\Joycaption\llama-joycaption-beta-one-hf-llava.i1-Q6_K.gguf",
+            @"d:\AI\Github_Desktop\DiffusionToolkit\models\Joycaption\llama-joycaption-beta-one-hf-llava.i1-Q4_K_S.gguf",
             @"d:\AI\Github_Desktop\DiffusionToolkit\models\Joycaption\llama-joycaption-beta-one-llava-mmproj-model-f16.gguf");
 
         var sw = System.Diagnostics.Stopwatch.StartNew();

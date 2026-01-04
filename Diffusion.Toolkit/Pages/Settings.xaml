@@ -461,7 +461,7 @@
                                 </Grid.RowDefinitions>
                                 
                                 <Label Grid.Row="0" Grid.Column="0" Content="Concurrent Workers:" 
-                                       ToolTip="Number of images processed in parallel (1-16). Higher values use more VRAM but are faster."
+                                       ToolTip="Number of images processed in parallel (1-20). Higher values use more VRAM but are faster."
                                        Foreground="{DynamicResource ForegroundBrush}"/>
                                 <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding TaggingConcurrentWorkers, UpdateSourceTrigger=PropertyChanged}" 
                                          Width="60" Height="26" VerticalContentAlignment="Center" HorizontalAlignment="Left"/>

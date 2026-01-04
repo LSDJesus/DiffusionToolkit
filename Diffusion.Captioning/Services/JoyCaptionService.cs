@@ -17,6 +17,7 @@ public class JoyCaptionService : IDisposable, ICaptionService
 {
     private readonly string _modelPath;
     private readonly string _mmProjPath;
+    private readonly int _deviceId;
     private LLamaWeights? _model;
     private LLavaWeights? _clipModel;
     private LLamaContext? _context;
@@ -39,10 +40,11 @@ public class JoyCaptionService : IDisposable, ICaptionService
     public const string DEFAULT_SHORT_PROMPT = PROMPT_SHORT;
     public const string DEFAULT_TECHNICAL_PROMPT = PROMPT_TECHNICAL;
 
-    public JoyCaptionService(string modelPath, string mmProjPath)
+    public JoyCaptionService(string modelPath, string mmProjPath, int deviceId = 0)
     {
         _modelPath = modelPath;
         _mmProjPath = mmProjPath;
+        _deviceId = deviceId;
     }
 
     /// <summary>
@@ -60,6 +62,7 @@ public class JoyCaptionService : IDisposable, ICaptionService
             {
                 ContextSize = (uint)contextSize,
                 GpuLayerCount = gpuLayers,
+                MainGpu = _deviceId,  // Assign to specific GPU device
                 Encoding = System.Text.Encoding.UTF8,
                 UseMemorymap = true,
                 UseMemoryLock = false,

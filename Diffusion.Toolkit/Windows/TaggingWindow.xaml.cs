@@ -36,7 +36,9 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
         // Check service availability
         JoyTagAvailable = ServiceLocator.JoyTagService != null;
         WDTagAvailable = ServiceLocator.WDTagService != null;
-        JoyCaptionAvailable = ServiceLocator.CaptionService != null;
+        // Caption service is initialized on-demand when captioning starts, so always allow it if configured
+        JoyCaptionAvailable = ServiceLocator.Settings?.CaptionProvider == Configuration.CaptionProviderType.LocalJoyCaption 
+            && !string.IsNullOrEmpty(ServiceLocator.Settings?.JoyCaptionModelPath);
 
         JoyTagStatus = JoyTagAvailable 
             ? $"Ready (Threshold: {ServiceLocator.Settings?.JoyTagThreshold ?? 0.5f:F2})" 
@@ -45,8 +47,8 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
             ? $"Ready (Threshold: {ServiceLocator.Settings?.WDTagThreshold ?? 0.5f:F2})" 
             : "Model not found";
         JoyCaptionStatus = JoyCaptionAvailable 
-            ? "Ready" 
-            : "Service not available";
+            ? "Ready (will initialize on start)" 
+            : "Not configured";
 
         ImageCount = imageIds.Count;
         
@@ -197,7 +199,7 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
             var runWDTag = WDTagCheckBox.IsChecked == true && ServiceLocator.WDTagService != null;
             var runJoyCaption = JoyCaptionCheckBox.IsChecked == true && ServiceLocator.CaptionService != null;
             var storeConfidence = ServiceLocator.Settings?.StoreTagConfidence ?? false;
-            var maxConcurrency = ServiceLocator.Settings?.TaggingConcurrentWorkers ?? 4;
+            var maxConcurrency = ServiceLocator.Settings?.TaggingConcurrentWorkers ?? 8;
             var skipAlreadyTagged = ServiceLocator.Settings?.SkipAlreadyTaggedImages ?? true;
 
             Logger.Log($"TaggingWindow: runJoyTag={runJoyTag}, runWDTag={runWDTag}, runJoyCaption={runJoyCaption}");
@@ -259,10 +261,9 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
                         Logger.Log($"Tagging combined (JoyTag+WDTag): {allTags.Count} tags for image {imageId}");
                         await dataStore.StoreImageTagsAsync(imageId, allTags, "joytag+wdv3large");
                         
-                        // Write tags to image metadata if enabled
-                        Logger.Log($"AutoWriteMetadata={ServiceLocator.Settings?.AutoWriteMetadata}, WriteTagsToMetadata={ServiceLocator.Settings?.WriteTagsToMetadata}");
-                        if (ServiceLocator.Settings?.AutoWriteMetadata == true && 
-                            ServiceLocator.Settings?.WriteTagsToMetadata == true)
+                        // Auto-write metadata removed - use context menu "Write Metadata to Files" instead
+                        // Logger.Log($"WriteTagsToMetadata={ServiceLocator.Settings?.WriteTagsToMetadata}");
+                        if (false) // Auto-write disabled
                         {
                             // Get deduplicated tags from database for metadata write
                             var dbTags = await dataStore.GetImageTagsAsync(imageId, "joytag+wdv3large");
@@ -317,9 +318,8 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
                             await dataStore.StoreImageTagsAsync(imageId, tagTuples, "joytag");
                             
                             // Write tags to image metadata if enabled
-                            Logger.Log($"AutoWriteMetadata={ServiceLocator.Settings?.AutoWriteMetadata}, WriteTagsToMetadata={ServiceLocator.Settings?.WriteTagsToMetadata}");
-                            if (ServiceLocator.Settings?.AutoWriteMetadata == true && 
-                                ServiceLocator.Settings?.WriteTagsToMetadata == true)
+                            // Auto-write disabled - use context menu instead
+                            if (false)
                             {
                                 var latestCaption = await dataStore.GetLatestCaptionAsync(imageId);
                                 var request = new Scanner.MetadataWriteRequest
@@ -356,9 +356,8 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
                             var tagTuples = tags.Select(t => (t.Tag, t.Confidence)).ToList();
                             await dataStore.StoreImageTagsAsync(imageId, tagTuples, "wdv3large");
                             
-                            // Write tags to image metadata if enabled
-                            if (ServiceLocator.Settings?.AutoWriteMetadata == true && 
-                                ServiceLocator.Settings?.WriteTagsToMetadata == true)
+                            // Auto-write disabled - use context menu instead
+                            if (false)
                             {
                                 var latestCaption = await dataStore.GetLatestCaptionAsync(imageId);
                                 var request = new Scanner.MetadataWriteRequest
@@ -582,9 +581,8 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
         Logger.Log($"Caption stored successfully");
         
         // Write caption to image metadata if enabled
-        Logger.Log($"AutoWriteMetadata={ServiceLocator.Settings?.AutoWriteMetadata}, WriteCaptionsToMetadata={ServiceLocator.Settings?.WriteCaptionsToMetadata}");
-        if (ServiceLocator.Settings?.AutoWriteMetadata == true && 
-            ServiceLocator.Settings?.WriteCaptionsToMetadata == true)
+        // Auto-write disabled - use context menu instead
+        if (false)
         {
             Logger.Log($"Writing caption to metadata file: {image.Path}");
             // Preserve ALL existing metadata

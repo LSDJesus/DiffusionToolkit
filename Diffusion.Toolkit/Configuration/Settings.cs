@@ -104,7 +104,6 @@ public class Settings : SettingsContainer, IScanOptions
     private bool _tagDialogCaptionEnabled;
     private string _joyCaptionDefaultPrompt;
     private string _databaseSchema;
-    private bool _autoWriteMetadata;
     private bool _createMetadataBackup;
     private bool _writeTagsToMetadata;
     private bool _writeCaptionsToMetadata;
@@ -178,7 +177,6 @@ public class Settings : SettingsContainer, IScanOptions
         EnableJoyTag = true;
         
         // Metadata writing defaults
-        AutoWriteMetadata = false; // Disabled by default for safety
         CreateMetadataBackup = true;
         WriteTagsToMetadata = true;
         WriteCaptionsToMetadata = true;
@@ -193,7 +191,7 @@ public class Settings : SettingsContainer, IScanOptions
         WDTagTagsPath = @"models\onnx\wdv3_large_tag\wdV3LargeTags.csv";
         WDV3LargeModelPath = @"models\onnx\wdv3_large_tag\wdV3LargeModel.onnx";
         WDV3LargeTagsPath = @"models\onnx\wdv3_large_tag\wdV3LargeTags.csv";
-        JoyCaptionModelPath = @"models\Joycaption\llama-joycaption-beta-one-hf-llava.i1-Q6_K.gguf";
+        JoyCaptionModelPath = @"models\Joycaption\llama-joycaption-beta-one-hf-llava.i1-Q4_K_S.gguf";
         JoyCaptionMMProjPath = @"models\Joycaption\llava.projector";
         JoyCaptionDefaultPrompt = "detailed";
         // Caption provider defaults
@@ -732,7 +730,7 @@ public class Settings : SettingsContainer, IScanOptions
     public int TaggingConcurrentWorkers
     {
         get => _taggingConcurrentWorkers;
-        set => UpdateValue(ref _taggingConcurrentWorkers, Math.Max(1, Math.Min(16, value))); // 1-16 workers
+        set => UpdateValue(ref _taggingConcurrentWorkers, Math.Max(1, Math.Min(30, value))); // 1-30 workers
     }
 
     public bool SkipAlreadyTaggedImages
@@ -799,15 +797,6 @@ public class Settings : SettingsContainer, IScanOptions
     {
         get => _databaseConnectionString;
         set => UpdateValue(ref _databaseConnectionString, value);
-    }
-
-    /// <summary>
-    /// Automatically write tags/captions to image metadata after operations
-    /// </summary>
-    public bool AutoWriteMetadata
-    {
-        get => _autoWriteMetadata;
-        set => UpdateValue(ref _autoWriteMetadata, value);
     }
 
     /// <summary>
