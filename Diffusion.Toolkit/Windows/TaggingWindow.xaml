@@ -63,6 +63,17 @@
                     <ComboBoxItem Content="Booru-style Tags" Tag="booru"/>
                 </ComboBox>
             </StackPanel>
+            
+            <!-- Separator -->
+            <Separator Margin="0,10,0,10" Background="{DynamicResource BorderBrush}"/>
+            
+            <!-- Embedding Section -->
+            <CheckBox x:Name="EmbeddingCheckBox" Content="Generate Embeddings (Semantic Search + Visual Similarity)" 
+                      IsChecked="{Binding EmbeddingEnabled}" Margin="0,5" FontSize="14"
+                      IsEnabled="{Binding EmbeddingAvailable}"
+                      Checked="EmbeddingCheckBox_CheckedChanged" Unchecked="EmbeddingCheckBox_CheckedChanged"/>
+            <TextBlock Text="{Binding EmbeddingStatus}" Margin="25,0,0,5" 
+                       Foreground="{DynamicResource TextBrush}" Opacity="0.7" FontSize="11"/>
         </StackPanel>
 
         <!-- Progress Section -->

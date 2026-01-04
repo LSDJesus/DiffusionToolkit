@@ -27,29 +27,43 @@ public class BackgroundTaggingService : IDisposable
     private CancellationTokenSource? _captioningCts;
     private List<Task>? _captioningOrchestrators;  // Multiple orchestrators for multi-GPU
     
+    // Embedding orchestrator
+    private Channel<int>? _embeddingQueue;
+    private CancellationTokenSource? _embeddingCts;
+    private List<Task>? _embeddingOrchestrators;
+    
     private int _taggingProgress;
     private int _taggingTotal;
     private int _captioningProgress;
     private int _captioningTotal;
+    private int _embeddingProgress;
+    private int _embeddingTotal;
     private int _taggingSkipped;
     private int _captioningSkipped;
+    private int _embeddingSkipped;
     private bool _isTaggingRunning;
     private bool _isCaptioningRunning;
+    private bool _isEmbeddingRunning;
     private bool _isTaggingPaused;
     private bool _isCaptioningPaused;
+    private bool _isEmbeddingPaused;
     private DateTime _lastCaptioningUseTime;
     private Timer? _captioningTTLTimer;
     
     // ETA tracking
     private DateTime _taggingStartTime;
     private DateTime _captioningStartTime;
+    private DateTime _embeddingStartTime;
     private int _taggingQueueRemaining;
     private int _captioningQueueRemaining;
+    private int _embeddingQueueRemaining;
 
     public event EventHandler<ProgressEventArgs>? TaggingProgressChanged;
     public event EventHandler<ProgressEventArgs>? CaptioningProgressChanged;
+    public event EventHandler<ProgressEventArgs>? EmbeddingProgressChanged;
     public event EventHandler? TaggingCompleted;
     public event EventHandler? CaptioningCompleted;
+    public event EventHandler? EmbeddingCompleted;
     public event EventHandler<string>? StatusChanged;
 
     private void RaiseTaggingProgress(int current, int total)
@@ -84,6 +98,22 @@ public class BackgroundTaggingService : IDisposable
         });
     }
 
+    private void RaiseEmbeddingProgress(int current, int total)
+    {
+        Application.Current?.Dispatcher?.InvokeAsync(() =>
+        {
+            EmbeddingProgressChanged?.Invoke(this, new ProgressEventArgs(current, total));
+        });
+    }
+
+    private void RaiseEmbeddingCompleted()
+    {
+        Application.Current?.Dispatcher?.InvokeAsync(() =>
+        {
+            EmbeddingCompleted?.Invoke(this, EventArgs.Empty);
+        });
+    }
+
     private void RaiseStatusChanged(string status)
     {
         Application.Current?.Dispatcher?.InvokeAsync(() =>
@@ -94,15 +124,20 @@ public class BackgroundTaggingService : IDisposable
 
     public bool IsTaggingRunning => _isTaggingRunning;
     public bool IsCaptioningRunning => _isCaptioningRunning;
+    public bool IsEmbeddingRunning => _isEmbeddingRunning;
     public bool IsTaggingPaused => _isTaggingPaused;
     public bool IsCaptioningPaused => _isCaptioningPaused;
+    public bool IsEmbeddingPaused => _isEmbeddingPaused;
     
     public int TaggingProgress => _taggingProgress;
     public int TaggingTotal => _taggingTotal;
     public int CaptioningProgress => _captioningProgress;
     public int CaptioningTotal => _captioningTotal;
+    public int EmbeddingProgress => _embeddingProgress;
+    public int EmbeddingTotal => _embeddingTotal;
     public int TaggingSkipped => _taggingSkipped;
     public int CaptioningSkipped => _captioningSkipped;
+    public int EmbeddingSkipped => _embeddingSkipped;
 
     public BackgroundTaggingService(PostgreSQLDataStore dataStore)
     {
@@ -452,6 +487,146 @@ public class BackgroundTaggingService : IDisposable
         }
     }
 
+    /// <summary>
+    /// Start background embedding with multi-GPU worker pool
+    /// </summary>
+    public void StartEmbedding()
+    {
+        if (_isEmbeddingRunning)
+        {
+            Logger.Log("Embedding already running");
+            return;
+        }
+
+        try
+        {
+            _embeddingCts = new CancellationTokenSource();
+            _isEmbeddingRunning = true;
+            _isEmbeddingPaused = false;
+            _embeddingProgress = 0;
+            _embeddingSkipped = 0;
+            _embeddingStartTime = DateTime.Now;
+            _embeddingQueueRemaining = 0;
+            
+            var gpuDevices = ServiceLocator.Settings?.EmbeddingGpuDevices ?? "0,1";
+            var vramRatios = ServiceLocator.Settings?.EmbeddingGpuVramRatios ?? "32,12";
+            var totalWorkers = ServiceLocator.Settings?.EmbeddingConcurrentWorkers ?? 9;
+            
+            // Parse GPU device IDs
+            var deviceIds = gpuDevices.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                                       .Select(d => int.TryParse(d, out var id) ? id : 0)
+                                       .Distinct()
+                                       .ToList();
+            
+            // Parse VRAM ratios (in GB)
+            var vramList = vramRatios.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                                      .Select(v => int.TryParse(v, out var gb) ? gb : 32)
+                                      .ToList();
+            
+            // Pad VRAM list if needed
+            while (vramList.Count < deviceIds.Count)
+            {
+                vramList.Add(vramList.LastOrDefault());
+            }
+            
+            // Calculate worker distribution based on VRAM proportions
+            var totalVram = vramList.Take(deviceIds.Count).Sum();
+            var workerDistribution = new List<int>();
+            int workersAssigned = 0;
+            
+            for (int i = 0; i < deviceIds.Count; i++)
+            {
+                if (i == deviceIds.Count - 1)
+                {
+                    workerDistribution.Add(totalWorkers - workersAssigned);
+                }
+                else
+                {
+                    var proportion = (double)vramList[i] / totalVram;
+                    var workers = (int)Math.Max(1, Math.Round(totalWorkers * proportion));
+                    workerDistribution.Add(workers);
+                    workersAssigned += workers;
+                }
+            }
+            
+            // Create unbounded channel for shared work queue
+            _embeddingQueue = Channel.CreateUnbounded<int>(new UnboundedChannelOptions
+            {
+                SingleReader = false,
+                SingleWriter = true
+            });
+            
+            // Queue population task
+            Task.Run(async () =>
+            {
+                try
+                {
+                    _embeddingTotal = await _dataStore.CountImagesNeedingEmbedding();
+                    _embeddingQueueRemaining = _embeddingTotal;
+                    Logger.Log($"Found {_embeddingTotal} images to embed");
+                    
+                    const int batchSize = 1000;
+                    while (!_embeddingCts.Token.IsCancellationRequested)
+                    {
+                        var batch = await _dataStore.GetImagesNeedingEmbedding(batchSize);
+                        if (batch.Count == 0) break;
+                        
+                        foreach (var imageId in batch)
+                        {
+                            await _embeddingQueue.Writer.WriteAsync(imageId, _embeddingCts.Token);
+                        }
+                        
+                        if (batch.Count < batchSize) break;
+                    }
+                    
+                    _embeddingQueue.Writer.Complete();
+                    Logger.Log("Embedding queue populated");
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log($"Embedding queue population error: {ex.Message}");
+                }
+            });
+            
+            // Create workers
+            _embeddingOrchestrators = new List<Task>();
+            int workerIndex = 0;
+            
+            for (int i = 0; i < deviceIds.Count; i++)
+            {
+                int gpuId = deviceIds[i];
+                int workersOnGpu = workerDistribution[i];
+                
+                Logger.Log($"GPU {gpuId}: Creating {workersOnGpu} embedding workers");
+                
+                for (int w = 0; w < workersOnGpu; w++)
+                {
+                    int currentWorkerIndex = workerIndex++;
+                    var workerTask = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await RunEmbeddingWorker(gpuId, currentWorkerIndex, _embeddingCts.Token);
+                        }
+                        catch (Exception ex)
+                        {
+                            Logger.Log($"GPU {gpuId} embedding worker {currentWorkerIndex} error: {ex.Message}\n{ex.StackTrace}");
+                        }
+                    });
+                    
+                    _embeddingOrchestrators.Add(workerTask);
+                }
+            }
+            
+            Logger.Log($"Started {totalWorkers} embedding workers: {string.Join(", ", deviceIds.Zip(workerDistribution, (gpu, workers) => $"GPU{gpu}={workers}"))}");
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"Failed to start embedding: {ex.Message}\n{ex.StackTrace}");
+            _isEmbeddingRunning = false;
+        }
+    }
+
     public void PauseTagging()
     {
         _isTaggingPaused = true;
@@ -474,6 +649,18 @@ public class BackgroundTaggingService : IDisposable
     {
         _isCaptioningPaused = false;
         Logger.Log("Resumed captioning");
+    }
+
+    public void PauseEmbedding()
+    {
+        _isEmbeddingPaused = true;
+        Logger.Log("Paused embedding");
+    }
+
+    public void ResumeEmbedding()
+    {
+        _isEmbeddingPaused = false;
+        Logger.Log("Resumed embedding");
     }
 
     public void StopTagging()
@@ -905,6 +1092,41 @@ public class BackgroundTaggingService : IDisposable
         Logger.Log("Captioning stopped");
     }
 
+    public void StopEmbedding()
+    {
+        Logger.Log("Stopping embedding...");
+        _isEmbeddingRunning = false;
+        _embeddingCts?.Cancel();
+        
+        // Complete the queue to signal workers to exit
+        try
+        {
+            _embeddingQueue?.Writer.Complete();
+        }
+        catch (ChannelClosedException)
+        {
+            // Already closed, ignore
+        }
+        
+        // Wait for orchestrators to finish (with timeout)
+        try
+        {
+            if (_embeddingOrchestrators != null)
+            {
+                Task.WaitAll(_embeddingOrchestrators.ToArray(), TimeSpan.FromSeconds(5));
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"Exception while stopping embedding: {ex.Message}");
+        }
+        
+        _embeddingOrchestrators?.Clear();
+        
+        // Release GPU resources - embedding models are disposed in workers
+        Logger.Log("Embedding stopped");
+    }
+
     /// <summary>
     /// Orchestrator: Populates queue with image IDs from database
     /// </summary>
@@ -1155,6 +1377,143 @@ public class BackgroundTaggingService : IDisposable
                 _captioningTTLTimer = null;
             }
         }, null, TimeSpan.FromMinutes(ttlMinutes), TimeSpan.FromMinutes(ttlMinutes));
+    }
+
+    /// <summary>
+    /// Embedding worker: Creates its own EmbeddingService for exclusive use
+    /// </summary>
+    private async Task RunEmbeddingWorker(int gpuId, int workerId, CancellationToken ct)
+    {
+        Logger.Log($"Embedding worker {workerId} started on GPU {gpuId}");
+        
+        Embeddings.EmbeddingService? embeddingService = null;
+        
+        try
+        {
+            // Create embedding service for this worker
+            var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            var config = Embeddings.EmbeddingConfig.CreateDefault(baseDir);
+            
+            // Override GPU assignment - all models on this worker's GPU
+            config.BgeGpuDevice = gpuId;
+            config.ClipVisionGpuDevice = gpuId;
+            config.ClipLGpuDevice = gpuId;
+            config.ClipGGpuDevice = gpuId;
+            
+            embeddingService = Embeddings.EmbeddingService.FromConfig(config);
+            Logger.Log($"GPU {gpuId} embedding worker {workerId}: Service initialized");
+            
+            // Process images from queue
+            await foreach (var imageId in _embeddingQueue!.Reader.ReadAllAsync(ct))
+            {
+                // Check if paused
+                while (_isEmbeddingPaused && !ct.IsCancellationRequested)
+                {
+                    await Task.Delay(500, ct);
+                }
+                
+                if (ct.IsCancellationRequested)
+                    break;
+                
+                try
+                {
+                    await ProcessImageEmbedding(imageId, embeddingService);
+                    
+                    var progress = Interlocked.Increment(ref _embeddingProgress);
+                    var remaining = Interlocked.Decrement(ref _embeddingQueueRemaining);
+                    
+                    RaiseEmbeddingProgress(progress, _embeddingTotal);
+                    
+                    // Calculate ETA and update status
+                    string status;
+                    if (progress >= 3 && remaining > 0)
+                    {
+                        var elapsed = DateTime.Now - _embeddingStartTime;
+                        var avgTimePerImage = elapsed.TotalSeconds / progress;
+                        var etaSeconds = avgTimePerImage * remaining;
+                        var eta = TimeSpan.FromSeconds(etaSeconds);
+                        var imgPerSec = progress / elapsed.TotalSeconds;
+                        
+                        status = $"Embedding: {progress}/{_embeddingTotal} | {imgPerSec:F1} img/s | ETA: {eta:hh\\:mm\\:ss}";
+                    }
+                    else
+                    {
+                        status = $"Embedding: {progress}/{_embeddingTotal} (Queue: {remaining})";
+                    }
+                    
+                    RaiseStatusChanged(status);
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log($"GPU {gpuId} embedding worker {workerId} error processing image {imageId}: {ex.Message}");
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            Logger.Log($"GPU {gpuId} embedding worker {workerId} cancelled");
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"GPU {gpuId} embedding worker {workerId} fatal error: {ex.Message}\n{ex.StackTrace}");
+        }
+        finally
+        {
+            embeddingService?.Dispose();
+            Logger.Log($"GPU {gpuId} embedding worker {workerId} exiting");
+            RaiseEmbeddingCompleted();
+        }
+    }
+
+    private async Task ProcessImageEmbedding(int imageId, Embeddings.EmbeddingService embeddingService)
+    {
+        try
+        {
+            var image = _dataStore.GetImage(imageId);
+            if (image == null)
+            {
+                Logger.Log($"Image {imageId} not found, skipping embedding");
+                Interlocked.Increment(ref _embeddingSkipped);
+                await _dataStore.SetNeedsEmbedding(new List<int> { imageId }, false);
+                return;
+            }
+
+            if (!System.IO.File.Exists(image.Path))
+            {
+                Logger.Log($"Image file not found: {image.Path}, skipping");
+                Interlocked.Increment(ref _embeddingSkipped);
+                await _dataStore.SetNeedsEmbedding(new List<int> { imageId }, false);
+                return;
+            }
+
+            // Generate embeddings
+            float[]? promptEmb = null;
+            float[]? imageEmb = null;
+            
+            // Generate prompt embedding (BGE)
+            if (!string.IsNullOrEmpty(image.Prompt))
+            {
+                var (bge, _, _) = await embeddingService.GenerateTextEmbeddingsAsync(image.Prompt);
+                promptEmb = bge;
+            }
+            
+            // Generate image embedding (CLIP-ViT-H)
+            imageEmb = await embeddingService.GenerateImageEmbeddingAsync(image.Path);
+            
+            // Store embeddings in database
+            await _dataStore.StoreImageEmbeddingsAsync(imageId, promptEmb, imageEmb);
+            
+            // Mark as processed
+            await _dataStore.SetNeedsEmbedding(new List<int> { imageId }, false);
+            
+            Logger.Log($"Embedded image {imageId}: prompt={promptEmb != null}, image={imageEmb != null}");
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"Error embedding image {imageId}: {ex.Message}");
+            Interlocked.Increment(ref _embeddingSkipped);
+            // Don't mark as processed on error - allow retry
+        }
     }
 }
 

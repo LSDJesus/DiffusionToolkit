@@ -64,6 +64,10 @@ public class MainModel : BaseNotify
     private ICommand _pauseCaptioningCommand;
     private ICommand _stopCaptioningCommand;
     private ICommand _clearCaptioningQueueCommand;
+    private ICommand _startEmbeddingCommand;
+    private ICommand _pauseEmbeddingCommand;
+    private ICommand _stopEmbeddingCommand;
+    private ICommand _clearEmbeddingQueueCommand;
     private int _thumbnailSize;
     private ICommand _escape;
     private ICommand _downloadCivitai;
@@ -145,8 +149,10 @@ public class MainModel : BaseNotify
     private bool _isBackgroundProcessingActive;
     private bool _isTaggingActive;
     private bool _isCaptioningActive;
+    private bool _isEmbeddingActive;
     private string _taggingStatus = "";
     private string _captioningStatus = "";
+    private string _embeddingStatus = "";
 
     public bool IsBackgroundProcessingActive
     {
@@ -160,7 +166,7 @@ public class MainModel : BaseNotify
         set
         {
             SetField(ref _isTaggingActive, value);
-            IsBackgroundProcessingActive = _isTaggingActive || _isCaptioningActive;
+            IsBackgroundProcessingActive = _isTaggingActive || _isCaptioningActive || _isEmbeddingActive;
         }
     }
 
@@ -170,7 +176,17 @@ public class MainModel : BaseNotify
         set
         {
             SetField(ref _isCaptioningActive, value);
-            IsBackgroundProcessingActive = _isTaggingActive || _isCaptioningActive;
+            IsBackgroundProcessingActive = _isTaggingActive || _isCaptioningActive || _isEmbeddingActive;
+        }
+    }
+
+    public bool IsEmbeddingActive
+    {
+        get => _isEmbeddingActive;
+        set
+        {
+            SetField(ref _isEmbeddingActive, value);
+            IsBackgroundProcessingActive = _isTaggingActive || _isCaptioningActive || _isEmbeddingActive;
         }
     }
 
@@ -184,6 +200,12 @@ public class MainModel : BaseNotify
     {
         get => _captioningStatus;
         set => SetField(ref _captioningStatus, value);
+    }
+
+    public string EmbeddingStatus
+    {
+        get => _embeddingStatus;
+        set => SetField(ref _embeddingStatus, value);
     }
 
     public QueryOptions QueryOptions
@@ -382,6 +404,30 @@ public class MainModel : BaseNotify
     {
         get => _clearCaptioningQueueCommand;
         set => SetField(ref _clearCaptioningQueueCommand, value);
+    }
+
+    public ICommand StartEmbeddingCommand
+    {
+        get => _startEmbeddingCommand;
+        set => SetField(ref _startEmbeddingCommand, value);
+    }
+
+    public ICommand PauseEmbeddingCommand
+    {
+        get => _pauseEmbeddingCommand;
+        set => SetField(ref _pauseEmbeddingCommand, value);
+    }
+
+    public ICommand StopEmbeddingCommand
+    {
+        get => _stopEmbeddingCommand;
+        set => SetField(ref _stopEmbeddingCommand, value);
+    }
+
+    public ICommand ClearEmbeddingQueueCommand
+    {
+        get => _clearEmbeddingQueueCommand;
+        set => SetField(ref _clearEmbeddingQueueCommand, value);
     }
 
     public ICommand AboutCommand

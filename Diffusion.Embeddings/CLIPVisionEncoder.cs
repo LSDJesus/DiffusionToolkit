@@ -114,8 +114,9 @@ namespace Diffusion.Embeddings
                 // Run inference
                 using var results = _session.Run(inputs);
                 
-                // Extract pooler_output (first output)
-                var outputTensor = results.First().AsEnumerable<float>().ToArray();
+                // Extract last_hidden_state (second output) - 1280D pooled embedding
+                // Note: pooler_output (first) is [batch, 257, 1280], we want last_hidden_state [batch, 1280]
+                var outputTensor = results.ElementAt(1).AsEnumerable<float>().ToArray();
 
                 // Split into individual embeddings and normalize
                 var embeddings = new float[batchSize][];

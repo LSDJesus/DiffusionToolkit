@@ -143,13 +143,20 @@ namespace Diffusion.Toolkit
                 _model.StopCaptioningCommand = new RelayCommand<object>((o) => StopCaptioning());
                 _model.ClearCaptioningQueueCommand = new RelayCommand<object>((o) => ClearCaptioningQueue());
                 
+                _model.StartEmbeddingCommand = new RelayCommand<object>((o) => StartEmbedding());
+                _model.PauseEmbeddingCommand = new RelayCommand<object>((o) => PauseEmbedding());
+                _model.StopEmbeddingCommand = new RelayCommand<object>((o) => StopEmbedding());
+                _model.ClearEmbeddingQueueCommand = new RelayCommand<object>((o) => ClearEmbeddingQueue());
+                
                 // Subscribe to background tagging service events
                 if (ServiceLocator.BackgroundTaggingService != null)
                 {
                     ServiceLocator.BackgroundTaggingService.TaggingProgressChanged += OnTaggingProgressChanged;
                     ServiceLocator.BackgroundTaggingService.CaptioningProgressChanged += OnCaptioningProgressChanged;
+                    ServiceLocator.BackgroundTaggingService.EmbeddingProgressChanged += OnEmbeddingProgressChanged;
                     ServiceLocator.BackgroundTaggingService.TaggingCompleted += OnTaggingCompleted;
                     ServiceLocator.BackgroundTaggingService.CaptioningCompleted += OnCaptioningCompleted;
+                    ServiceLocator.BackgroundTaggingService.EmbeddingCompleted += OnEmbeddingCompleted;
                     ServiceLocator.BackgroundTaggingService.StatusChanged += OnBackgroundStatusChanged;
                 }
 
@@ -1595,5 +1602,83 @@ namespace Diffusion.Toolkit
                 await service.ClearCaptioningQueue();
                 Logger.Log("Cleared captioning queue from UI");
             }
-        }    }
+        }
+
+        private void StartEmbedding()
+        {
+            var service = ServiceLocator.BackgroundTaggingService;
+            if (service == null) return;
+
+            service.StartEmbedding();
+            _model.IsEmbeddingActive = true;
+            Logger.Log("Started embedding from UI");
+        }
+
+        private void PauseEmbedding()
+        {
+            var service = ServiceLocator.BackgroundTaggingService;
+            if (service == null) return;
+
+            if (service.IsEmbeddingPaused)
+            {
+                service.ResumeEmbedding();
+                Logger.Log("Resumed embedding");
+            }
+            else
+            {
+                service.PauseEmbedding();
+                Logger.Log("Paused embedding");
+            }
+        }
+
+        private void StopEmbedding()
+        {
+            var service = ServiceLocator.BackgroundTaggingService;
+            if (service == null) return;
+
+            service.StopEmbedding();
+            _model.IsEmbeddingActive = false;
+            _model.EmbeddingStatus = "";
+            Logger.Log("Stopped embedding from UI");
+        }
+
+        private async void ClearEmbeddingQueue()
+        {
+            var service = ServiceLocator.DataStore;
+            if (service == null) return;
+
+            var result = MessageBox.Show(
+                "Clear embedding queue? This will reset needs_embedding flags without removing existing embeddings.",
+                "Clear Embedding Queue",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+
+            if (result == MessageBoxResult.Yes)
+            {
+                await service.ClearEmbeddingQueue();
+                Logger.Log("Cleared embedding queue from UI");
+            }
+        }
+
+        private void OnEmbeddingProgressChanged(object? sender, ProgressEventArgs e)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                var elapsed = DateTime.Now - DateTime.Now.AddSeconds(-e.Current); // Approximate
+                var imgPerSec = e.Current > 0 ? e.Current / Math.Max(1, elapsed.TotalSeconds) : 0;
+                _model.EmbeddingStatus = $"Embedding: {e.Current}/{e.Total} ({e.Percentage:F1}%)";
+                _model.IsEmbeddingActive = true;
+            });
+        }
+
+        private void OnEmbeddingCompleted(object? sender, EventArgs e)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                _model.IsEmbeddingActive = false;
+                _model.EmbeddingStatus = "";
+                Logger.Log("Embedding completed");
+            });
+        }
+    }
 }

@@ -10,7 +10,7 @@ public class PostgreSQLMigrations
 {
     private readonly NpgsqlConnection _connection;
     private readonly string _schema;
-    private const int CurrentVersion = 2;
+    private const int CurrentVersion = 4;
 
     public PostgreSQLMigrations(NpgsqlConnection connection, string schema = "public")
     {
@@ -37,6 +37,8 @@ public class PostgreSQLMigrations
             // Apply schema migrations in order
             if (currentVersion < 1) await ApplyV1Async();
             if (currentVersion < 2) await ApplyV2Async();
+            if (currentVersion < 3) await ApplyV3Async();
+            if (currentVersion < 4) await ApplyV4Async();
 
             // Only insert version if migrations were applied
             if (currentVersion < CurrentVersion)
@@ -129,6 +131,60 @@ public class PostgreSQLMigrations
         catch (Exception ex)
         {
             Diffusion.Common.Logger.Log($"ApplyV2Async failed: {ex.Message}");
+            Diffusion.Common.Logger.Log($"Stack: {ex.StackTrace}");
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// V3: Fix image_embedding dimension (1024 → 1280 for CLIP-ViT-H/14)
+    /// </summary>
+    private async Task ApplyV3Async()
+    {
+        try
+        {
+            Diffusion.Common.Logger.Log("Applying V3 migration: Fix CLIP-ViT-H/14 embedding dimension + add needs_embedding...");
+            
+            var sql = @"
+                -- Add needs_embedding queue column
+                ALTER TABLE image ADD COLUMN IF NOT EXISTS needs_embedding BOOLEAN DEFAULT FALSE;
+                CREATE INDEX IF NOT EXISTS idx_image_needs_embedding ON image (needs_embedding) WHERE needs_embedding = true;
+                
+                -- Check if image_embedding column exists and has wrong dimension
+                DO $$ 
+                BEGIN
+                    -- Drop existing image_embedding if it's 1024D (wrong dimension)
+                    -- Note: This will delete any existing embeddings - they'll need to be regenerated
+                    IF EXISTS (
+                        SELECT 1 FROM information_schema.columns 
+                        WHERE table_name = 'image' 
+                        AND column_name = 'image_embedding'
+                    ) THEN
+                        -- Drop the old column (CASCADE drops the index too)
+                        ALTER TABLE image DROP COLUMN image_embedding CASCADE;
+                        
+                        -- Recreate with correct dimension
+                        ALTER TABLE image ADD COLUMN image_embedding vector(1280);
+                        
+                        -- Recreate the IVFFlat index for vector search
+                        CREATE INDEX idx_image_image_embedding ON image 
+                        USING ivfflat (image_embedding vector_cosine_ops) 
+                        WITH (lists = 100);
+                        
+                        RAISE NOTICE 'Updated image_embedding to 1280D (CLIP-ViT-H/14). Previous embeddings deleted.';
+                    ELSE
+                        RAISE NOTICE 'image_embedding column does not exist yet';
+                    END IF;
+                END $$;
+            ";
+            
+            await _connection.ExecuteAsync(sql);
+            
+            Diffusion.Common.Logger.Log("V3 migration completed successfully");
+        }
+        catch (Exception ex)
+        {
+            Diffusion.Common.Logger.Log($"ApplyV3Async failed: {ex.Message}");
             Diffusion.Common.Logger.Log($"Stack: {ex.StackTrace}");
             throw;
         }

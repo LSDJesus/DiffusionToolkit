@@ -170,4 +170,114 @@ public partial class PostgreSQLDataStore
         await using var connection = await _dataSource.OpenConnectionAsync();
         await connection.ExecuteAsync($"UPDATE {Table("image")} SET needs_captioning = false WHERE needs_captioning = true");
     }
+
+    /// <summary>
+    /// Set the needs_embedding flag for a list of images
+    /// </summary>
+    public async Task SetNeedsEmbedding(List<int> imageIds, bool needsEmbedding)
+    {
+        if (imageIds.Count == 0) return;
+
+        await using var connection = await _dataSource.OpenConnectionAsync();
+        
+        var sql = $"UPDATE {Table("image")} SET needs_embedding = @needsEmbedding WHERE id = ANY(@ids)";
+        await connection.ExecuteAsync(sql, new { needsEmbedding, ids = imageIds.ToArray() });
+    }
+
+    /// <summary>
+    /// Get images that need embedding (batch for processing)
+    /// </summary>
+    public async Task<List<int>> GetImagesNeedingEmbedding(int batchSize = 100)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync();
+        
+        // Get images that need embedding OR don't have embeddings yet
+        var sql = $@"
+            SELECT id FROM {Table("image")} 
+            WHERE (needs_embedding = true OR (prompt_embedding IS NULL AND image_embedding IS NULL))
+              AND for_deletion = false
+            ORDER BY id
+            LIMIT @batchSize";
+        
+        var result = await connection.QueryAsync<int>(sql, new { batchSize });
+        return result.ToList();
+    }
+
+    /// <summary>
+    /// Count images that need embedding
+    /// </summary>
+    public async Task<int> CountImagesNeedingEmbedding()
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync();
+        
+        var sql = $@"
+            SELECT COUNT(1) FROM {Table("image")} 
+            WHERE (needs_embedding = true OR (prompt_embedding IS NULL AND image_embedding IS NULL))
+              AND for_deletion = false";
+        return await connection.ExecuteScalarAsync<int>(sql);
+    }
+
+    /// <summary>
+    /// Queue folder images for embedding
+    /// </summary>
+    public async Task<int> QueueFolderForEmbedding(int folderId, bool includeSubfolders)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync();
+        
+        string sql;
+        if (includeSubfolders)
+        {
+            sql = $@"
+                UPDATE {Table("image")} i
+                SET needs_embedding = true
+                FROM {Table("folder")} f
+                WHERE i.folder_id = f.id
+                  AND f.path LIKE (SELECT path || '%' FROM {Table("folder")} WHERE id = @folderId)
+                  AND i.for_deletion = false
+                  AND i.prompt_embedding IS NULL
+                  AND i.image_embedding IS NULL";
+        }
+        else
+        {
+            sql = $@"
+                UPDATE {Table("image")}
+                SET needs_embedding = true
+                WHERE folder_id = @folderId
+                  AND for_deletion = false
+                  AND prompt_embedding IS NULL
+                  AND image_embedding IS NULL";
+        }
+
+        return await connection.ExecuteAsync(sql, new { folderId });
+    }
+
+    /// <summary>
+    /// Clear all embedding queue
+    /// </summary>
+    public async Task ClearEmbeddingQueue()
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync();
+        await connection.ExecuteAsync($"UPDATE {Table("image")} SET needs_embedding = false WHERE needs_embedding = true");
+    }
+
+    /// <summary>
+    /// Store embeddings for an image
+    /// </summary>
+    public async Task StoreImageEmbeddingsAsync(int imageId, float[]? promptEmbedding, float[]? imageEmbedding)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync();
+        
+        var sql = $@"
+            UPDATE {Table("image")}
+            SET prompt_embedding = @promptEmbedding::vector,
+                image_embedding = @imageEmbedding::vector,
+                needs_embedding = false
+            WHERE id = @imageId";
+        
+        await connection.ExecuteAsync(sql, new { 
+            imageId, 
+            promptEmbedding = promptEmbedding != null ? string.Join(",", promptEmbedding.Select(f => f.ToString("G9"))) : null,
+            imageEmbedding = imageEmbedding != null ? string.Join(",", imageEmbedding.Select(f => f.ToString("G9"))) : null
+        });
+    }
 }

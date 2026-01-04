@@ -547,6 +547,13 @@
                                Foreground="{DynamicResource ForegroundBrush}" VerticalAlignment="Center"
                                Visibility="{Binding IsCaptioningActive, Converter={StaticResource boolToVisCol}}"/>
                     
+                    <fa:IconImage Icon="Microchip" Width="12" Height="12" Margin="0,0,5,0" 
+                                  Foreground="{DynamicResource ForegroundBrush}" VerticalAlignment="Center"
+                                  Visibility="{Binding IsEmbeddingActive, Converter={StaticResource boolToVisCol}}"/>
+                    <TextBlock Text="{Binding EmbeddingStatus}" FontSize="10" Margin="0,0,15,0"
+                               Foreground="{DynamicResource ForegroundBrush}" VerticalAlignment="Center"
+                               Visibility="{Binding IsEmbeddingActive, Converter={StaticResource boolToVisCol}}"/>
+                    
                     <!-- Background Processing Controls -->
                     <Button Content="▶ Tag" ToolTip="Start Tagging Queue" Width="50" Height="18" FontSize="9"
                             Command="{Binding StartTaggingCommand}" Margin="5,0,2,0" Foreground="Green"/>
@@ -565,6 +572,15 @@
                             Command="{Binding StopCaptioningCommand}" Foreground="Red" Margin="0,0,2,0"/>
                     <Button Content="✕" ToolTip="Clear Captioning Queue" Width="18" Height="18" FontSize="10" 
                             Command="{Binding ClearCaptioningQueueCommand}" Margin="0,0,10,0"/>
+                    
+                    <Button Content="▶ Emb" ToolTip="Start Embedding Queue" Width="50" Height="18" FontSize="9"
+                            Command="{Binding StartEmbeddingCommand}" Margin="0,0,2,0" Foreground="Purple"/>
+                    <Button Content="⏸" ToolTip="Pause Embedding" Width="18" Height="18" FontSize="10"
+                            Command="{Binding PauseEmbeddingCommand}" Margin="0,0,2,0"/>
+                    <Button Content="⏹" ToolTip="Stop Embedding" Width="18" Height="18" FontSize="10" 
+                            Command="{Binding StopEmbeddingCommand}" Foreground="Red" Margin="0,0,2,0"/>
+                    <Button Content="✕" ToolTip="Clear Embedding Queue" Width="18" Height="18" FontSize="10" 
+                            Command="{Binding ClearEmbeddingQueueCommand}" Margin="0,0,10,0"/>
                     
                     <Button Content="🔓" ToolTip="Release Models from VRAM" Width="20" Height="18" FontSize="10"
                             Command="{Binding ReleaseModelsCommand}" Foreground="Orange"/>

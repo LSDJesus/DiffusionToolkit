@@ -96,7 +96,7 @@ CREATE TABLE IF NOT EXISTS image (
     -- Vector embeddings for similarity search
     prompt_embedding vector(1024),              -- BGE-large-en-v1.5
     negative_prompt_embedding vector(1024),     -- BGE-large-en-v1.5
-    image_embedding vector(1024),               -- CLIP-ViT-H/14
+    image_embedding vector(1280),               -- CLIP-ViT-H/14 (corrected from 1024)
     clip_l_embedding vector(768),               -- SDXL CLIP-L
     clip_g_embedding vector(1280),              -- SDXL CLIP-G
     

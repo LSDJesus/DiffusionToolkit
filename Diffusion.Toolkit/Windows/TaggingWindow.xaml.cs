@@ -50,6 +50,14 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
             ? "Ready (will initialize on start)" 
             : "Not configured";
 
+        // Embedding is available if ONNX models exist (check for CLIP-ViT-H model)
+        var embeddingModelPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "models", "onnx", "clip-vit-h", "model.onnx");
+        EmbeddingAvailable = System.IO.File.Exists(embeddingModelPath);
+        EmbeddingStatus = EmbeddingAvailable 
+            ? "Ready (BGE + CLIP-ViT-H)" 
+            : "Models not found";
+        EmbeddingEnabled = ServiceLocator.Settings?.TagDialogEmbeddingEnabled ?? false;
+
         ImageCount = imageIds.Count;
         
         // Set default prompt based on settings after InitializeComponent
@@ -72,6 +80,7 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
                 JoyTagCheckBox.IsChecked = ServiceLocator.Settings?.TagDialogJoyTagEnabled ?? true;
                 WDTagCheckBox.IsChecked = ServiceLocator.Settings?.TagDialogWDTagEnabled ?? true;
                 JoyCaptionCheckBox.IsChecked = ServiceLocator.Settings?.TagDialogCaptionEnabled ?? false;
+                EmbeddingCheckBox.IsChecked = ServiceLocator.Settings?.TagDialogEmbeddingEnabled ?? false;
             }
             else if (taggingOnly)
             {
@@ -94,10 +103,14 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
     public bool JoyTagAvailable { get; }
     public bool WDTagAvailable { get; }
     public bool JoyCaptionAvailable { get; }
+    public bool EmbeddingAvailable { get; }
     
     public string JoyTagStatus { get; }
     public string WDTagStatus { get; }
     public string JoyCaptionStatus { get; }
+    public string EmbeddingStatus { get; }
+    
+    public bool EmbeddingEnabled { get; set; }
 
     public int ImageCount { get; }
 
@@ -123,7 +136,8 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
 
     public bool CanStart => !IsProcessing && (JoyTagCheckBox.IsChecked == true || 
                                               WDTagCheckBox.IsChecked == true || 
-                                              JoyCaptionCheckBox.IsChecked == true);
+                                              JoyCaptionCheckBox.IsChecked == true ||
+                                              EmbeddingCheckBox.IsChecked == true);
 
     public int ProcessedImages
     {
@@ -465,6 +479,16 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
         if (ServiceLocator.Settings != null)
         {
             ServiceLocator.Settings.TagDialogCaptionEnabled = JoyCaptionCheckBox.IsChecked ?? false;
+        }
+        // Trigger CanStart update
+        OnPropertyChanged(nameof(CanStart));
+    }
+
+    private void EmbeddingCheckBox_CheckedChanged(object sender, RoutedEventArgs e)
+    {
+        if (ServiceLocator.Settings != null)
+        {
+            ServiceLocator.Settings.TagDialogEmbeddingEnabled = EmbeddingCheckBox.IsChecked ?? false;
         }
         // Trigger CanStart update
         OnPropertyChanged(nameof(CanStart));

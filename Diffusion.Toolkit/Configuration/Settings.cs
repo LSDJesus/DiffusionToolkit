@@ -120,6 +120,14 @@ public class Settings : SettingsContainer, IScanOptions
     private string _captioningModelsPerDevice = "3";
     private int _captioningModelTTLMinutes = 2;
     
+    // Embedding settings
+    private bool _tagDialogEmbeddingEnabled = false;
+    private int _embeddingConcurrentWorkers = 9;  // Default: 7 on GPU0 + 2 on GPU1
+    private string _embeddingGpuDevices = "0,1";
+    private string _embeddingGpuVramRatios = "32,12";  // RTX 5090 + RTX 3080 Ti
+    private int _embeddingBatchSize = 32;
+    private bool _skipAlreadyEmbeddedImages = true;
+    
     private bool _writeGenerationParamsToMetadata;
     private CaptionHandlingMode _captionHandlingMode;
 
@@ -773,6 +781,43 @@ public class Settings : SettingsContainer, IScanOptions
     {
         get => _captioningModelTTLMinutes;
         set => UpdateValue(ref _captioningModelTTLMinutes, Math.Max(-1, Math.Min(60, value))); // -1=keep loaded, 0=instant, 1-60 min
+    }
+
+    // Embedding settings
+    public bool TagDialogEmbeddingEnabled
+    {
+        get => _tagDialogEmbeddingEnabled;
+        set => UpdateValue(ref _tagDialogEmbeddingEnabled, value);
+    }
+
+    public int EmbeddingConcurrentWorkers
+    {
+        get => _embeddingConcurrentWorkers;
+        set => UpdateValue(ref _embeddingConcurrentWorkers, Math.Max(1, Math.Min(16, value)));
+    }
+
+    public string EmbeddingGpuDevices
+    {
+        get => _embeddingGpuDevices;
+        set => UpdateValue(ref _embeddingGpuDevices, value);
+    }
+
+    public string EmbeddingGpuVramRatios
+    {
+        get => _embeddingGpuVramRatios;
+        set => UpdateValue(ref _embeddingGpuVramRatios, value);
+    }
+
+    public int EmbeddingBatchSize
+    {
+        get => _embeddingBatchSize;
+        set => UpdateValue(ref _embeddingBatchSize, Math.Max(8, Math.Min(128, value)));
+    }
+
+    public bool SkipAlreadyEmbeddedImages
+    {
+        get => _skipAlreadyEmbeddedImages;
+        set => UpdateValue(ref _skipAlreadyEmbeddedImages, value);
     }
 
     public string JoyCaptionDefaultPrompt
