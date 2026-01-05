@@ -452,6 +452,7 @@
                 <MenuItem Header="{lex:Loc Menu.Tools.UnavailableFiles}" Command="{Binding UnavailableFilesCommand}"></MenuItem>
                 <Separator></Separator>
                 <MenuItem Header="{lex:Loc Menu.Tools.DuplicateDetection}" Click="DuplicateDetection_OnClick"/>
+                <MenuItem Header="Face Gallery" Click="FaceGallery_OnClick" ToolTip="View and manage detected faces and character clusters"/>
             </MenuItem>
             <MenuItem Header="{lex:Loc Menu.Help}">
                 <!--<MenuItem Header="{lex:Loc Menu.Help.About}" Command="{Binding AboutCommand}"/>-->
@@ -530,57 +531,67 @@
         <!-- Database Status Bar - visible when no task is running -->
         <Grid Grid.Row="2" ColumnSpan="3" Visibility="{Binding HasPendingTask, Converter={StaticResource inverseBoolToVisCol}}" Height="22">
             <DockPanel HorizontalAlignment="Stretch" Background="{DynamicResource PrimaryBrush}">
-                <!-- Background Tagging/Captioning Status -->
-                <StackPanel Orientation="Horizontal" DockPanel.Dock="Left" Margin="10,0" 
-                            Visibility="{Binding IsBackgroundProcessingActive, Converter={StaticResource boolToVisCol}}">
-                    <fa:IconImage Icon="Tags" Width="12" Height="12" Margin="0,0,5,0" 
-                                  Foreground="{DynamicResource ForegroundBrush}" VerticalAlignment="Center"
-                                  Visibility="{Binding IsTaggingActive, Converter={StaticResource boolToVisCol}}"/>
-                    <TextBlock Text="{Binding TaggingStatus}" FontSize="10" Margin="0,0,15,0"
-                               Foreground="{DynamicResource ForegroundBrush}" VerticalAlignment="Center"
-                               Visibility="{Binding IsTaggingActive, Converter={StaticResource boolToVisCol}}"/>
-                    
-                    <fa:IconImage Icon="Comment" Width="12" Height="12" Margin="0,0,5,0" 
-                                  Foreground="{DynamicResource ForegroundBrush}" VerticalAlignment="Center"
-                                  Visibility="{Binding IsCaptioningActive, Converter={StaticResource boolToVisCol}}"/>
-                    <TextBlock Text="{Binding CaptioningStatus}" FontSize="10" Margin="0,0,15,0"
-                               Foreground="{DynamicResource ForegroundBrush}" VerticalAlignment="Center"
-                               Visibility="{Binding IsCaptioningActive, Converter={StaticResource boolToVisCol}}"/>
-                    
-                    <fa:IconImage Icon="Microchip" Width="12" Height="12" Margin="0,0,5,0" 
-                                  Foreground="{DynamicResource ForegroundBrush}" VerticalAlignment="Center"
-                                  Visibility="{Binding IsEmbeddingActive, Converter={StaticResource boolToVisCol}}"/>
-                    <TextBlock Text="{Binding EmbeddingStatus}" FontSize="10" Margin="0,0,15,0"
-                               Foreground="{DynamicResource ForegroundBrush}" VerticalAlignment="Center"
-                               Visibility="{Binding IsEmbeddingActive, Converter={StaticResource boolToVisCol}}"/>
-                    
-                    <!-- Background Processing Controls -->
-                    <Button Content="▶ Tag" ToolTip="Start Tagging Queue" Width="50" Height="18" FontSize="9"
-                            Command="{Binding StartTaggingCommand}" Margin="5,0,2,0" Foreground="Green"/>
+                <!-- Background Processing Controls - Always Visible -->
+                <StackPanel Orientation="Horizontal" DockPanel.Dock="Left" Margin="10,0">
+                    <!-- Tagging Controls -->
+                    <Button Content="▶" ToolTip="Start Tagging Queue" Width="18" Height="18" FontSize="9"
+                            Command="{Binding StartTaggingCommand}" Margin="0,0,2,0" Foreground="Green"/>
                     <Button Content="⏸" ToolTip="Pause Tagging" Width="18" Height="18" FontSize="10"
                             Command="{Binding PauseTaggingCommand}" Margin="0,0,2,0"/>
                     <Button Content="⏹" ToolTip="Stop Tagging" Width="18" Height="18" FontSize="10" 
                             Command="{Binding StopTaggingCommand}" Foreground="Red" Margin="0,0,2,0"/>
                     <Button Content="✕" ToolTip="Clear Tagging Queue" Width="18" Height="18" FontSize="10" 
-                            Command="{Binding ClearTaggingQueueCommand}" Margin="0,0,10,0"/>
+                            Command="{Binding ClearTaggingQueueCommand}" Margin="0,0,5,0"/>
+                    <TextBlock FontSize="10" Margin="0,0,10,0"
+                               Foreground="{DynamicResource ForegroundBrush}" VerticalAlignment="Center">
+                        <Run Text="T:"/>
+                        <Run Text="{Binding TaggingQueueCount, FallbackValue=0}"/>
+                    </TextBlock>
                     
-                    <Button Content="▶ Cap" ToolTip="Start Captioning Queue" Width="50" Height="18" FontSize="9"
+                    <!-- Captioning Controls -->
+                    <Button Content="▶" ToolTip="Start Captioning Queue" Width="18" Height="18" FontSize="9"
                             Command="{Binding StartCaptioningCommand}" Margin="0,0,2,0" Foreground="Blue"/>
                     <Button Content="⏸" ToolTip="Pause Captioning" Width="18" Height="18" FontSize="10"
                             Command="{Binding PauseCaptioningCommand}" Margin="0,0,2,0"/>
                     <Button Content="⏹" ToolTip="Stop Captioning" Width="18" Height="18" FontSize="10" 
                             Command="{Binding StopCaptioningCommand}" Foreground="Red" Margin="0,0,2,0"/>
                     <Button Content="✕" ToolTip="Clear Captioning Queue" Width="18" Height="18" FontSize="10" 
-                            Command="{Binding ClearCaptioningQueueCommand}" Margin="0,0,10,0"/>
+                            Command="{Binding ClearCaptioningQueueCommand}" Margin="0,0,5,0"/>
+                    <TextBlock FontSize="10" Margin="0,0,10,0"
+                               Foreground="{DynamicResource ForegroundBrush}" VerticalAlignment="Center">
+                        <Run Text="C:"/>
+                        <Run Text="{Binding CaptioningQueueCount, FallbackValue=0}"/>
+                    </TextBlock>
                     
-                    <Button Content="▶ Emb" ToolTip="Start Embedding Queue" Width="50" Height="18" FontSize="9"
+                    <!-- Embedding Controls -->
+                    <Button Content="▶" ToolTip="Start Embedding Queue" Width="18" Height="18" FontSize="9"
                             Command="{Binding StartEmbeddingCommand}" Margin="0,0,2,0" Foreground="Purple"/>
                     <Button Content="⏸" ToolTip="Pause Embedding" Width="18" Height="18" FontSize="10"
                             Command="{Binding PauseEmbeddingCommand}" Margin="0,0,2,0"/>
                     <Button Content="⏹" ToolTip="Stop Embedding" Width="18" Height="18" FontSize="10" 
                             Command="{Binding StopEmbeddingCommand}" Foreground="Red" Margin="0,0,2,0"/>
                     <Button Content="✕" ToolTip="Clear Embedding Queue" Width="18" Height="18" FontSize="10" 
-                            Command="{Binding ClearEmbeddingQueueCommand}" Margin="0,0,10,0"/>
+                            Command="{Binding ClearEmbeddingQueueCommand}" Margin="0,0,5,0"/>
+                    <TextBlock FontSize="10" Margin="0,0,10,0"
+                               Foreground="{DynamicResource ForegroundBrush}" VerticalAlignment="Center">
+                        <Run Text="E:"/>
+                        <Run Text="{Binding EmbeddingQueueCount, FallbackValue=0}"/>
+                    </TextBlock>
+                    
+                    <!-- Face Detection Controls -->
+                    <Button Content="▶" ToolTip="Start Face Detection Queue" Width="18" Height="18" FontSize="9"
+                            Command="{Binding StartFaceDetectionCommand}" Margin="0,0,2,0" Foreground="Cyan"/>
+                    <Button Content="⏸" ToolTip="Pause Face Detection" Width="18" Height="18" FontSize="10"
+                            Command="{Binding PauseFaceDetectionCommand}" Margin="0,0,2,0"/>
+                    <Button Content="⏹" ToolTip="Stop Face Detection" Width="18" Height="18" FontSize="10" 
+                            Command="{Binding StopFaceDetectionCommand}" Foreground="Red" Margin="0,0,2,0"/>
+                    <Button Content="✕" ToolTip="Clear Face Detection Queue" Width="18" Height="18" FontSize="10" 
+                            Command="{Binding ClearFaceDetectionQueueCommand}" Margin="0,0,5,0"/>
+                    <TextBlock FontSize="10" Margin="0,0,10,0"
+                               Foreground="{DynamicResource ForegroundBrush}" VerticalAlignment="Center">
+                        <Run Text="F:"/>
+                        <Run Text="{Binding FaceDetectionQueueCount, FallbackValue=0}"/>
+                    </TextBlock>
                     
                     <Button Content="🔓" ToolTip="Release Models from VRAM" Width="20" Height="18" FontSize="10"
                             Command="{Binding ReleaseModelsCommand}" Foreground="Orange"/>

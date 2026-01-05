@@ -66,19 +66,44 @@ AUTOMATIC1111, InvokeAI, NovelAI, Stable Diffusion, EasyDiffusion, Fooocus, Ruin
 **Why**: Manually tagging thousands of images is impractical.
 
 **What Changed**:
-- **JoyTag**: Fast booru-style tag prediction using ONNX Runtime
-- **WDv3 Large**: High-accuracy anime/illustration tagging
-- **JoyCaption**: Natural language image descriptions via LLamaSharp
+- **Multi-GPU Batch Worker Architecture**: Parallel processing across multiple GPUs with optimized batch scheduling
+- **Dual Tagging System**:
+  - **JoyTag**: Fast booru-style tag prediction using ONNX Runtime
+  - **WDv3 Large**: High-accuracy anime/illustration tagging
+- **JoyCaption**: Natural language image descriptions with 6 caption type options via LLamaSharp
 - GPU acceleration with CUDA 12.x and cuDNN 9.x support
+- **Performance**: Tagging speeds consistently at **0.034s/image with 30 workers**
 - Configurable confidence thresholds
 - Batch processing with progress tracking
 - Tags stored in PostgreSQL and optionally written to image metadata
 
 **Benefits**:
-- Automatic tag generation for searchability
-- Natural language captions for semantic search
-- GPU-accelerated inference (10-50 images/second)
+- Automatic tag generation for searchability with choice between two complementary taggers
+- Natural language captions for semantic search with multiple caption style options (6 types)
+- GPU-accelerated inference at scale with multi-worker batch processing
 - No external API required - runs locally
+- High throughput for large collections: 30 images/second across distributed workers
+
+## 👤 Face Recognition & Clustering (NEW)
+
+**Why**: Finding specific characters or people across 1M+ images is impossible with text prompts alone, especially with inconsistent naming in metadata.
+
+**What Changed**:
+- **YOLO11 Face Detection**: High-speed, high-accuracy face localization using YOLO11-face ONNX models.
+- **ArcFace Embeddings**: Generates 512-dimensional identity embeddings for every detected face using ResNet-50/100.
+- **pgvector Identity Search**: Store and query face embeddings using cosine similarity in PostgreSQL.
+- **Automated Clustering**: Group similar faces into "Person" clusters automatically based on embedding distance.
+- **Face Gallery UI**: 
+  - Dedicated "Face Recognition" tab in Metadata Panel.
+  - View all detected faces in an image with crops.
+  - Edit person labels and manage clusters directly.
+  - Quality-based filtering (sharpness, confidence, pose).
+
+**Benefits**:
+- Find every image of a specific person/character regardless of prompt.
+- Clean up inconsistent metadata by labeling clusters once.
+- Identify "unknown" recurring characters in your collection.
+- Filter by face quality to find the best shots for training LoRAs.
 
 ### Caption Provider Abstraction (Local + OpenAI-Compatible API)
 
@@ -116,25 +141,31 @@ AUTOMATIC1111, InvokeAI, NovelAI, Stable Diffusion, EasyDiffusion, Fooocus, Ruin
    - Manual edits/imports
 - Ensures consistent tags across the library even when mixing taggers and sources.
 
-## 🧠 Multi-Modal Embedding System (5 Vectors)
+## 🧠 Multi-Modal Embedding System (4 Embedding Models)
 
 **Why**: Enable semantic search and ComfyUI workflow integration.
 
 **What Changed**:
-Added 5 embedding vectors per image stored in pgvector:
+Added multiple embedding vectors per image stored in pgvector:
 
 | Embedding | Model | Dimensions | Purpose |
 |-----------|-------|------------|---------|
-| Prompt | BGE-large-en-v1.5 | 1024D | Natural language prompt search |
-| Negative Prompt | BGE-large-en-v1.5 | 1024D | Search by things to avoid |
-| Image | CLIP-ViT-H/14 | 1024D | Visual similarity search |
-| CLIP-L | SDXL Text Encoder | 768D | ComfyUI SDXL conditioning |
-| CLIP-G | SDXL Text Encoder | 1280D | ComfyUI SDXL conditioning |
+| Prompt & Tags | BGE-large-en-v1.5 | 1024D | Natural language prompt search, tag embeddings |
+| Captions | BGE-large-en-v1.5 | 1024D | Search by generated captions |
+| Visual Similarity | CLIP-ViT-H/14 | 1024D | Visual similarity search & IPAdapter integration |
+| SDXL CLIP-L | Stable Diffusion CLIP-L | 768D | Direct ComfyUI conditioning for prompts, tags & captions |
+| SDXL CLIP-G | Stable Diffusion CLIP-G | 1280D | Direct ComfyUI conditioning for prompts, tags & captions |
+
+**Embedding Model Breakdown**:
+- **BGE-large-en-v1.5**: Text-only embeddings optimized for retrieval. Used for prompt/tag/caption similarity search.
+- **CLIP-ViT-H/14**: Multi-modal vision-language model for image-to-image visual similarity. Integrates with ComfyUI's IPAdapter for semantic image generation.
+- **CLIP-L & CLIP-G**: Native SDXL text encoders for direct conditioning. Embed your prompts, tags, and captions in SDXL-compatible vector space for generation workflows.
 
 **Benefits**:
-- "Find images like this" visual search
-- Natural language search ("dramatic lighting at sunset")
-- Direct export to ComfyUI for generating variations
+- "Find images like this" visual search with CLIP-ViT-H
+- Natural language search ("dramatic lighting at sunset") via BGE embeddings
+- Direct export to ComfyUI for SDXL generation with CLIP-L/G conditioning
+- IPAdapter-compatible embeddings for semantic image variations
 - Multi-modal hybrid search (text + visual combined)
 
 ## 🔄 Batch Image Conversion (WebP)
@@ -260,6 +291,7 @@ See the `/docs` folder for detailed guides:
 ### AI & Embeddings
 - `EMBEDDING_ARCHITECTURE.md` - Multi-modal embedding system
 - `EMBEDDING_SYSTEM_STATUS.md` - Current implementation status
+- `FACE_RECOGNITION.md` - Face detection and identity clustering guide
 - `JOYCAPTION_INTEGRATION_GUIDE.md` - JoyCaption setup
 - `llamasharp.md` / `llamasharp_multimodal.md` - Local model setup notes
 - `ONNX_GPU_SETUP.md` - GPU acceleration configuration
@@ -279,6 +311,7 @@ See the `/docs` folder for detailed guides:
 - [x] Video file support (MP4, WebM, AVI) - ✅ **Complete**
 - [x] FFmpeg thumbnail generation for videos - ✅ **Complete**
 - [x] Duplicate detection using image embeddings - ✅ **Complete**
+- [x] Face Recognition & Identity Clustering - ✅ **Complete**
 - [ ] Batch metadata editing
 - [ ] Plugin system for custom metadata extractors
 - [ ] Post‑operation review modal with Accept / Retry / Cancel for tags and captions

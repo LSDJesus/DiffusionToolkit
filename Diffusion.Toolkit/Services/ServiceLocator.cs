@@ -56,18 +56,21 @@ public class ServiceLocator
     private static ICaptionService? _captionService;
     private static ModelResourceService? _modelResourceService;
     private static BackgroundTaggingService? _backgroundTaggingService;
+    private static BackgroundFaceDetectionService? _backgroundFaceDetectionService;
 
     public static PostgreSQLDataStore? DataStore => _dataStore; // Primary PostgreSQL database
     public static Settings? Settings => _settings;
     public static ToastService? ToastService { get; set; }
     public static Dispatcher? Dispatcher { get; set; }
     public static BackgroundTaggingService? BackgroundTaggingService => _backgroundTaggingService;
+    public static BackgroundFaceDetectionService? BackgroundFaceDetectionService => _backgroundFaceDetectionService;
 
     public static void SetDataStore(PostgreSQLDataStore dataStore)
     {
         _dataStore = dataStore;
         // Initialize BackgroundTaggingService when DataStore is set
         _backgroundTaggingService = new BackgroundTaggingService(dataStore);
+        _backgroundFaceDetectionService = new BackgroundFaceDetectionService(dataStore);
     }
 
     public static void SetSettings(Settings? settings)

@@ -293,6 +293,73 @@
                     </ScrollViewer>
                 </Grid>
             </TabItem>
+            <TabItem Header="Faces" Background="Transparent" GotFocus="UIElement_OnGotFocus" HorizontalContentAlignment="Stretch"
+                     Visibility="{Binding HasDetectedFaces, Converter={StaticResource boolToVis}}">
+                <ScrollViewer Background="Transparent" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Background="Transparent" Margin="5">
+                        <!-- Face detection summary -->
+                        <TextBlock FontSize="12" Margin="5,5,5,10" 
+                                   Foreground="{DynamicResource ForegroundBrush}">
+                            <Run Text="Detected Faces: "/>
+                            <Run Text="{Binding FaceCount, FallbackValue=0}" FontWeight="Bold"/>
+                        </TextBlock>
+                        
+                        <!-- Face crops grid -->
+                        <ItemsControl ItemsSource="{Binding DetectedFaces}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel Orientation="Horizontal"/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border BorderBrush="{DynamicResource SecondaryBrush}" BorderThickness="1" 
+                                            Margin="5" Padding="5" Background="#20000000">
+                                        <StackPanel>
+                                            <!-- Face crop image -->
+                                            <Image Source="{Binding FaceCropImage}" Width="120" Height="120" 
+                                                   Stretch="Uniform" Margin="0,0,0,5"/>
+                                            
+                                            <!-- Cluster label / person name -->
+                                            <TextBox Text="{Binding ClusterLabel, UpdateSourceTrigger=PropertyChanged}" 
+                                                     FontSize="11" Padding="3" Width="120"
+                                                     ToolTip="Edit person name"
+                                                     Foreground="{DynamicResource ForegroundBrush}"/>
+                                            
+                                            <!-- Face metadata -->
+                                            <StackPanel Orientation="Horizontal" Margin="0,3,0,0">
+                                                <TextBlock FontSize="9" Foreground="{DynamicResource SecondaryBrush}">
+                                                    <Run Text="Q:"/>
+                                                    <Run Text="{Binding QualityScore, StringFormat={}{0:F2}}"/>
+                                                    <Run Text=" C:"/>
+                                                    <Run Text="{Binding Confidence, StringFormat={}{0:F2}}"/>
+                                                </TextBlock>
+                                            </StackPanel>
+                                            
+                                            <!-- Cluster info -->
+                                            <TextBlock FontSize="9" Foreground="{DynamicResource AccentBrush}" 
+                                                       Margin="0,2,0,0"
+                                                       Visibility="{Binding HasCluster, Converter={StaticResource boolToVis}}">
+                                                <Run Text="Cluster #"/>
+                                                <Run Text="{Binding ClusterId}"/>
+                                                <Run Text=" ("/>
+                                                <Run Text="{Binding ClusterFaceCount}"/>
+                                                <Run Text=" faces)"/>
+                                            </TextBlock>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        
+                        <!-- No faces message -->
+                        <TextBlock FontSize="12" Margin="5" 
+                                   Foreground="{DynamicResource SecondaryBrush}"
+                                   Visibility="{Binding HasNoFaces, Converter={StaticResource boolToVis}}"
+                                   Text="No faces detected in this image"/>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
         </TabControl>
 
 

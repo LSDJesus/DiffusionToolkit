@@ -13,5 +13,14 @@ namespace Diffusion.Toolkit
             };
             window.ShowDialog();
         }
+
+        private void FaceGallery_OnClick(object sender, RoutedEventArgs e)
+        {
+            var window = new FaceGalleryWindow
+            {
+                Owner = this
+            };
+            window.ShowDialog();
+        }
     }
 }

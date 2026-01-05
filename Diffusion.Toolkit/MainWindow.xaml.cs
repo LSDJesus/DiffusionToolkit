@@ -148,6 +148,11 @@ namespace Diffusion.Toolkit
                 _model.StopEmbeddingCommand = new RelayCommand<object>((o) => StopEmbedding());
                 _model.ClearEmbeddingQueueCommand = new RelayCommand<object>((o) => ClearEmbeddingQueue());
                 
+                _model.StartFaceDetectionCommand = new RelayCommand<object>((o) => StartFaceDetection());
+                _model.PauseFaceDetectionCommand = new RelayCommand<object>((o) => PauseFaceDetection());
+                _model.StopFaceDetectionCommand = new RelayCommand<object>((o) => StopFaceDetection());
+                _model.ClearFaceDetectionQueueCommand = new RelayCommand<object>((o) => ClearFaceDetectionQueue());
+                
                 // Subscribe to background tagging service events
                 if (ServiceLocator.BackgroundTaggingService != null)
                 {
@@ -158,6 +163,15 @@ namespace Diffusion.Toolkit
                     ServiceLocator.BackgroundTaggingService.CaptioningCompleted += OnCaptioningCompleted;
                     ServiceLocator.BackgroundTaggingService.EmbeddingCompleted += OnEmbeddingCompleted;
                     ServiceLocator.BackgroundTaggingService.StatusChanged += OnBackgroundStatusChanged;
+                    ServiceLocator.BackgroundTaggingService.QueueCountsChanged += OnQueueCountsChanged;
+                }
+                
+                // Subscribe to face detection service events
+                if (ServiceLocator.BackgroundFaceDetectionService != null)
+                {
+                    ServiceLocator.BackgroundFaceDetectionService.FaceDetectionProgressChanged += OnFaceDetectionProgressChanged;
+                    ServiceLocator.BackgroundFaceDetectionService.FaceDetectionCompleted += OnFaceDetectionCompleted;
+                    ServiceLocator.BackgroundFaceDetectionService.StatusChanged += OnFaceDetectionStatusChanged;
                 }
 
                 InitEvents();
@@ -1400,6 +1414,7 @@ namespace Diffusion.Toolkit
             Dispatcher.Invoke(() =>
             {
                 _model.IsTaggingActive = true;
+                _model.TaggingQueueCount = ServiceLocator.BackgroundTaggingService?.TaggingQueueRemaining ?? 0;
             });
         }
 
@@ -1409,6 +1424,7 @@ namespace Diffusion.Toolkit
             Dispatcher.Invoke(() =>
             {
                 _model.IsCaptioningActive = true;
+                _model.CaptioningQueueCount = ServiceLocator.BackgroundTaggingService?.CaptioningQueueRemaining ?? 0;
             });
         }
 
@@ -1420,10 +1436,31 @@ namespace Diffusion.Toolkit
                 if (status.StartsWith("Tagging:"))
                 {
                     _model.TaggingStatus = status;
+                    // Extract queue count and ETA from status string
+                    // Format: "Tagging: X/Y (Queue: Z, ETA: HH:MM:SS)"
+                    var match = System.Text.RegularExpressions.Regex.Match(status, @"Queue:\s*(\d+),\s*ETA:\s*([\d:]+)");
+                    if (match.Success)
+                    {
+                        _model.TaggingQueueCount = int.Parse(match.Groups[1].Value);
+                    }
                 }
                 else if (status.StartsWith("Captioning:"))
                 {
                     _model.CaptioningStatus = status;
+                    var match = System.Text.RegularExpressions.Regex.Match(status, @"Queue:\s*(\d+),\s*ETA:\s*([\d:]+)");
+                    if (match.Success)
+                    {
+                        _model.CaptioningQueueCount = int.Parse(match.Groups[1].Value);
+                    }
+                }
+                else if (status.StartsWith("Embedding:"))
+                {
+                    _model.EmbeddingStatus = status;
+                    var match = System.Text.RegularExpressions.Regex.Match(status, @"Queue:\s*(\d+),\s*ETA:\s*([\d:]+)");
+                    if (match.Success)
+                    {
+                        _model.EmbeddingQueueCount = int.Parse(match.Groups[1].Value);
+                    }
                 }
             });
         }
@@ -1668,6 +1705,7 @@ namespace Diffusion.Toolkit
                 var imgPerSec = e.Current > 0 ? e.Current / Math.Max(1, elapsed.TotalSeconds) : 0;
                 _model.EmbeddingStatus = $"Embedding: {e.Current}/{e.Total} ({e.Percentage:F1}%)";
                 _model.IsEmbeddingActive = true;
+                _model.EmbeddingQueueCount = ServiceLocator.BackgroundTaggingService?.EmbeddingQueueRemaining ?? 0;
             });
         }
 
@@ -1680,5 +1718,114 @@ namespace Diffusion.Toolkit
                 Logger.Log("Embedding completed");
             });
         }
+
+        #region Face Detection
+
+        private void StartFaceDetection()
+        {
+            var service = ServiceLocator.BackgroundFaceDetectionService;
+            if (service == null) return;
+
+            service.StartFaceDetection();
+            _model.IsFaceDetectionActive = true;
+            Logger.Log("Started face detection from UI");
+        }
+
+        private void PauseFaceDetection()
+        {
+            var service = ServiceLocator.BackgroundFaceDetectionService;
+            if (service == null) return;
+
+            if (service.IsFaceDetectionPaused)
+            {
+                service.ResumeFaceDetection();
+                Logger.Log("Resumed face detection");
+            }
+            else
+            {
+                service.PauseFaceDetection();
+                Logger.Log("Paused face detection");
+            }
+        }
+
+        private void StopFaceDetection()
+        {
+            var service = ServiceLocator.BackgroundFaceDetectionService;
+            if (service == null) return;
+
+            service.StopFaceDetection();
+            _model.IsFaceDetectionActive = false;
+            _model.FaceDetectionStatus = "";
+            Logger.Log("Stopped face detection from UI");
+        }
+
+        private async void ClearFaceDetectionQueue()
+        {
+            var dataStore = ServiceLocator.DataStore;
+            if (dataStore == null) return;
+
+            var result = MessageBox.Show(
+                "Clear face detection queue? This will reset needs_face_detection flags without removing existing detections.",
+                "Clear Face Detection Queue",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+
+            if (result == MessageBoxResult.Yes)
+            {
+                await dataStore.ClearFaceDetectionQueue();
+                Logger.Log("Cleared face detection queue from UI");
+            }
+        }
+
+        private void OnFaceDetectionProgressChanged(object? sender, ProgressEventArgs e)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                _model.FaceDetectionStatus = $"Faces: {e.Current}/{e.Total} ({e.Percentage:F1}%)";
+                _model.IsFaceDetectionActive = true;
+                _model.FaceDetectionQueueCount = ServiceLocator.BackgroundFaceDetectionService?.FaceDetectionQueueRemaining ?? 0;
+            });
+        }
+
+        private void OnFaceDetectionCompleted(object? sender, EventArgs e)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                _model.IsFaceDetectionActive = false;
+                _model.FaceDetectionStatus = "";
+                Logger.Log("Face detection completed");
+            });
+        }
+
+        private void OnFaceDetectionStatusChanged(object? sender, string status)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                _model.FaceDetectionStatus = status;
+                // Extract queue count from status
+                // Format: "Faces: X/Y | Found: Z | A.B img/s | ETA: HH:MM:SS"
+                var match = System.Text.RegularExpressions.Regex.Match(status, @"Faces:\s*\d+/(\d+)");
+                if (match.Success)
+                {
+                    var total = int.Parse(match.Groups[1].Value);
+                    _model.FaceDetectionQueueCount = ServiceLocator.BackgroundFaceDetectionService?.FaceDetectionQueueRemaining ?? total;
+                }
+            });
+        }
+
+        private void OnQueueCountsChanged(object? sender, EventArgs e)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                if (ServiceLocator.BackgroundTaggingService != null)
+                {
+                    _model.TaggingQueueCount = ServiceLocator.BackgroundTaggingService.TaggingQueueRemaining;
+                    _model.CaptioningQueueCount = ServiceLocator.BackgroundTaggingService.CaptioningQueueRemaining;
+                    _model.EmbeddingQueueCount = ServiceLocator.BackgroundTaggingService.EmbeddingQueueRemaining;
+                }
+            });
+        }
+
+        #endregion
     }
 }

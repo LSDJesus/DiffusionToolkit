@@ -68,6 +68,10 @@ public class MainModel : BaseNotify
     private ICommand _pauseEmbeddingCommand;
     private ICommand _stopEmbeddingCommand;
     private ICommand _clearEmbeddingQueueCommand;
+    private ICommand _startFaceDetectionCommand;
+    private ICommand _pauseFaceDetectionCommand;
+    private ICommand _stopFaceDetectionCommand;
+    private ICommand _clearFaceDetectionQueueCommand;
     private int _thumbnailSize;
     private ICommand _escape;
     private ICommand _downloadCivitai;
@@ -150,9 +154,15 @@ public class MainModel : BaseNotify
     private bool _isTaggingActive;
     private bool _isCaptioningActive;
     private bool _isEmbeddingActive;
+    private bool _isFaceDetectionActive;
     private string _taggingStatus = "";
     private string _captioningStatus = "";
     private string _embeddingStatus = "";
+    private string _faceDetectionStatus = "";
+    private int _taggingQueueCount;
+    private int _captioningQueueCount;
+    private int _embeddingQueueCount;
+    private int _faceDetectionQueueCount;
 
     public bool IsBackgroundProcessingActive
     {
@@ -186,7 +196,17 @@ public class MainModel : BaseNotify
         set
         {
             SetField(ref _isEmbeddingActive, value);
-            IsBackgroundProcessingActive = _isTaggingActive || _isCaptioningActive || _isEmbeddingActive;
+            IsBackgroundProcessingActive = _isTaggingActive || _isCaptioningActive || _isEmbeddingActive || _isFaceDetectionActive;
+        }
+    }
+
+    public bool IsFaceDetectionActive
+    {
+        get => _isFaceDetectionActive;
+        set
+        {
+            SetField(ref _isFaceDetectionActive, value);
+            IsBackgroundProcessingActive = _isTaggingActive || _isCaptioningActive || _isEmbeddingActive || _isFaceDetectionActive;
         }
     }
 
@@ -206,6 +226,36 @@ public class MainModel : BaseNotify
     {
         get => _embeddingStatus;
         set => SetField(ref _embeddingStatus, value);
+    }
+
+    public string FaceDetectionStatus
+    {
+        get => _faceDetectionStatus;
+        set => SetField(ref _faceDetectionStatus, value);
+    }
+
+    public int TaggingQueueCount
+    {
+        get => _taggingQueueCount;
+        set => SetField(ref _taggingQueueCount, value);
+    }
+
+    public int CaptioningQueueCount
+    {
+        get => _captioningQueueCount;
+        set => SetField(ref _captioningQueueCount, value);
+    }
+
+    public int EmbeddingQueueCount
+    {
+        get => _embeddingQueueCount;
+        set => SetField(ref _embeddingQueueCount, value);
+    }
+
+    public int FaceDetectionQueueCount
+    {
+        get => _faceDetectionQueueCount;
+        set => SetField(ref _faceDetectionQueueCount, value);
     }
 
     public QueryOptions QueryOptions
@@ -428,6 +478,30 @@ public class MainModel : BaseNotify
     {
         get => _clearEmbeddingQueueCommand;
         set => SetField(ref _clearEmbeddingQueueCommand, value);
+    }
+
+    public ICommand StartFaceDetectionCommand
+    {
+        get => _startFaceDetectionCommand;
+        set => SetField(ref _startFaceDetectionCommand, value);
+    }
+
+    public ICommand PauseFaceDetectionCommand
+    {
+        get => _pauseFaceDetectionCommand;
+        set => SetField(ref _pauseFaceDetectionCommand, value);
+    }
+
+    public ICommand StopFaceDetectionCommand
+    {
+        get => _stopFaceDetectionCommand;
+        set => SetField(ref _stopFaceDetectionCommand, value);
+    }
+
+    public ICommand ClearFaceDetectionQueueCommand
+    {
+        get => _clearFaceDetectionQueueCommand;
+        set => SetField(ref _clearFaceDetectionQueueCommand, value);
     }
 
     public ICommand AboutCommand

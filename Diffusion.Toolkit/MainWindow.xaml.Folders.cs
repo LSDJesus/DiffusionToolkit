@@ -291,15 +291,20 @@ namespace Diffusion.Toolkit
             }
 
             // Get checkbox states
-            var joyTagCheckBox = window.FindName("JoyTagCheckBox") as System.Windows.Controls.CheckBox;
-            var wdTagCheckBox = window.FindName("WDTagCheckBox") as System.Windows.Controls.CheckBox;
+            var autoTagCheckBox = window.FindName("AutoTagCheckBox") as System.Windows.Controls.CheckBox;
             var joyCaptionCheckBox = window.FindName("JoyCaptionCheckBox") as System.Windows.Controls.CheckBox;
+            var embeddingCheckBox = window.FindName("EmbeddingCheckBox") as System.Windows.Controls.CheckBox;
+            var faceDetectionCheckBox = window.FindName("FaceDetectionCheckBox") as System.Windows.Controls.CheckBox;
 
-            bool doTagging = (joyTagCheckBox?.IsChecked == true) || (wdTagCheckBox?.IsChecked == true);
+            bool doTagging = autoTagCheckBox?.IsChecked == true;
             bool doCaptioning = joyCaptionCheckBox?.IsChecked == true;
+            bool doEmbedding = embeddingCheckBox?.IsChecked == true;
+            bool doFaceDetection = faceDetectionCheckBox?.IsChecked == true;
 
             int taggedQueued = 0;
             int captionQueued = 0;
+            int embeddingQueued = 0;
+            int faceDetectionQueued = 0;
 
             // Queue for tagging (filter based on skip settings)
             if (doTagging)
@@ -367,8 +372,27 @@ namespace Diffusion.Toolkit
                 }
             }
 
+            // Queue for embedding
+            if (doEmbedding)
+            {
+                await dataStore.SetNeedsEmbedding(imageIds, true);
+                embeddingQueued = imageIds.Count;
+            }
+
+            // Queue for face detection
+            if (doFaceDetection)
+            {
+                await dataStore.SetNeedsFaceDetection(imageIds, true);
+                faceDetectionQueued = imageIds.Count;
+            }
+
             var priorityText = highPriority ? " (high priority)" : "";
-            var message = $"Queued {taggedQueued} images for tagging, {captionQueued} for captioning{priorityText}";
+            var parts = new List<string>();
+            if (taggedQueued > 0) parts.Add($"{taggedQueued} for tagging");
+            if (captionQueued > 0) parts.Add($"{captionQueued} for captioning");
+            if (embeddingQueued > 0) parts.Add($"{embeddingQueued} for embedding");
+            if (faceDetectionQueued > 0) parts.Add($"{faceDetectionQueued} for face detection");
+            var message = parts.Count > 0 ? $"Queued {string.Join(", ", parts)}{priorityText}" : "No images queued";
             ServiceLocator.ToastService?.Toast(message, "Background Processing");
             Logger.Log(message);
 
@@ -390,6 +414,18 @@ namespace Diffusion.Toolkit
                 if (doCaptioning && !bgService.IsCaptioningRunning)
                 {
                     bgService.StartCaptioning();
+                }
+                if (doEmbedding && !bgService.IsEmbeddingRunning)
+                {
+                    bgService.StartEmbedding();
+                }
+                if (doFaceDetection)
+                {
+                    var faceService = ServiceLocator.BackgroundFaceDetectionService;
+                    if (faceService != null && !faceService.IsFaceDetectionRunning)
+                    {
+                        faceService.StartFaceDetection();
+                    }
                 }
             }
         }

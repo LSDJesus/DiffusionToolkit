@@ -1,6 +1,6 @@
 using System.Diagnostics;
 using Diffusion.Common;
-using Diffusion.FaceDetection.Models;
+using Diffusion.Common.Models;
 using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
 using SixLabors.ImageSharp;
@@ -91,18 +91,21 @@ public class RetinaFaceDetector : IDisposable
                 }
 
                 // Copy resized image to input tensor (CHW format, normalized)
-                for (int y = 0; y < scaledHeight; y++)
+                resizedImage.ProcessPixelRows(accessor =>
                 {
-                    var row = resizedImage.GetPixelRowSpan(y);
-                    for (int x = 0; x < scaledWidth; x++)
+                    for (int y = 0; y < scaledHeight; y++)
                     {
-                        var pixel = row[x];
-                        // BGR order (InsightFace convention), subtract mean
-                        inputData[0 * _inputSize * _inputSize + y * _inputSize + x] = (pixel.B - 127.5f) / 128f;
-                        inputData[1 * _inputSize * _inputSize + y * _inputSize + x] = (pixel.G - 127.5f) / 128f;
-                        inputData[2 * _inputSize * _inputSize + y * _inputSize + x] = (pixel.R - 127.5f) / 128f;
+                        var row = accessor.GetRowSpan(y);
+                        for (int x = 0; x < scaledWidth; x++)
+                        {
+                            var pixel = row[x];
+                            // BGR order (InsightFace convention), subtract mean
+                            inputData[0 * _inputSize * _inputSize + y * _inputSize + x] = (pixel.B - 127.5f) / 128f;
+                            inputData[1 * _inputSize * _inputSize + y * _inputSize + x] = (pixel.G - 127.5f) / 128f;
+                            inputData[2 * _inputSize * _inputSize + y * _inputSize + x] = (pixel.R - 127.5f) / 128f;
+                        }
                     }
-                }
+                });
 
                 var inputTensor = new DenseTensor<float>(inputData, new[] { 1, 3, _inputSize, _inputSize });
                 var inputs = new List<NamedOnnxValue>
@@ -153,38 +156,84 @@ public class RetinaFaceDetector : IDisposable
     {
         var results = new List<FaceDetectionResult>();
 
-        // Get output tensors (order may vary by model version)
-        float[] scores = null!;
-        float[] bboxes = null!;
-        float[] landmarks = null!;
-
-        foreach (var output in outputs)
+        // RetinaFace multi-scale outputs (3 scales: stride 8, 16, 32)
+        // Expected order: [score_s8, score_s16, score_s32, bbox_s8, bbox_s16, bbox_s32, kps_s8, kps_s16, kps_s32]
+        if (outputs.Count != 9)
         {
-            var data = output.AsEnumerable<float>().ToArray();
-            var name = output.Name.ToLower();
-            
-            if (name.Contains("score") || name.Contains("conf"))
-                scores = data;
-            else if (name.Contains("bbox") || name.Contains("box"))
-                bboxes = data;
-            else if (name.Contains("landmark") || name.Contains("kps"))
-                landmarks = data;
+            Logger.Log($"RetinaFace: Expected 9 outputs (multi-scale), got {outputs.Count}");
+            return results;
         }
 
-        if (scores == null || bboxes == null) return results;
+        // Concatenate multi-scale outputs
+        var allScores = new List<float>();
+        var allBboxes = new List<float>();
+        var allLandmarks = new List<float>();
+        var allStrides = new List<int>();
+
+        var strides = new[] { 8, 16, 32 };
+
+        // Scores (first 3 outputs)
+        for (int i = 0; i < 3; i++)
+        {
+            var scoreData = outputs[i].AsEnumerable<float>().ToArray();
+            var stride = strides[i];
+            
+            foreach (var score in scoreData)
+            {
+                allScores.Add(score);
+                allStrides.Add(stride);
+            }
+        }
+
+        // Bboxes (next 3 outputs, 4 coords per detection)
+        for (int i = 3; i < 6; i++)
+        {
+            var bboxData = outputs[i].AsEnumerable<float>().ToArray();
+            allBboxes.AddRange(bboxData);
+        }
+
+        // Landmarks (last 3 outputs, 10 coords per detection = 5 points × 2)
+        for (int i = 6; i < 9; i++)
+        {
+            var landmarkData = outputs[i].AsEnumerable<float>().ToArray();
+            allLandmarks.AddRange(landmarkData);
+        }
+
+        Logger.Log($"RetinaFace: Total detections: {allScores.Count}, confidence threshold: {_confidenceThreshold}");
+
+        // Debug: Show score distribution
+        var scoresAbove01 = allScores.Count(s => s > 0.1f);
+        var scoresAbove05 = allScores.Count(s => s > 0.5f);
+        var scoresAbove08 = allScores.Count(s => s > 0.8f);
+        var topScores = allScores.OrderByDescending(s => s).Take(10).ToList();
+        Logger.Log($"RetinaFace scores: >0.1: {scoresAbove01}, >0.5: {scoresAbove05}, >0.8: {scoresAbove08}");
+        Logger.Log($"RetinaFace top 10 scores: [{string.Join(", ", topScores.Select(s => s.ToString("F4")))}]");
 
         // Parse detections
-        int numDetections = scores.Length;
+        int numDetections = allScores.Count;
+        int passedConfidence = 0;
+        int rejectedSize = 0;
+        
         for (int i = 0; i < numDetections; i++)
         {
-            if (scores[i] < _confidenceThreshold) continue;
+            if (allScores[i] < _confidenceThreshold) continue;
+            
+            passedConfidence++;
 
-            // Get bbox (x1, y1, x2, y2)
+            // Get bbox (x1, y1, x2, y2) - already in pixel coordinates but scaled
             int bboxIdx = i * 4;
-            float x1 = bboxes[bboxIdx] / scale;
-            float y1 = bboxes[bboxIdx + 1] / scale;
-            float x2 = bboxes[bboxIdx + 2] / scale;
-            float y2 = bboxes[bboxIdx + 3] / scale;
+            if (bboxIdx + 3 >= allBboxes.Count) continue;
+            
+            float x1 = allBboxes[bboxIdx] / scale;
+            float y1 = allBboxes[bboxIdx + 1] / scale;
+            float x2 = allBboxes[bboxIdx + 2] / scale;
+            float y2 = allBboxes[bboxIdx + 3] / scale;
+
+            // Debug first few high-confidence detections
+            if (passedConfidence <= 3)
+            {
+                Logger.Log($"Detection {passedConfidence}: score={allScores[i]:F4}, bbox=[{x1:F1}, {y1:F1}, {x2:F1}, {y2:F1}], size={x2-x1:F1}x{y2-y1:F1}");
+            }
 
             // Clamp to image bounds
             x1 = Math.Max(0, Math.Min(x1, originalWidth));
@@ -198,36 +247,46 @@ public class RetinaFaceDetector : IDisposable
                 Y = (int)y1,
                 Width = (int)(x2 - x1),
                 Height = (int)(y2 - y1),
-                Confidence = scores[i]
+                Confidence = allScores[i]
             };
 
-            // Parse landmarks if available
-            if (landmarks != null)
+            // Parse landmarks
+            int landmarkIdx = i * 10; // 5 points × 2 (x, y)
+            if (landmarkIdx + 10 <= allLandmarks.Count)
             {
-                int landmarkIdx = i * 10; // 5 points × 2 (x, y)
-                if (landmarkIdx + 10 <= landmarks.Length)
+                face.Landmarks = new float[5][];
+                for (int j = 0; j < 5; j++)
                 {
-                    face.Landmarks = new float[5][];
-                    for (int j = 0; j < 5; j++)
+                    face.Landmarks[j] = new float[]
                     {
-                        face.Landmarks[j] = new float[]
-                        {
-                            landmarks[landmarkIdx + j * 2] / scale,
-                            landmarks[landmarkIdx + j * 2 + 1] / scale
-                        };
-                    }
-
-                    // Estimate head pose from landmarks
-                    EstimateHeadPose(face);
+                        allLandmarks[landmarkIdx + j * 2] / scale,
+                        allLandmarks[landmarkIdx + j * 2 + 1] / scale
+                    };
                 }
+
+                // Estimate head pose from landmarks
+                EstimateHeadPose(face);
             }
 
-            if (face.Width > 10 && face.Height > 10)
+            if (face.Width > 1 && face.Height > 1)  // Temporary: lowered from 10 to see detections
             {
                 results.Add(face);
+                if (results.Count <= 3)
+                {
+                    Logger.Log($"  → ACCEPTED: w={face.Width}, h={face.Height}");
+                }
+            }
+            else
+            {
+                rejectedSize++;
+                if (rejectedSize <= 3)
+                {
+                    Logger.Log($"  → REJECTED: w={face.Width}, h={face.Height} (too small or negative)");
+                }
             }
         }
 
+        Logger.Log($"RetinaFace: Passed confidence: {passedConfidence}, rejected by size: {rejectedSize}, final faces: {results.Count}");
         return results;
     }
 
@@ -332,17 +391,20 @@ public class RetinaFaceDetector : IDisposable
             double sum = 0, sumSq = 0;
             int count = 0;
 
-            for (int py = 0; py < cropped.Height; py++)
+            cropped.ProcessPixelRows(accessor =>
             {
-                var row = cropped.GetPixelRowSpan(py);
-                for (int px = 0; px < cropped.Width; px++)
+                for (int py = 0; py < cropped.Height; py++)
                 {
-                    var gray = (row[px].R + row[px].G + row[px].B) / 3.0;
-                    sum += gray;
-                    sumSq += gray * gray;
-                    count++;
+                    var row = accessor.GetRowSpan(py);
+                    for (int px = 0; px < cropped.Width; px++)
+                    {
+                        var gray = (row[px].R + row[px].G + row[px].B) / 3.0;
+                        sum += gray;
+                        sumSq += gray * gray;
+                        count++;
+                    }
                 }
-            }
+            });
 
             var mean = sum / count;
             var variance = (sumSq / count) - (mean * mean);

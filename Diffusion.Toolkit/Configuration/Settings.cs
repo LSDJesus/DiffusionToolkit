@@ -99,9 +99,10 @@ public class Settings : SettingsContainer, IScanOptions
     private string _wdV3LargeTagsPath;
     private float _wdV3LargeThreshold;
     // Tagging/Captioning dialog checkbox states
-    private bool _tagDialogJoyTagEnabled = true;
-    private bool _tagDialogWDTagEnabled = true;
+    private bool _tagDialogAutoTagEnabled = true;  // Merged JoyTag + WDTag
     private bool _tagDialogCaptionEnabled;
+    private bool _tagDialogEmbeddingEnabled = false;
+    private bool _tagDialogFaceDetectionEnabled = false;
     private string _joyCaptionDefaultPrompt;
     private string _databaseSchema;
     private bool _createMetadataBackup;
@@ -121,12 +122,25 @@ public class Settings : SettingsContainer, IScanOptions
     private int _captioningModelTTLMinutes = 2;
     
     // Embedding settings
-    private bool _tagDialogEmbeddingEnabled = false;
     private int _embeddingConcurrentWorkers = 9;  // Default: 7 on GPU0 + 2 on GPU1
     private string _embeddingGpuDevices = "0,1";
     private string _embeddingGpuVramRatios = "32,12";  // RTX 5090 + RTX 3080 Ti
     private int _embeddingBatchSize = 32;
     private bool _skipAlreadyEmbeddedImages = true;
+    
+    // Face detection settings
+    private int _faceDetectionConcurrentWorkers = 4;
+    private string _faceDetectionGpuDevices = "0";
+    private float _faceDetectionConfidenceThreshold = 0.5f;
+    private float _faceClusterThreshold = 0.6f;  // Similarity threshold for auto-clustering
+    private bool _skipAlreadyProcessedFaces = true;
+    private bool _storeFaceCrops = true;  // Store face crop images
+    private bool _autoClusterFaces = true;  // Automatically cluster similar faces
+    
+    // Auto-processing on scan
+    private bool _autoTagOnScan = false;
+    private bool _autoCaptionOnScan = false;
+    private bool _autoFaceDetectionOnScan = false;
     
     private bool _writeGenerationParamsToMetadata;
     private CaptionHandlingMode _captionHandlingMode;
@@ -717,16 +731,11 @@ public class Settings : SettingsContainer, IScanOptions
         set => UpdateValue(ref _wdV3LargeThreshold, value);
     }
 
-    public bool TagDialogJoyTagEnabled
+    // Tagging dialog checkbox states
+    public bool TagDialogAutoTagEnabled
     {
-        get => _tagDialogJoyTagEnabled;
-        set => UpdateValue(ref _tagDialogJoyTagEnabled, value);
-    }
-
-    public bool TagDialogWDTagEnabled
-    {
-        get => _tagDialogWDTagEnabled;
-        set => UpdateValue(ref _tagDialogWDTagEnabled, value);
+        get => _tagDialogAutoTagEnabled;
+        set => UpdateValue(ref _tagDialogAutoTagEnabled, value);
     }
 
     public bool TagDialogCaptionEnabled
@@ -820,6 +829,73 @@ public class Settings : SettingsContainer, IScanOptions
         set => UpdateValue(ref _skipAlreadyEmbeddedImages, value);
     }
 
+    // Face detection settings
+    public bool TagDialogFaceDetectionEnabled
+    {
+        get => _tagDialogFaceDetectionEnabled;
+        set => UpdateValue(ref _tagDialogFaceDetectionEnabled, value);
+    }
+
+    public int FaceDetectionConcurrentWorkers
+    {
+        get => _faceDetectionConcurrentWorkers;
+        set => UpdateValue(ref _faceDetectionConcurrentWorkers, Math.Max(1, Math.Min(16, value)));
+    }
+
+    public string FaceDetectionGpuDevices
+    {
+        get => _faceDetectionGpuDevices;
+        set => UpdateValue(ref _faceDetectionGpuDevices, value);
+    }
+
+    public float FaceDetectionConfidenceThreshold
+    {
+        get => _faceDetectionConfidenceThreshold;
+        set => UpdateValue(ref _faceDetectionConfidenceThreshold, Math.Max(0.1f, Math.Min(0.99f, value)));
+    }
+
+    public float FaceClusterThreshold
+    {
+        get => _faceClusterThreshold;
+        set => UpdateValue(ref _faceClusterThreshold, Math.Max(0.3f, Math.Min(0.95f, value)));
+    }
+
+    public bool SkipAlreadyProcessedFaces
+    {
+        get => _skipAlreadyProcessedFaces;
+        set => UpdateValue(ref _skipAlreadyProcessedFaces, value);
+    }
+
+    public bool StoreFaceCrops
+    {
+        get => _storeFaceCrops;
+        set => UpdateValue(ref _storeFaceCrops, value);
+    }
+
+    public bool AutoClusterFaces
+    {
+        get => _autoClusterFaces;
+        set => UpdateValue(ref _autoClusterFaces, value);
+    }
+
+    public bool AutoTagOnScan
+    {
+        get => _autoTagOnScan;
+        set => UpdateValue(ref _autoTagOnScan, value);
+    }
+
+    public bool AutoCaptionOnScan
+    {
+        get => _autoCaptionOnScan;
+        set => UpdateValue(ref _autoCaptionOnScan, value);
+    }
+
+    public bool AutoFaceDetectionOnScan
+    {
+        get => _autoFaceDetectionOnScan;
+        set => UpdateValue(ref _autoFaceDetectionOnScan, value);
+    }
+
     public string JoyCaptionDefaultPrompt
     {
         get => _joyCaptionDefaultPrompt;
@@ -901,18 +977,4 @@ public class PreviewWindowState
     public bool IsFullScreen { get; set; }
 }
 
-public enum CaptionHandlingMode
-{
-    /// <summary>Replace existing caption with new one</summary>
-    Overwrite,
-    /// <summary>Append new caption to existing caption</summary>
-    Append,
-    /// <summary>Use existing caption as context for refinement</summary>
-    Refine
-}
 
-public enum CaptionProviderType
-{
-    LocalJoyCaption = 0,
-    OpenAICompatible = 1
-}

@@ -34,7 +34,7 @@ scripts/
 _import_joytag/
 _test_images/
 _import_wdtag/
-
+.codebase/
 #Nuget packages folder
 packages/
 /build

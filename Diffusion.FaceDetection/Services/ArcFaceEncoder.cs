@@ -71,18 +71,21 @@ public class ArcFaceEncoder : IDisposable
         // Convert to tensor (CHW, normalized)
         var inputData = new float[1 * 3 * _inputSize * _inputSize];
         
-        for (int y = 0; y < _inputSize; y++)
+        resized.ProcessPixelRows(accessor =>
         {
-            var row = resized.GetPixelRowSpan(y);
-            for (int x = 0; x < _inputSize; x++)
+            for (int y = 0; y < _inputSize; y++)
             {
-                var pixel = row[x];
-                // RGB order, normalize to [-1, 1]
-                inputData[0 * _inputSize * _inputSize + y * _inputSize + x] = (pixel.R - 127.5f) / 127.5f;
-                inputData[1 * _inputSize * _inputSize + y * _inputSize + x] = (pixel.G - 127.5f) / 127.5f;
-                inputData[2 * _inputSize * _inputSize + y * _inputSize + x] = (pixel.B - 127.5f) / 127.5f;
+                var row = accessor.GetRowSpan(y);
+                for (int x = 0; x < _inputSize; x++)
+                {
+                    var pixel = row[x];
+                    // RGB order, normalize to [-1, 1]
+                    inputData[0 * _inputSize * _inputSize + y * _inputSize + x] = (pixel.R - 127.5f) / 127.5f;
+                    inputData[1 * _inputSize * _inputSize + y * _inputSize + x] = (pixel.G - 127.5f) / 127.5f;
+                    inputData[2 * _inputSize * _inputSize + y * _inputSize + x] = (pixel.B - 127.5f) / 127.5f;
+                }
             }
-        }
+        });
 
         var inputTensor = new DenseTensor<float>(inputData, new[] { 1, 3, _inputSize, _inputSize });
         

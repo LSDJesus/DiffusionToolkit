@@ -190,6 +190,147 @@ public class PostgreSQLMigrations
         }
     }
 
+    private async Task ApplyV4Async()
+    {
+        try
+        {
+            Diffusion.Common.Logger.Log("Applying V4 migration: Face detection tables...");
+            
+            var sql = @"
+                -- Face cluster table (groups of similar faces / characters)
+                CREATE TABLE IF NOT EXISTS face_cluster (
+                    id SERIAL PRIMARY KEY,
+                    label TEXT,
+                    representative_face_ids INTEGER[],
+                    face_count INTEGER DEFAULT 0,
+                    avg_quality_score REAL,
+                    avg_confidence REAL,
+                    cluster_thumbnail BYTEA,
+                    is_manual BOOLEAN DEFAULT FALSE,
+                    notes TEXT,
+                    created_at TIMESTAMP DEFAULT NOW(),
+                    updated_at TIMESTAMP DEFAULT NOW()
+                );
+
+                -- Face detection table (individual face detections)
+                CREATE TABLE IF NOT EXISTS face_detection (
+                    id SERIAL PRIMARY KEY,
+                    image_id INTEGER REFERENCES image(id) ON DELETE CASCADE,
+                    
+                    -- Bounding box
+                    bbox_x INTEGER,
+                    bbox_y INTEGER,
+                    bbox_width INTEGER,
+                    bbox_height INTEGER,
+                    
+                    -- Cropped face image (JPEG bytes)
+                    face_crop BYTEA,
+                    crop_width INTEGER,
+                    crop_height INTEGER,
+                    
+                    -- ArcFace embedding (512D)
+                    arcface_embedding vector(512),
+                    
+                    -- Detection metadata
+                    detection_model TEXT,
+                    confidence REAL,
+                    quality_score REAL,
+                    sharpness_score REAL,
+                    
+                    -- Head pose
+                    pose_yaw REAL,
+                    pose_pitch REAL,
+                    pose_roll REAL,
+                    
+                    -- Landmarks (5-point, stored as JSON)
+                    landmarks JSONB,
+                    
+                    -- Character labeling
+                    face_cluster_id INTEGER REFERENCES face_cluster(id) ON DELETE SET NULL,
+                    character_label TEXT,
+                    manual_label BOOLEAN DEFAULT FALSE,
+                    
+                    created_at TIMESTAMP DEFAULT NOW()
+                );
+
+                -- Face similarity pairs (pre-computed for fast lookups)
+                CREATE TABLE IF NOT EXISTS face_similarity (
+                    face_id_1 INTEGER REFERENCES face_detection(id) ON DELETE CASCADE,
+                    face_id_2 INTEGER REFERENCES face_detection(id) ON DELETE CASCADE,
+                    similarity_score REAL,
+                    PRIMARY KEY (face_id_1, face_id_2)
+                );
+
+                -- Face timeline (track same character across images)
+                CREATE TABLE IF NOT EXISTS face_timeline (
+                    id SERIAL PRIMARY KEY,
+                    cluster_id INTEGER REFERENCES face_cluster(id) ON DELETE CASCADE,
+                    image_id INTEGER REFERENCES image(id) ON DELETE CASCADE,
+                    face_id INTEGER REFERENCES face_detection(id) ON DELETE CASCADE,
+                    appearance_date TIMESTAMP,
+                    sequence_order INTEGER
+                );
+
+                -- Scene composition (multi-face analysis)
+                CREATE TABLE IF NOT EXISTS scene_composition (
+                    id SERIAL PRIMARY KEY,
+                    image_id INTEGER REFERENCES image(id) ON DELETE CASCADE UNIQUE,
+                    face_count INTEGER,
+                    characters_present TEXT[],
+                    spatial_layout TEXT,
+                    interaction_type TEXT,
+                    created_at TIMESTAMP DEFAULT NOW()
+                );
+
+                -- Add face-related columns to image table
+                ALTER TABLE image ADD COLUMN IF NOT EXISTS needs_face_detection BOOLEAN DEFAULT FALSE;
+                ALTER TABLE image ADD COLUMN IF NOT EXISTS face_count INTEGER DEFAULT 0;
+                ALTER TABLE image ADD COLUMN IF NOT EXISTS primary_character TEXT;
+                ALTER TABLE image ADD COLUMN IF NOT EXISTS characters_detected TEXT[];
+
+                -- Indexes for face detection
+                CREATE INDEX IF NOT EXISTS idx_face_detection_image_id ON face_detection(image_id);
+                CREATE INDEX IF NOT EXISTS idx_face_detection_cluster_id ON face_detection(face_cluster_id);
+                CREATE INDEX IF NOT EXISTS idx_face_detection_character_label ON face_detection(character_label);
+                CREATE INDEX IF NOT EXISTS idx_face_detection_confidence ON face_detection(confidence);
+                CREATE INDEX IF NOT EXISTS idx_face_detection_quality ON face_detection(quality_score);
+
+                -- Vector index for face similarity search (ArcFace 512D)
+                CREATE INDEX IF NOT EXISTS idx_face_arcface_embedding ON face_detection 
+                    USING ivfflat (arcface_embedding vector_cosine_ops) WITH (lists = 100);
+
+                -- Indexes for face cluster
+                CREATE INDEX IF NOT EXISTS idx_face_cluster_label ON face_cluster(label);
+                CREATE INDEX IF NOT EXISTS idx_face_cluster_face_count ON face_cluster(face_count);
+
+                -- Indexes for similarity pairs
+                CREATE INDEX IF NOT EXISTS idx_face_similarity_score ON face_similarity(similarity_score);
+
+                -- Indexes for timeline
+                CREATE INDEX IF NOT EXISTS idx_face_timeline_cluster_id ON face_timeline(cluster_id);
+                CREATE INDEX IF NOT EXISTS idx_face_timeline_image_id ON face_timeline(image_id);
+
+                -- Index for image face columns
+                CREATE INDEX IF NOT EXISTS idx_image_needs_face_detection ON image(needs_face_detection) WHERE needs_face_detection = true;
+                CREATE INDEX IF NOT EXISTS idx_image_face_count ON image(face_count);
+                CREATE INDEX IF NOT EXISTS idx_image_primary_character ON image(primary_character);
+
+                -- GIN index for character array search
+                CREATE INDEX IF NOT EXISTS idx_image_characters_detected ON image USING GIN(characters_detected);
+            ";
+            
+            await _connection.ExecuteAsync(sql);
+            
+            Diffusion.Common.Logger.Log("V4 migration completed successfully");
+        }
+        catch (Exception ex)
+        {
+            Diffusion.Common.Logger.Log($"ApplyV4Async failed: {ex.Message}");
+            Diffusion.Common.Logger.Log($"Stack: {ex.StackTrace}");
+            throw;
+        }
+    }
+
     private async Task CreateIndexesAsync()
     {
         var sql = @"

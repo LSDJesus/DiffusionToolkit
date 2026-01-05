@@ -36,16 +36,15 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
         // Check service availability
         JoyTagAvailable = ServiceLocator.JoyTagService != null;
         WDTagAvailable = ServiceLocator.WDTagService != null;
+        TaggingAvailable = JoyTagAvailable && WDTagAvailable; // Both must be available
+        
         // Caption service is initialized on-demand when captioning starts, so always allow it if configured
         JoyCaptionAvailable = ServiceLocator.Settings?.CaptionProvider == Configuration.CaptionProviderType.LocalJoyCaption 
             && !string.IsNullOrEmpty(ServiceLocator.Settings?.JoyCaptionModelPath);
 
-        JoyTagStatus = JoyTagAvailable 
-            ? $"Ready (Threshold: {ServiceLocator.Settings?.JoyTagThreshold ?? 0.5f:F2})" 
-            : "Model not found";
-        WDTagStatus = WDTagAvailable 
-            ? $"Ready (Threshold: {ServiceLocator.Settings?.WDTagThreshold ?? 0.5f:F2})" 
-            : "Model not found";
+        TaggingStatus = TaggingAvailable 
+            ? $"Ready (JoyTag threshold: {ServiceLocator.Settings?.JoyTagThreshold ?? 0.5f:F2}, WD threshold: {ServiceLocator.Settings?.WDTagThreshold ?? 0.5f:F2})" 
+            : (JoyTagAvailable ? "WD model not found" : WDTagAvailable ? "JoyTag model not found" : "Models not found");
         JoyCaptionStatus = JoyCaptionAvailable 
             ? "Ready (will initialize on start)" 
             : "Not configured";
@@ -57,6 +56,15 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
             ? "Ready (BGE + CLIP-ViT-H)" 
             : "Models not found";
         EmbeddingEnabled = ServiceLocator.Settings?.TagDialogEmbeddingEnabled ?? false;
+
+        // Face detection is available if ONNX models exist
+        var retinaFaceModelPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "models", "onnx", "retinaface", "det_10g.onnx");
+        var arcFaceModelPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "models", "onnx", "arcface", "w600k_r50.onnx");
+        FaceDetectionAvailable = System.IO.File.Exists(retinaFaceModelPath) && System.IO.File.Exists(arcFaceModelPath);
+        FaceDetectionStatus = FaceDetectionAvailable 
+            ? "Ready (RetinaFace + ArcFace)" 
+            : "Models not found";
+        FaceDetectionEnabled = ServiceLocator.Settings?.TagDialogFaceDetectionEnabled ?? false;
 
         ImageCount = imageIds.Count;
         
@@ -77,24 +85,23 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
             // Load saved checkbox states from settings
             if (!taggingOnly && !captioningOnly)
             {
-                JoyTagCheckBox.IsChecked = ServiceLocator.Settings?.TagDialogJoyTagEnabled ?? true;
-                WDTagCheckBox.IsChecked = ServiceLocator.Settings?.TagDialogWDTagEnabled ?? true;
+                AutoTagCheckBox.IsChecked = ServiceLocator.Settings?.TagDialogAutoTagEnabled ?? true;
                 JoyCaptionCheckBox.IsChecked = ServiceLocator.Settings?.TagDialogCaptionEnabled ?? false;
                 EmbeddingCheckBox.IsChecked = ServiceLocator.Settings?.TagDialogEmbeddingEnabled ?? false;
+                FaceDetectionCheckBox.IsChecked = ServiceLocator.Settings?.TagDialogFaceDetectionEnabled ?? false;
             }
             else if (taggingOnly)
             {
                 Title = "Auto-Tag Images";
+                AutoTagCheckBox.IsChecked = true;
                 JoyCaptionCheckBox.IsChecked = false;
                 JoyCaptionCheckBox.IsEnabled = false;
             }
             else if (captioningOnly)
             {
                 Title = "Caption Images";
-                JoyTagCheckBox.IsChecked = false;
-                JoyTagCheckBox.IsEnabled = false;
-                WDTagCheckBox.IsChecked = false;
-                WDTagCheckBox.IsEnabled = false;
+                AutoTagCheckBox.IsChecked = false;
+                AutoTagCheckBox.IsEnabled = false;
                 JoyCaptionCheckBox.IsChecked = true;
             }
         };
@@ -102,15 +109,18 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
 
     public bool JoyTagAvailable { get; }
     public bool WDTagAvailable { get; }
+    public bool TaggingAvailable { get; } // Both taggers available
     public bool JoyCaptionAvailable { get; }
     public bool EmbeddingAvailable { get; }
+    public bool FaceDetectionAvailable { get; }
     
-    public string JoyTagStatus { get; }
-    public string WDTagStatus { get; }
+    public string TaggingStatus { get; } // Combined status
     public string JoyCaptionStatus { get; }
     public string EmbeddingStatus { get; }
+    public string FaceDetectionStatus { get; }
     
     public bool EmbeddingEnabled { get; set; }
+    public bool FaceDetectionEnabled { get; set; }
 
     public int ImageCount { get; }
 
@@ -134,10 +144,10 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
         }
     }
 
-    public bool CanStart => !IsProcessing && (JoyTagCheckBox.IsChecked == true || 
-                                              WDTagCheckBox.IsChecked == true || 
+    public bool CanStart => !IsProcessing && (AutoTagCheckBox.IsChecked == true || 
                                               JoyCaptionCheckBox.IsChecked == true ||
-                                              EmbeddingCheckBox.IsChecked == true);
+                                              EmbeddingCheckBox.IsChecked == true ||
+                                              FaceDetectionCheckBox.IsChecked == true);
 
     public int ProcessedImages
     {
@@ -209,18 +219,33 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
                 return;
             }
 
-            var runJoyTag = JoyTagCheckBox.IsChecked == true && ServiceLocator.JoyTagService != null;
-            var runWDTag = WDTagCheckBox.IsChecked == true && ServiceLocator.WDTagService != null;
+            var runTagging = AutoTagCheckBox.IsChecked == true && TaggingAvailable;
             var runJoyCaption = JoyCaptionCheckBox.IsChecked == true && ServiceLocator.CaptionService != null;
+            var runFaceDetection = FaceDetectionCheckBox?.IsChecked == true && FaceDetectionAvailable;
             var storeConfidence = ServiceLocator.Settings?.StoreTagConfidence ?? false;
             var maxConcurrency = ServiceLocator.Settings?.TaggingConcurrentWorkers ?? 8;
             var skipAlreadyTagged = ServiceLocator.Settings?.SkipAlreadyTaggedImages ?? true;
 
-            Logger.Log($"TaggingWindow: runJoyTag={runJoyTag}, runWDTag={runWDTag}, runJoyCaption={runJoyCaption}");
-            Logger.Log($"  JoyTagCheckBox.IsChecked={JoyTagCheckBox.IsChecked}, JoyTagService={ServiceLocator.JoyTagService != null}");
-            Logger.Log($"  WDTagCheckBox.IsChecked={WDTagCheckBox.IsChecked}, WDTagService={ServiceLocator.WDTagService != null}");
+            Logger.Log($"TaggingWindow: runTagging={runTagging}, runJoyCaption={runJoyCaption}, runFaceDetection={runFaceDetection}");
+            Logger.Log($"  AutoTagCheckBox.IsChecked={AutoTagCheckBox.IsChecked}, TaggingAvailable={TaggingAvailable}");
             Logger.Log($"  JoyCaptionCheckBox.IsChecked={JoyCaptionCheckBox.IsChecked}, CaptionService={ServiceLocator.CaptionService != null}");
+            Logger.Log($"  FaceDetectionCheckBox.IsChecked={FaceDetectionCheckBox?.IsChecked}, FaceDetectionAvailable={FaceDetectionAvailable}");
             Logger.Log($"  Parallel processing with {maxConcurrency} concurrent workers, skipAlreadyTagged={skipAlreadyTagged}");
+
+            // Queue images for face detection if enabled
+            if (runFaceDetection)
+            {
+                Logger.Log($"Queueing {_imageIds.Count} images for face detection");
+                await dataStore.SetNeedsFaceDetection(_imageIds, true);
+                
+                // Start background face detection service
+                var faceService = ServiceLocator.BackgroundFaceDetectionService;
+                if (faceService != null && !faceService.IsFaceDetectionRunning)
+                {
+                    faceService.StartFaceDetection();
+                    Logger.Log("Started background face detection service");
+                }
+            }
 
             // Use parallel processing for better GPU utilization
             var parallelOptions = new ParallelOptions 
@@ -238,7 +263,7 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
                 if (image == null) return;
 
                 // Skip if tags already exist and user preference is set
-                if (skipAlreadyTagged && (runJoyTag || runWDTag))
+                if (skipAlreadyTagged && runTagging)
                 {
                     var existingTags = await dataStore.GetImageTagsAsync(imageId);
                     if (existingTags.Count > 0)
@@ -256,12 +281,12 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
                     ProgressMessage = "Processing...";
                 });
 
-                // When both taggers are enabled, we need to deduplicate and average confidence
-                if (runJoyTag && runWDTag)
+                // Auto-tag always runs both taggers together
+                if (runTagging)
                 {
                     await Task.Run(async () =>
                     {
-                        // Run both taggers
+                        // Run both taggers (JoyTag + WD v3 Large)
                         var joyTagsTask = ServiceLocator.JoyTagService!.TagImageAsync(image.Path);
                         var wdTagsTask = ServiceLocator.WDTagService!.TagImageAsync(image.Path);
                         await Task.WhenAll(joyTagsTask, wdTagsTask);
@@ -310,109 +335,13 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
                             Scanner.MetadataWriter.WriteMetadata(image.Path, request);
                         }
                     }, _cancellationTokenSource.Token);
+                }
                     
-                    // Run caption if enabled (alongside both taggers)
-                    if (runJoyCaption)
-                    {
-                        await RunCaptionAsync(dataStore, image, imageId);
-                    }
-                }
-                else
+                // Run caption if enabled
+                if (runJoyCaption)
                 {
-                    // Run taggers separately
-                    var tasks = new List<Task>();
-
-                    if (runJoyTag)
-                    {
-                        tasks.Add(Task.Run(async () =>
-                        {
-                            var tags = await ServiceLocator.JoyTagService!.TagImageAsync(image.Path);
-                            Logger.Log($"JoyTag: {tags.Count} tags for image {imageId}");
-                            var tagTuples = tags.Select(t => (t.Tag, t.Confidence)).ToList();
-                            await dataStore.StoreImageTagsAsync(imageId, tagTuples, "joytag");
-                            
-                            // Write tags to image metadata if enabled
-                            // Auto-write disabled - use context menu instead
-                            if (false)
-                            {
-                                var latestCaption = await dataStore.GetLatestCaptionAsync(imageId);
-                                var request = new Scanner.MetadataWriteRequest
-                                {
-                                    Prompt = image.Prompt,
-                                    NegativePrompt = image.NegativePrompt,
-                                    Steps = image.Steps,
-                                    Sampler = image.Sampler,
-                                    CFGScale = image.CfgScale,
-                                    Seed = image.Seed,
-                                    Width = image.Width,
-                                    Height = image.Height,
-                                    Model = image.Model,
-                                    ModelHash = image.ModelHash,
-                                    Tags = tags.Select(t => new Scanner.TagWithConfidence 
-                                    { 
-                                        Tag = t.Tag, 
-                                        Confidence = t.Confidence 
-                                    }).ToList(),
-                                    Caption = latestCaption?.Caption,
-                                    AestheticScore = image.AestheticScore > 0 ? (decimal?)image.AestheticScore : null,
-                                    CreateBackup = ServiceLocator.Settings?.CreateMetadataBackup ?? true
-                                };
-                                Scanner.MetadataWriter.WriteMetadata(image.Path, request);
-                            }
-                        }, _cancellationTokenSource.Token));
-                    }
-
-                    if (runWDTag)
-                    {
-                        tasks.Add(Task.Run(async () =>
-                        {
-                            var tags = await ServiceLocator.WDTagService!.TagImageAsync(image.Path);
-                            var tagTuples = tags.Select(t => (t.Tag, t.Confidence)).ToList();
-                            await dataStore.StoreImageTagsAsync(imageId, tagTuples, "wdv3large");
-                            
-                            // Auto-write disabled - use context menu instead
-                            if (false)
-                            {
-                                var latestCaption = await dataStore.GetLatestCaptionAsync(imageId);
-                                var request = new Scanner.MetadataWriteRequest
-                                {
-                                    Prompt = image.Prompt,
-                                    NegativePrompt = image.NegativePrompt,
-                                    Steps = image.Steps,
-                                    Sampler = image.Sampler,
-                                    CFGScale = image.CfgScale,
-                                    Seed = image.Seed,
-                                    Width = image.Width,
-                                    Height = image.Height,
-                                    Model = image.Model,
-                                    ModelHash = image.ModelHash,
-                                    Tags = tags.Select(t => new Scanner.TagWithConfidence 
-                                    { 
-                                        Tag = t.Tag, 
-                                        Confidence = t.Confidence 
-                                    }).ToList(),
-                                    Caption = latestCaption?.Caption,
-                                    AestheticScore = image.AestheticScore > 0 ? (decimal?)image.AestheticScore : null,
-                                    CreateBackup = ServiceLocator.Settings?.CreateMetadataBackup ?? true
-                                };
-                                Scanner.MetadataWriter.WriteMetadata(image.Path, request);
-                            }
-                        }, _cancellationTokenSource.Token));
-                    }
-
-                    if (runJoyCaption)
-                    {
-                        tasks.Add(Task.Run(async () =>
-                        {
-                            await RunCaptionAsync(dataStore, image, imageId);
-                        }, _cancellationTokenSource.Token));
-                    }
-
-                    await Task.WhenAll(tasks);
+                    await RunCaptionAsync(dataStore, image, imageId);
                 }
-
-                // NOTE: Caption-only path removed - captioning is now handled in the parallel tasks above
-                // The duplicate code was causing double caption generation
 
                 Interlocked.Increment(ref _processedImages);
                 Dispatcher.Invoke(() => OnPropertyChanged(nameof(ProcessedImages)));
@@ -454,44 +383,6 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
             DialogResult = false;
             Close();
         }
-    }
-
-    private void JoyTagCheckBox_CheckedChanged(object sender, RoutedEventArgs e)
-    {
-        if (ServiceLocator.Settings != null)
-        {
-            ServiceLocator.Settings.TagDialogJoyTagEnabled = JoyTagCheckBox.IsChecked ?? false;
-        }
-        OnPropertyChanged(nameof(CanStart));
-    }
-
-    private void WDTagCheckBox_CheckedChanged(object sender, RoutedEventArgs e)
-    {
-        if (ServiceLocator.Settings != null)
-        {
-            ServiceLocator.Settings.TagDialogWDTagEnabled = WDTagCheckBox.IsChecked ?? false;
-        }
-        OnPropertyChanged(nameof(CanStart));
-    }
-
-    private void JoyCaptionCheckBox_CheckedChanged(object sender, RoutedEventArgs e)
-    {
-        if (ServiceLocator.Settings != null)
-        {
-            ServiceLocator.Settings.TagDialogCaptionEnabled = JoyCaptionCheckBox.IsChecked ?? false;
-        }
-        // Trigger CanStart update
-        OnPropertyChanged(nameof(CanStart));
-    }
-
-    private void EmbeddingCheckBox_CheckedChanged(object sender, RoutedEventArgs e)
-    {
-        if (ServiceLocator.Settings != null)
-        {
-            ServiceLocator.Settings.TagDialogEmbeddingEnabled = EmbeddingCheckBox.IsChecked ?? false;
-        }
-        // Trigger CanStart update
-        OnPropertyChanged(nameof(CanStart));
     }
 
     protected virtual void OnPropertyChanged([CallerMemberName] string? propertyName = null)
@@ -630,4 +521,41 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
             Logger.Log($"Metadata write result: {writeResult}");
         }
     }
+
+    private void AutoTagCheckBox_CheckedChanged(object sender, RoutedEventArgs e)
+    {
+        OnPropertyChanged(nameof(CanStart));
+        if (ServiceLocator.Settings != null)
+        {
+            ServiceLocator.Settings.TagDialogAutoTagEnabled = AutoTagCheckBox.IsChecked == true;
+        }
+    }
+
+    private void JoyCaptionCheckBox_CheckedChanged(object sender, RoutedEventArgs e)
+    {
+        OnPropertyChanged(nameof(CanStart));
+        if (ServiceLocator.Settings != null)
+        {
+            ServiceLocator.Settings.TagDialogCaptionEnabled = JoyCaptionCheckBox.IsChecked == true;
+        }
+    }
+
+    private void EmbeddingCheckBox_CheckedChanged(object sender, RoutedEventArgs e)
+    {
+        OnPropertyChanged(nameof(CanStart));
+        if (ServiceLocator.Settings != null)
+        {
+            ServiceLocator.Settings.TagDialogEmbeddingEnabled = EmbeddingCheckBox.IsChecked == true;
+        }
+    }
+
+    private void FaceDetectionCheckBox_CheckedChanged(object sender, RoutedEventArgs e)
+    {
+        OnPropertyChanged(nameof(CanStart));
+        if (ServiceLocator.Settings != null)
+        {
+            ServiceLocator.Settings.TagDialogFaceDetectionEnabled = FaceDetectionCheckBox.IsChecked == true;
+        }
+    }
 }
+

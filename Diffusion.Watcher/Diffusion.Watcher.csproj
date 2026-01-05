@@ -14,6 +14,9 @@
     <ProjectReference Include="..\Diffusion.Common\Diffusion.Common.csproj" />
     <ProjectReference Include="..\Diffusion.Database.PostgreSQL\Diffusion.Database.PostgreSQL.csproj" />
     <ProjectReference Include="..\Diffusion.Scanner\Diffusion.IO.csproj" />
+    <ProjectReference Include="..\Diffusion.Tagging\Diffusion.Tagging.csproj" />
+    <ProjectReference Include="..\Diffusion.Captioning\Diffusion.Captioning.csproj" />
+    <ProjectReference Include="..\Diffusion.FaceDetection\Diffusion.FaceDetection.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -1,5 +1,5 @@
 using Diffusion.Common;
-using Diffusion.FaceDetection.Models;
+using Diffusion.Common.Models;
 
 namespace Diffusion.FaceDetection.Services;
 
@@ -8,7 +8,7 @@ namespace Diffusion.FaceDetection.Services;
 /// </summary>
 public class FaceDetectionConfig
 {
-    public string RetinaFaceModelPath { get; set; } = "";
+    public string YoloModelPath { get; set; } = "";
     public string ArcFaceModelPath { get; set; } = "";
     public int GpuDeviceId { get; set; } = 0;
     public int DetectionInputSize { get; set; } = 640;
@@ -24,7 +24,7 @@ public class FaceDetectionConfig
     {
         return new FaceDetectionConfig
         {
-            RetinaFaceModelPath = Path.Combine(baseDir, "models", "onnx", "retinaface", "det_10g.onnx"),
+            YoloModelPath = Path.Combine(baseDir, "models", "onnx", "yolo", "yolo12m-face.onnx"),
             ArcFaceModelPath = Path.Combine(baseDir, "models", "onnx", "arcface", "w600k_r50.onnx"),
             GpuDeviceId = 0,
             DetectionInputSize = 640,
@@ -41,7 +41,7 @@ public class FaceDetectionConfig
 /// </summary>
 public class FaceDetectionService : IDisposable
 {
-    private readonly RetinaFaceDetector _detector;
+    private readonly YOLO11FaceDetector _detector;
     private readonly ArcFaceEncoder _encoder;
     private readonly FaceDetectionConfig _config;
     private bool _disposed;
@@ -50,8 +50,8 @@ public class FaceDetectionService : IDisposable
     {
         _config = config;
         
-        _detector = new RetinaFaceDetector(
-            config.RetinaFaceModelPath,
+        _detector = new YOLO11FaceDetector(
+            config.YoloModelPath,
             config.GpuDeviceId,
             config.DetectionInputSize,
             config.ConfidenceThreshold,
@@ -84,7 +84,7 @@ public class FaceDetectionService : IDisposable
         try
         {
             // Get image dimensions
-            using var info = SixLabors.ImageSharp.Image.Identify(imagePath);
+            var info = SixLabors.ImageSharp.Image.Identify(imagePath);
             results.ImageWidth = info.Width;
             results.ImageHeight = info.Height;
 

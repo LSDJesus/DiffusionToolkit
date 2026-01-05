@@ -58,6 +58,12 @@ public class BackgroundTaggingService : IDisposable
     private int _captioningQueueRemaining;
     private int _embeddingQueueRemaining;
 
+    public int TaggingQueueRemaining => _taggingQueueRemaining;
+    public int CaptioningQueueRemaining => _captioningQueueRemaining;
+    public int EmbeddingQueueRemaining => _embeddingQueueRemaining;
+
+    public event EventHandler? QueueCountsChanged;
+
     public event EventHandler<ProgressEventArgs>? TaggingProgressChanged;
     public event EventHandler<ProgressEventArgs>? CaptioningProgressChanged;
     public event EventHandler<ProgressEventArgs>? EmbeddingProgressChanged;
@@ -172,6 +178,10 @@ public class BackgroundTaggingService : IDisposable
     {
         await _dataStore.SetNeedsTagging(imageIds, true);
         Logger.Log($"Queued {imageIds.Count} images for tagging");
+        
+        // Update queue count immediately
+        _taggingQueueRemaining = await _dataStore.CountImagesNeedingTagging();
+        QueueCountsChanged?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>
@@ -181,6 +191,10 @@ public class BackgroundTaggingService : IDisposable
     {
         await _dataStore.SetNeedsCaptioning(imageIds, true);
         Logger.Log($"Queued {imageIds.Count} images for captioning");
+        
+        // Update queue count immediately
+        _captioningQueueRemaining = await _dataStore.CountImagesNeedingCaptioning();
+        QueueCountsChanged?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>

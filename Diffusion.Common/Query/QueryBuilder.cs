@@ -48,6 +48,11 @@ public static partial class QueryBuilder
 
     private static readonly Regex NegativePromptRegex = new Regex("\\b(?:negative prompt|negative_prompt|negative):\\s*(?<value>.*)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
+    // Face detection query patterns
+    private static readonly Regex FaceCountRegex = new Regex("\\b(?:faces|face_count):\\s*(?<operator><|>|<=|>=|<>)?\\s*(?<value>\\d+)(?<plus>\\+)?\\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex CharacterRegex = new Regex("\\b(?:character|char):\\s*(?:\"(?<value>[^\"]+)\"|(?<value>\\S+))", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex HasFacesRegex = new Regex("\\b(?:has_faces|hasfaces):\\s*(?<value>(?:true|false))?\\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
     public static List<string> Samplers { get; set; } = new List<string>();
 
     public static bool HideNSFW { get; set; }
@@ -119,6 +124,11 @@ public static partial class QueryBuilder
             ParseNSFW(ref prompt, conditions);
             ParseInAlbum(ref prompt, conditions);
             ParseNoMetadata(ref prompt, conditions);
+            
+            // Face detection queries
+            ParseFaceCount(ref prompt, conditions);
+            ParseCharacter(ref prompt, conditions);
+            ParseHasFaces(ref prompt, conditions);
 
             //ParseNegativePrompt(ref prompt, conditions);
             //ParsePrompt(ref prompt, conditions);
@@ -349,6 +359,71 @@ public static partial class QueryBuilder
             }
 
             conditions.Add(new KeyValuePair<string, object>("(NoMetadata = ?)", value));
+        }
+    }
+
+    private static void ParseFaceCount(ref string prompt, List<KeyValuePair<string, object>> conditions)
+    {
+        var match = FaceCountRegex.Match(prompt);
+        if (match.Success)
+        {
+            prompt = FaceCountRegex.Replace(prompt, String.Empty);
+
+            var value = int.Parse(match.Groups["value"].Value);
+            var oper = "=";
+
+            if (match.Groups["operator"].Success && !string.IsNullOrEmpty(match.Groups["operator"].Value))
+            {
+                oper = match.Groups["operator"].Value;
+            }
+            else if (match.Groups["plus"].Success && !string.IsNullOrEmpty(match.Groups["plus"].Value))
+            {
+                // faces:2+ means >= 2
+                oper = ">=";
+            }
+
+            conditions.Add(new KeyValuePair<string, object>($"(face_count {oper} ?)", value));
+        }
+    }
+
+    private static void ParseCharacter(ref string prompt, List<KeyValuePair<string, object>> conditions)
+    {
+        var match = CharacterRegex.Match(prompt);
+        if (match.Success)
+        {
+            prompt = CharacterRegex.Replace(prompt, String.Empty);
+
+            var character = match.Groups["value"].Value;
+            
+            // Search in both primary_character and characters_detected array
+            conditions.Add(new KeyValuePair<string, object>(
+                "(primary_character ILIKE ? OR ? = ANY(characters_detected))", 
+                new object[] { $"%{character}%", character }));
+        }
+    }
+
+    private static void ParseHasFaces(ref string prompt, List<KeyValuePair<string, object>> conditions)
+    {
+        var match = HasFacesRegex.Match(prompt);
+        if (match.Success)
+        {
+            prompt = HasFacesRegex.Replace(prompt, String.Empty);
+
+            var value = true;
+
+            if (match.Groups["value"].Success)
+            {
+                value = match.Groups["value"].Value.ToLower() == "true";
+            }
+
+            if (value)
+            {
+                conditions.Add(new KeyValuePair<string, object>("(face_count > 0)", DBNull.Value));
+            }
+            else
+            {
+                conditions.Add(new KeyValuePair<string, object>("(face_count = 0 OR face_count IS NULL)", DBNull.Value));
+            }
         }
     }
 

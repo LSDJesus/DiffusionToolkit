@@ -6,7 +6,7 @@
         xmlns:lex="http://wpflocalizeextension.codeplex.com"
         xmlns:converters="clr-namespace:Diffusion.Toolkit.Converters"
         mc:Ignorable="d"
-        Title="Auto-Tag Images" Height="400" Width="600"
+        Title="Auto-Tag Images" Height="600" Width="600"
         WindowStartupLocation="CenterOwner"
         Background="{DynamicResource BackgroundBrush}">
     <Window.Resources>
@@ -23,22 +23,15 @@
         </Grid.RowDefinitions>
 
         <!-- Header -->
-        <TextBlock Grid.Row="0" Text="Select Taggers to Run" FontSize="16" FontWeight="Bold" Margin="0,0,0,15"/>
+        <TextBlock Grid.Row="0" Text="Select Processing Options" FontSize="16" FontWeight="Bold" Margin="0,0,0,15"/>
 
-        <!-- Tagger Selection -->
+        <!-- Processing Selection -->
         <StackPanel Grid.Row="1" Margin="0,0,0,20">
-            <CheckBox x:Name="JoyTagCheckBox" Content="JoyTag (Multi-label ONNX - Booru Tags)" 
+            <CheckBox x:Name="AutoTagCheckBox" Content="Auto-Tag (JoyTag + WD v3 Large - Booru Tags)" 
                       IsChecked="True" Margin="0,5" FontSize="14"
-                      IsEnabled="{Binding JoyTagAvailable}"
-                      Checked="JoyTagCheckBox_CheckedChanged" Unchecked="JoyTagCheckBox_CheckedChanged"/>
-            <TextBlock Text="{Binding JoyTagStatus}" Margin="25,0,0,5" 
-                       Foreground="{DynamicResource TextBrush}" Opacity="0.7" FontSize="11"/>
-            
-            <CheckBox x:Name="WDTagCheckBox" Content="WD v3 Large (Multi-label ONNX - Booru Tags)" 
-                      IsChecked="True" Margin="0,5" FontSize="14"
-                      IsEnabled="{Binding WDTagAvailable}"
-                      Checked="WDTagCheckBox_CheckedChanged" Unchecked="WDTagCheckBox_CheckedChanged"/>
-            <TextBlock Text="{Binding WDTagStatus}" Margin="25,0,0,5" 
+                      IsEnabled="{Binding TaggingAvailable}"
+                      Checked="AutoTagCheckBox_CheckedChanged" Unchecked="AutoTagCheckBox_CheckedChanged"/>
+            <TextBlock Text="{Binding TaggingStatus}" Margin="25,0,0,5" 
                        Foreground="{DynamicResource TextBrush}" Opacity="0.7" FontSize="11"/>
             
             <CheckBox x:Name="JoyCaptionCheckBox" Content="JoyCaption (Natural Language Descriptions)" 
@@ -73,6 +66,14 @@
                       IsEnabled="{Binding EmbeddingAvailable}"
                       Checked="EmbeddingCheckBox_CheckedChanged" Unchecked="EmbeddingCheckBox_CheckedChanged"/>
             <TextBlock Text="{Binding EmbeddingStatus}" Margin="25,0,0,5" 
+                       Foreground="{DynamicResource TextBrush}" Opacity="0.7" FontSize="11"/>
+            
+            <!-- Face Detection Section -->
+            <CheckBox x:Name="FaceDetectionCheckBox" Content="Detect Faces (Character Recognition + Clustering)" 
+                      IsChecked="{Binding FaceDetectionEnabled}" Margin="0,5" FontSize="14"
+                      IsEnabled="{Binding FaceDetectionAvailable}"
+                      Checked="FaceDetectionCheckBox_CheckedChanged" Unchecked="FaceDetectionCheckBox_CheckedChanged"/>
+            <TextBlock Text="{Binding FaceDetectionStatus}" Margin="25,0,0,5" 
                        Foreground="{DynamicResource TextBrush}" Opacity="0.7" FontSize="11"/>
         </StackPanel>
 

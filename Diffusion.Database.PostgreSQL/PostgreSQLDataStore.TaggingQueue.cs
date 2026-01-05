@@ -34,6 +34,26 @@ public partial class PostgreSQLDataStore
     }
 
     /// <summary>
+    /// Update the generated_tags column in the image table
+    /// </summary>
+    public async Task UpdateImageTags(int imageId, string tags)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync();
+        var sql = $"UPDATE {Table("image")} SET generated_tags = @tags WHERE id = @imageId";
+        await connection.ExecuteAsync(sql, new { tags, imageId });
+    }
+
+    /// <summary>
+    /// Update the caption for an image (in the image table if column exists, or just image_captions)
+    /// </summary>
+    public async Task UpdateImageCaption(int imageId, string caption)
+    {
+        // For now we just store it in image_captions via StoreCaptionAsync
+        // but we could also add a caption column to the image table
+        await StoreCaptionAsync(imageId, caption);
+    }
+
+    /// <summary>
     /// Get images that need tagging (batch for processing)
     /// </summary>
     public async Task<List<int>> GetImagesNeedingTagging(int batchSize = 100)

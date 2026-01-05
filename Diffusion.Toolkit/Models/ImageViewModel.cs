@@ -62,6 +62,8 @@ public class ImageViewModel : BaseNotify
     private bool _hasTags;
     private ICommand? _copyTagsCommand;
     private ICommand? _copyCaptionCommand;
+    private List<FaceViewModel> _detectedFaces = new();
+    private int _faceCount;
 
     public ImageViewModel()
     {
@@ -356,4 +358,40 @@ public class ImageViewModel : BaseNotify
         get => _copyCaptionCommand;
         set => SetField(ref _copyCaptionCommand, value);
     }
+    
+    /// <summary>
+    /// List of detected faces in this image
+    /// </summary>
+    public List<FaceViewModel> DetectedFaces
+    {
+        get => _detectedFaces;
+        set
+        {
+            if (SetField(ref _detectedFaces, value))
+            {
+                OnPropertyChanged(nameof(HasDetectedFaces));
+                OnPropertyChanged(nameof(HasNoFaces));
+                FaceCount = value?.Count ?? 0;
+            }
+        }
+    }
+    
+    /// <summary>
+    /// Number of faces detected in this image
+    /// </summary>
+    public int FaceCount
+    {
+        get => _faceCount;
+        set
+        {
+            if (SetField(ref _faceCount, value))
+            {
+                OnPropertyChanged(nameof(HasDetectedFaces));
+                OnPropertyChanged(nameof(HasNoFaces));
+            }
+        }
+    }
+    
+    public bool HasDetectedFaces => FaceCount > 0;
+    public bool HasNoFaces => FaceCount == 0;
 }
