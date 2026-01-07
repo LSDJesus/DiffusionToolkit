@@ -859,7 +859,8 @@ public class BackgroundTaggingService : IDisposable
                 
                 foreach (var imageId in batch)
                 {
-                    await _taggingQueue.Writer.WriteAsync(imageId, ct);
+                    if (_taggingQueue != null)
+                        await _taggingQueue.Writer.WriteAsync(imageId, ct);
                 }
                 
                 offset += batch.Count;
@@ -869,7 +870,8 @@ public class BackgroundTaggingService : IDisposable
             }
             
             // Signal workers that no more work is coming
-            _taggingQueue.Writer.Complete();
+            if (_taggingQueue != null)
+                _taggingQueue.Writer.Complete();
             Logger.Log($"Tagging orchestrator populated queue with {offset} images");
         }
         catch (OperationCanceledException)
@@ -899,7 +901,7 @@ public class BackgroundTaggingService : IDisposable
         
         try
         {
-            await foreach (var imageId in _taggingQueue.Reader.ReadAllAsync(ct))
+            await foreach (var imageId in _taggingQueue?.Reader.ReadAllAsync(ct) ?? AsyncEnumerable.Empty<int>())
             {
                 // Check if paused
                 while (_isTaggingPaused && !ct.IsCancellationRequested)
@@ -1167,7 +1169,8 @@ public class BackgroundTaggingService : IDisposable
                 
                 foreach (var imageId in batch)
                 {
-                    await _captioningQueue.Writer.WriteAsync(imageId, ct);
+                    if (_captioningQueue != null)
+                        await _captioningQueue.Writer.WriteAsync(imageId, ct);
                 }
                 
                 offset += batch.Count;
@@ -1177,7 +1180,8 @@ public class BackgroundTaggingService : IDisposable
             }
             
             // Signal workers that no more work is coming
-            _captioningQueue.Writer.Complete();
+            if (_captioningQueue != null)
+                _captioningQueue.Writer.Complete();
             Logger.Log($"Captioning orchestrator populated queue with {offset} images");
         }
         catch (OperationCanceledException)
@@ -1226,7 +1230,7 @@ public class BackgroundTaggingService : IDisposable
             await captionService.InitializeAsync();
             Logger.Log($"GPU {gpuId} caption worker {workerId}: Service initialized");
             
-            await foreach (var imageId in _captioningQueue.Reader.ReadAllAsync(ct))
+            await foreach (var imageId in _captioningQueue?.Reader.ReadAllAsync(ct) ?? AsyncEnumerable.Empty<int>())
             {
                 // Check if paused
                 while (_isCaptioningPaused && !ct.IsCancellationRequested)
@@ -1338,7 +1342,7 @@ public class BackgroundTaggingService : IDisposable
 
             Logger.Log($"Captioned image {imageId}: {finalCaption?.Substring(0, Math.Min(50, finalCaption?.Length ?? 0))}...");
 
-            var captionSource = ServiceLocator.Settings?.CaptionProvider == Configuration.CaptionProviderType.LocalJoyCaption 
+            var captionSource = ServiceLocator.Settings?.CaptionProvider == CaptionProviderType.LocalJoyCaption
                 ? "joycaption" : "openai";
             
             await _dataStore.StoreCaptionAsync(imageId, finalCaption!, captionSource, 

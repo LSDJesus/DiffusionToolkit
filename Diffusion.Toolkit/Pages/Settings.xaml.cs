@@ -677,7 +677,7 @@ namespace Diffusion.Toolkit.Pages
         {
             try
             {
-                if (_model.CaptionProvider != Configuration.CaptionProviderType.OpenAICompatible)
+                if (_model.CaptionProvider != CaptionProviderType.OpenAICompatible)
                 {
                     MessageBox.Show(this._window, "Select 'OpenAI-Compatible HTTP API' as Provider.", "Test Connection", MessageBoxButton.OK, MessageBoxImage.Information);
                     return;
@@ -790,7 +790,7 @@ namespace Diffusion.Toolkit.Pages
         {
             try
             {
-                if (_model.CaptionProvider != Configuration.CaptionProviderType.OpenAICompatible)
+                if (_model.CaptionProvider != CaptionProviderType.OpenAICompatible)
                 {
                     MessageBox.Show(this._window, "Select 'OpenAI-Compatible HTTP API' as Provider.", "Sample Caption", MessageBoxButton.OK, MessageBoxImage.Information);
                     return;

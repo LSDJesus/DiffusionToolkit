@@ -2,18 +2,19 @@
 using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Interop;
+using Diffusion.Common;
 using Diffusion.Toolkit.Controls;
 
 namespace Diffusion.Toolkit.Configuration;
 
 public class Settings : SettingsContainer, IScanOptions
 {
-    public static Settings Instance { get; private set; }
+    public static Settings? Instance { get; private set; }
 
-    private List<string> _imagePaths;
-    private List<string> _excludePaths;
-    private string _modelRootPath;
-    private string _fileExtensions;
+    private List<string>? _imagePaths;
+    private List<string>? _excludePaths;
+    private string? _modelRootPath;
+    private string? _fileExtensions;
     private int _pageSize;
     private string? _mainGridWidth;
     private string? _mainGridWidth2;
@@ -24,7 +25,7 @@ public class Settings : SettingsContainer, IScanOptions
     private WindowState? _windowState;
     private Size? _windowSize;
     private bool _dontShowWelcomeOnStartup;
-    private string _theme;
+    private string? _theme;
     //private bool _watchFolders;
     private bool _hideNsfw;
     private bool _hideDeleted;
@@ -34,19 +35,19 @@ public class Settings : SettingsContainer, IScanOptions
     private bool _fitToPreview;
     private int _thumbnailSize;
     private bool _autoTagNSFW;
-    private List<string> _nsfwTags;
-    private string _hashCache;
+    private List<string>? _nsfwTags;
+    private string? _hashCache;
     private bool _portableMode;
     //private bool? _recurseFolders;
     private bool? _useBuiltInViewer;
     private bool? _openInFullScreen;
     private bool? _useSystemDefault;
     private bool? _useCustomViewer;
-    private string _customCommandLine;
-    private string _customCommandLineArgs;
-    private string _sortAlbumsBy;
-    private string _sortBy;
-    private string _sortDirection;
+    private string? _customCommandLine;
+    private string? _customCommandLineArgs;
+    private string? _sortAlbumsBy;
+    private string? _sortBy;
+    private string? _sortDirection;
     private bool _autoRefresh;
     private string? _culture;
     private bool _actualSize;
@@ -57,7 +58,7 @@ public class Settings : SettingsContainer, IScanOptions
     private double? _top;
     private double? _left;
     private bool _hideUnavailable;
-    private List<string> _includeNodeProperties;
+    private List<string>? _includeNodeProperties;
     private bool _searchNodes;
     private bool _searchAllProperties;
     private bool _searchRawData;
@@ -65,46 +66,46 @@ public class Settings : SettingsContainer, IScanOptions
     private bool _storeWorkflow;
     private bool _scanUnavailable;
     private bool _showNotifications;
-    private List<ExternalApplication> _externalApplications;
-    private string _sortQueriesBy;
+    private List<ExternalApplication>? _externalApplications;
+    private string? _sortQueriesBy;
     private bool _showTags;
     private bool _permanentlyDelete;
     private bool _confirmDeletion;
-    private string _version;
+    private string? _version;
     private bool _showFilenames;
     private int _thumbnailSpacing;
     private ThumbnailViewMode _thumbnailViewMode;
     private RenderMode _renderMode;
-    private PreviewWindowState _previewWindowState;
+    private PreviewWindowState? _previewWindowState;
     
     // Tagging configuration
     private float _joyTagThreshold;
     private float _wdTagThreshold;
     private bool _enableJoyTag;
     private bool _enableWDTag;
-    private string _joyTagModelPath;
-    private string _joyTagTagsPath;
-    private string _wdTagModelPath;
-    private string _wdTagTagsPath;
-    private string _joyCaptionModelPath;
-    private string _joyCaptionMMProjPath;
+    private string? _joyTagModelPath;
+    private string? _joyTagTagsPath;
+    private string? _wdTagModelPath;
+    private string? _wdTagTagsPath;
+    private string? _joyCaptionModelPath;
+    private string? _joyCaptionMMProjPath;
     // Caption provider settings
     private CaptionProviderType _captionProvider;
-    private string _externalCaptionBaseUrl;
-    private string _externalCaptionModel;
-    private string _externalCaptionApiKey;
+    private string? _externalCaptionBaseUrl;
+    private string? _externalCaptionModel;
+    private string? _externalCaptionApiKey;
     private bool _storeTagConfidence;
     private bool _enableWDV3Large;
-    private string _wdV3LargeModelPath;
-    private string _wdV3LargeTagsPath;
+    private string? _wdV3LargeModelPath;
+    private string? _wdV3LargeTagsPath;
     private float _wdV3LargeThreshold;
     // Tagging/Captioning dialog checkbox states
     private bool _tagDialogAutoTagEnabled = true;  // Merged JoyTag + WDTag
     private bool _tagDialogCaptionEnabled;
     private bool _tagDialogEmbeddingEnabled = false;
     private bool _tagDialogFaceDetectionEnabled = false;
-    private string _joyCaptionDefaultPrompt;
-    private string _databaseSchema;
+    private string? _joyCaptionDefaultPrompt;
+    private string? _databaseSchema;
     private bool _createMetadataBackup;
     private bool _writeTagsToMetadata;
     private bool _writeCaptionsToMetadata;
@@ -147,6 +148,14 @@ public class Settings : SettingsContainer, IScanOptions
 
     public Settings()
     {
+        // Initialize collections
+        _imagePaths = new List<string>();
+        _excludePaths = new List<string>();
+        _modelRootPath = "";
+        _hashCache = "";
+        _customCommandLine = "";
+        _databaseConnectionString = "";
+        
         NSFWTags = new List<string>() { "nsfw", "nude", "naked" };
         DatabaseSchema = "public"; // PostgreSQL default schema
         FileExtensions = ".png, .jpg, .jpeg, .webp, .avif, .gif, .bmp, .tiff, .mp4, .avi, .webm";
@@ -225,6 +234,7 @@ public class Settings : SettingsContainer, IScanOptions
         NavigationSection = new NavigationSectionSettings();
         NavigationSection.Attach(this);
         PreviewWindowState = new PreviewWindowState();
+        Version = "0.1.0";
 
         //if (initialize)
         //{
@@ -236,14 +246,14 @@ public class Settings : SettingsContainer, IScanOptions
 
     public List<string> IncludeNodeProperties
     {
-        get => _includeNodeProperties;
+        get => _includeNodeProperties ?? new List<string>();
         set => UpdateList(ref _includeNodeProperties, value);
     }
 
 
     public string FileExtensions
     {
-        get => _fileExtensions;
+        get => _fileExtensions ?? "";
         set => UpdateValue(ref _fileExtensions, value);
     }
 
@@ -255,13 +265,13 @@ public class Settings : SettingsContainer, IScanOptions
 
     public List<string> NSFWTags
     {
-        get => _nsfwTags;
+        get => _nsfwTags ?? new List<string>();
         set => UpdateList(ref _nsfwTags, value);
     }
 
     public string ModelRootPath
     {
-        get => _modelRootPath;
+        get => _modelRootPath ?? "";
         set => UpdateValue(ref _modelRootPath, value);
     }
 
@@ -338,7 +348,7 @@ public class Settings : SettingsContainer, IScanOptions
 
     public string Theme
     {
-        get => _theme;
+        get => _theme ?? "System";
         set => UpdateValue(ref _theme, value);
     }
 
@@ -398,7 +408,7 @@ public class Settings : SettingsContainer, IScanOptions
 
     public string HashCache
     {
-        get => _hashCache;
+        get => _hashCache ?? "";
         set => UpdateValue(ref _hashCache, value);
     }
 
@@ -434,31 +444,31 @@ public class Settings : SettingsContainer, IScanOptions
 
     public string CustomCommandLine
     {
-        get => _customCommandLine;
+        get => _customCommandLine ?? "";
         set => UpdateValue(ref _customCommandLine, value);
     }
 
     public string CustomCommandLineArgs
     {
-        get => _customCommandLineArgs;
+        get => _customCommandLineArgs ?? "%1";
         set => UpdateValue(ref _customCommandLineArgs, value);
     }
 
     public string SortAlbumsBy
     {
-        get => _sortAlbumsBy;
+        get => _sortAlbumsBy ?? "Name";
         set => UpdateValue(ref _sortAlbumsBy, value);
     }
 
     public string SortBy
     {
-        get => _sortBy;
+        get => _sortBy ?? "Date Created";
         set => UpdateValue(ref _sortBy, value);
     }
 
     public string SortDirection
     {
-        get => _sortDirection;
+        get => _sortDirection ?? "Z-A";
         set => UpdateValue(ref _sortDirection, value);
     }
 
@@ -552,13 +562,13 @@ public class Settings : SettingsContainer, IScanOptions
 
     public List<ExternalApplication> ExternalApplications
     {
-        get => _externalApplications;
+        get => _externalApplications ?? new List<ExternalApplication>();
         set => UpdateValue(ref _externalApplications, value);
     }
 
     public string SortQueriesBy
     {
-        get => _sortQueriesBy;
+        get => _sortQueriesBy ?? "Name";
         set => UpdateValue(ref _sortQueriesBy, value);
     }
 
@@ -576,7 +586,7 @@ public class Settings : SettingsContainer, IScanOptions
 
     public string Version
     {
-        get => _version;
+        get => _version ?? "0.1.0";
         set => UpdateValue(ref _version, value);
     }
 
@@ -613,7 +623,7 @@ public class Settings : SettingsContainer, IScanOptions
 
     public PreviewWindowState PreviewWindowState
     {
-        get => _previewWindowState;
+        get => _previewWindowState ?? new PreviewWindowState();
         set => UpdateValue(ref _previewWindowState, value);
     }
 
@@ -643,37 +653,37 @@ public class Settings : SettingsContainer, IScanOptions
 
     public string JoyTagModelPath
     {
-        get => _joyTagModelPath;
+        get => _joyTagModelPath ?? "";
         set => UpdateValue(ref _joyTagModelPath, value);
     }
 
     public string JoyTagTagsPath
     {
-        get => _joyTagTagsPath;
+        get => _joyTagTagsPath ?? "";
         set => UpdateValue(ref _joyTagTagsPath, value);
     }
 
     public string WDTagModelPath
     {
-        get => _wdTagModelPath;
+        get => _wdTagModelPath ?? "";
         set => UpdateValue(ref _wdTagModelPath, value);
     }
 
     public string WDTagTagsPath
     {
-        get => _wdTagTagsPath;
+        get => _wdTagTagsPath ?? "";
         set => UpdateValue(ref _wdTagTagsPath, value);
     }
 
     public string JoyCaptionModelPath
     {
-        get => _joyCaptionModelPath;
+        get => _joyCaptionModelPath ?? "";
         set => UpdateValue(ref _joyCaptionModelPath, value);
     }
 
     public string JoyCaptionMMProjPath
     {
-        get => _joyCaptionMMProjPath;
+        get => _joyCaptionMMProjPath ?? "";
         set => UpdateValue(ref _joyCaptionMMProjPath, value);
     }
 
@@ -685,19 +695,19 @@ public class Settings : SettingsContainer, IScanOptions
 
     public string ExternalCaptionBaseUrl
     {
-        get => _externalCaptionBaseUrl;
+        get => _externalCaptionBaseUrl ?? "";
         set => UpdateValue(ref _externalCaptionBaseUrl, value);
     }
 
     public string ExternalCaptionModel
     {
-        get => _externalCaptionModel;
+        get => _externalCaptionModel ?? "";
         set => UpdateValue(ref _externalCaptionModel, value);
     }
 
     public string ExternalCaptionApiKey
     {
-        get => _externalCaptionApiKey;
+        get => _externalCaptionApiKey ?? "";
         set => UpdateValue(ref _externalCaptionApiKey, value);
     }
 
@@ -715,13 +725,13 @@ public class Settings : SettingsContainer, IScanOptions
 
     public string WDV3LargeModelPath
     {
-        get => _wdV3LargeModelPath;
+        get => _wdV3LargeModelPath ?? "";
         set => UpdateValue(ref _wdV3LargeModelPath, value);
     }
 
     public string WDV3LargeTagsPath
     {
-        get => _wdV3LargeTagsPath;
+        get => _wdV3LargeTagsPath ?? "";
         set => UpdateValue(ref _wdV3LargeTagsPath, value);
     }
 
@@ -898,13 +908,13 @@ public class Settings : SettingsContainer, IScanOptions
 
     public string JoyCaptionDefaultPrompt
     {
-        get => _joyCaptionDefaultPrompt;
+        get => _joyCaptionDefaultPrompt ?? "detailed";
         set => UpdateValue(ref _joyCaptionDefaultPrompt, value);
     }
 
     public string DatabaseSchema
     {
-        get => _databaseSchema;
+        get => _databaseSchema ?? "public";
         set => UpdateValue(ref _databaseSchema, value);
     }
 

@@ -163,7 +163,7 @@ public class WatcherService : IDisposable
         }
         _watchers.Clear();
 
-        var tasks = new[] { _quickScanWorker, _metadataScanWorker }
+        var tasks = new[] { _quickScanWorker, _metadataScanWorker, _aiProcessingWorker }
             .Where(t => t != null && !t.IsCompleted)
             .ToArray();
         

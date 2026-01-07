@@ -99,6 +99,136 @@
 				"build",
 				"Diffusion.Watcher/Diffusion.Watcher.csproj"
 			]
+		},
+		{
+			"label": "build watcher final",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"build",
+				"Diffusion.Watcher/Diffusion.Watcher.csproj"
+			]
+		},
+		{
+			"label": "build toolkit",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"build",
+				"Diffusion.Toolkit.sln"
+			]
+		},
+		{
+			"label": "build toolkit final",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"build",
+				"Diffusion.Toolkit.sln"
+			]
+		},
+		{
+			"label": "build toolkit final",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"build",
+				"Diffusion.Toolkit.sln"
+			]
+		},
+		{
+			"label": "build watcher verify",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"build",
+				"Diffusion.Watcher/Diffusion.Watcher.csproj"
+			]
+		},
+		{
+			"label": "build toolkit check",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"build",
+				"Diffusion.Toolkit.sln"
+			]
+		},
+		{
+			"label": "build final",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"build",
+				"Diffusion.Toolkit.sln"
+			]
+		},
+		{
+			"label": "build final check",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"build",
+				"Diffusion.Toolkit.sln"
+			]
+		},
+		{
+			"label": "build complete",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"build",
+				"Diffusion.Toolkit.sln"
+			]
+		},
+		{
+			"label": "build success",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"build",
+				"Diffusion.Toolkit.sln"
+			]
+		},
+		{
+			"label": "build projects",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"build",
+				"Diffusion.Watcher/Diffusion.Watcher.csproj",
+				"Diffusion.Toolkit/Diffusion.Toolkit.csproj"
+			]
+		},
+		{
+			"label": "build final",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"build",
+				"Diffusion.Toolkit.sln",
+				"-p:TreatWarningsAsErrors=false"
+			]
+		},
+		{
+			"label": "final build",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"build",
+				"Diffusion.Toolkit.sln",
+				"-p:TreatWarningsAsErrors=false"
+			]
+		},
+		{
+			"label": "build complete",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"build",
+				"Diffusion.Toolkit.sln",
+				"-p:TreatWarningsAsErrors=false"
+			]
 		}
 	]
 }

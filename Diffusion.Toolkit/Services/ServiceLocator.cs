@@ -257,7 +257,7 @@ public class ServiceLocator
             if (_captionService != null) return _captionService;
             if (_settings == null) return null;
 
-            if (_settings.CaptionProvider == Configuration.CaptionProviderType.LocalJoyCaption)
+            if (_settings.CaptionProvider == CaptionProviderType.LocalJoyCaption)
             {
                 // Return JoyCaption if available, else null
                 _captionService = JoyCaptionService;

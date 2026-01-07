@@ -39,7 +39,7 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
         TaggingAvailable = JoyTagAvailable && WDTagAvailable; // Both must be available
         
         // Caption service is initialized on-demand when captioning starts, so always allow it if configured
-        JoyCaptionAvailable = ServiceLocator.Settings?.CaptionProvider == Configuration.CaptionProviderType.LocalJoyCaption 
+        JoyCaptionAvailable = ServiceLocator.Settings?.CaptionProvider == CaptionProviderType.LocalJoyCaption 
             && !string.IsNullOrEmpty(ServiceLocator.Settings?.JoyCaptionModelPath);
 
         TaggingStatus = TaggingAvailable 
@@ -302,16 +302,16 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
                         
                         // Auto-write metadata removed - use context menu "Write Metadata to Files" instead
                         // Logger.Log($"WriteTagsToMetadata={ServiceLocator.Settings?.WriteTagsToMetadata}");
-                        if (false) // Auto-write disabled
-                        {
+                        //if (false) // Auto-write disabled
+                        //{
                             // Get deduplicated tags from database for metadata write
-                            var dbTags = await dataStore.GetImageTagsAsync(imageId, "joytag+wdv3large");
+                            //var dbTags = await dataStore.GetImageTagsAsync(imageId, "joytag+wdv3large");
                             
                             // Get latest caption to preserve it
-                            var latestCaption = await dataStore.GetLatestCaptionAsync(imageId);
+                            //var latestCaption = await dataStore.GetLatestCaptionAsync(imageId);
                             
                             // Preserve ALL existing metadata
-                            var request = new Scanner.MetadataWriteRequest
+                            /*var request = new Scanner.MetadataWriteRequest
                             {
                                 Prompt = image.Prompt,
                                 NegativePrompt = image.NegativePrompt,
@@ -332,8 +332,8 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
                                 AestheticScore = image.AestheticScore > 0 ? (decimal?)image.AestheticScore : null,
                                 CreateBackup = ServiceLocator.Settings?.CreateMetadataBackup ?? true
                             };
-                            Scanner.MetadataWriter.WriteMetadata(image.Path, request);
-                        }
+                            Scanner.MetadataWriter.WriteMetadata(image.Path, request);*/
+                        //}
                     }, _cancellationTokenSource.Token);
                 }
                     
@@ -421,7 +421,7 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
         };
 
         // Handle existing captions based on mode
-        var handlingMode = ServiceLocator.Settings?.CaptionHandlingMode ?? Configuration.CaptionHandlingMode.Overwrite;
+        var handlingMode = ServiceLocator.Settings?.CaptionHandlingMode ?? CaptionHandlingMode.Overwrite;
         var existingCaption = await dataStore.GetLatestCaptionAsync(imageId);
         
         Logger.Log($"Captioning image {imageId}: mode={handlingMode}, existing caption length={existingCaption?.Caption?.Length ?? 0}");
@@ -431,7 +431,7 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
 
         switch (handlingMode)
         {
-            case Configuration.CaptionHandlingMode.Refine:
+            case CaptionHandlingMode.Refine:
                 if (existingCaption != null && !string.IsNullOrWhiteSpace(existingCaption.Caption))
                 {
                     finalPrompt = $"{promptText}\n\nExisting caption to refine/expand/correct: \"{existingCaption.Caption}\"";
@@ -443,10 +443,10 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
                 }
                 break;
 
-            case Configuration.CaptionHandlingMode.Append:
+            case CaptionHandlingMode.Append:
                 break;
 
-            case Configuration.CaptionHandlingMode.Overwrite:
+            case CaptionHandlingMode.Overwrite:
             default:
                 break;
         }
@@ -461,13 +461,13 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
         Logger.Log($"Result length: {result.Caption?.Length ?? 0}, PromptUsed: {result.PromptUsed}");
 
         // Handle append mode
-        if (handlingMode == Configuration.CaptionHandlingMode.Append && 
+        if (handlingMode == CaptionHandlingMode.Append && 
             existingCaption != null && 
             !string.IsNullOrWhiteSpace(existingCaption.Caption))
         {
             finalCaption = $"{existingCaption.Caption} {result.Caption}";
         }
-        else if (handlingMode == Configuration.CaptionHandlingMode.Refine)
+        else if (handlingMode == CaptionHandlingMode.Refine)
         {
             // For refine mode, use the result if it's not empty, otherwise keep existing
             if (!string.IsNullOrWhiteSpace(result.Caption))
@@ -488,20 +488,20 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
         
         Logger.Log($"Final caption (len={finalCaption?.Length ?? 0}): {finalCaption?.Substring(0, Math.Min(150, finalCaption?.Length ?? 0))}");
         
-        var captionSource = ServiceLocator.Settings?.CaptionProvider == Diffusion.Toolkit.Configuration.CaptionProviderType.LocalJoyCaption ? "joycaption" : "openai";
+        var captionSource = ServiceLocator.Settings?.CaptionProvider == CaptionProviderType.LocalJoyCaption ? "joycaption" : "openai";
         
         Logger.Log($"Storing caption in database for image {imageId}, source={captionSource}");
-        await dataStore.StoreCaptionAsync(imageId, finalCaption, captionSource, 
+        await dataStore.StoreCaptionAsync(imageId, finalCaption ?? "", captionSource, 
             result.PromptUsed, result.TokenCount, (float)result.GenerationTimeMs);
         Logger.Log($"Caption stored successfully");
         
         // Write caption to image metadata if enabled
         // Auto-write disabled - use context menu instead
-        if (false)
-        {
-            Logger.Log($"Writing caption to metadata file: {image.Path}");
+        //if (false)
+        //{
+            //Logger.Log($"Writing caption to metadata file: {image.Path}");
             // Preserve ALL existing metadata
-            var request = new Scanner.MetadataWriteRequest
+            /*var request = new Scanner.MetadataWriteRequest
             {
                 Prompt = image.Prompt,
                 NegativePrompt = image.NegativePrompt,
@@ -519,7 +519,8 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
             };
             var writeResult = Scanner.MetadataWriter.WriteMetadata(image.Path, request);
             Logger.Log($"Metadata write result: {writeResult}");
-        }
+        }*/
+        //}
     }
 
     private void AutoTagCheckBox_CheckedChanged(object sender, RoutedEventArgs e)

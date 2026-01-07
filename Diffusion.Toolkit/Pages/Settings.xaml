@@ -10,6 +10,7 @@
                 xmlns:system="clr-namespace:System;assembly=System.Runtime"
                 xmlns:models="clr-namespace:Diffusion.Toolkit.Models"
                 xmlns:config="clr-namespace:Diffusion.Toolkit.Configuration"
+                xmlns:common="clr-namespace:Diffusion.Common;assembly=Diffusion.Common"
                 lex:LocalizeDictionary.Provider="{StaticResource LocalizationProvider}"
                 lex:LocalizeDictionary.Separation="."
                 lex:LocalizeDictionary.DefaultProvider="{StaticResource LocalizationProvider}"
@@ -517,17 +518,17 @@
                                           Height="26" VerticalContentAlignment="Center" Margin="0,10,0,0"
                                           SelectedValuePath="Tag"
                                           ToolTip="How to handle existing captions when generating new ones">
-                                    <ComboBoxItem Content="Overwrite - Replace existing caption" Tag="{x:Static config:CaptionHandlingMode.Overwrite}"/>
-                                    <ComboBoxItem Content="Append - Add to existing caption" Tag="{x:Static config:CaptionHandlingMode.Append}"/>
-                                    <ComboBoxItem Content="Refine - Use existing as context for improvement" Tag="{x:Static config:CaptionHandlingMode.Refine}"/>
+                                    <ComboBoxItem Content="Overwrite - Replace existing caption" Tag="{x:Static common:CaptionHandlingMode.Overwrite}"/>
+                                    <ComboBoxItem Content="Append - Add to existing caption" Tag="{x:Static common:CaptionHandlingMode.Append}"/>
+                                    <ComboBoxItem Content="Refine - Use existing as context for improvement" Tag="{x:Static common:CaptionHandlingMode.Refine}"/>
                                 </ComboBox>
 
                                 <Label Grid.Row="2" Grid.Column="0" Content="Provider:" Margin="0,10,0,0" Foreground="{DynamicResource ForegroundBrush}"/>
                                 <ComboBox Grid.Row="2" Grid.Column="1" SelectedValue="{Binding CaptionProvider}"
                                           Height="26" VerticalContentAlignment="Center" Margin="0,10,0,0"
                                           SelectedValuePath="Tag">
-                                    <ComboBoxItem Content="Local JoyCaption (LLava GGUF)" Tag="{x:Static config:CaptionProviderType.LocalJoyCaption}"/>
-                                    <ComboBoxItem Content="OpenAI-Compatible HTTP API" Tag="{x:Static config:CaptionProviderType.OpenAICompatible}"/>
+                                    <ComboBoxItem Content="Local JoyCaption (LLava GGUF)" Tag="{x:Static common:CaptionProviderType.LocalJoyCaption}"/>
+                                    <ComboBoxItem Content="OpenAI-Compatible HTTP API" Tag="{x:Static common:CaptionProviderType.OpenAICompatible}"/>
                                 </ComboBox>
                                 
                                 <!-- Local JoyCaption configuration -->
@@ -536,7 +537,7 @@
                                         <Style TargetType="Grid">
                                             <Setter Property="Visibility" Value="Collapsed"/>
                                             <Style.Triggers>
-                                                <DataTrigger Binding="{Binding CaptionProvider}" Value="{x:Static config:CaptionProviderType.LocalJoyCaption}">
+                                                <DataTrigger Binding="{Binding CaptionProvider}" Value="{x:Static common:CaptionProviderType.LocalJoyCaption}">
                                                     <Setter Property="Visibility" Value="Visible"/>
                                                 </DataTrigger>
                                             </Style.Triggers>
@@ -562,7 +563,7 @@
                                         <Style TargetType="Grid">
                                             <Setter Property="Visibility" Value="Collapsed"/>
                                             <Style.Triggers>
-                                                <DataTrigger Binding="{Binding CaptionProvider}" Value="{x:Static config:CaptionProviderType.OpenAICompatible}">
+                                                <DataTrigger Binding="{Binding CaptionProvider}" Value="{x:Static common:CaptionProviderType.OpenAICompatible}">
                                                     <Setter Property="Visibility" Value="Visible"/>
                                                 </DataTrigger>
                                             </Style.Triggers>
@@ -599,7 +600,7 @@
                                         <Style TargetType="TextBlock">
                                             <Setter Property="Visibility" Value="Collapsed"/>
                                             <Style.Triggers>
-                                                <DataTrigger Binding="{Binding CaptionProvider}" Value="{x:Static config:CaptionProviderType.LocalJoyCaption}">
+                                                <DataTrigger Binding="{Binding CaptionProvider}" Value="{x:Static common:CaptionProviderType.LocalJoyCaption}">
                                                     <Setter Property="Visibility" Value="Visible"/>
                                                 </DataTrigger>
                                             </Style.Triggers>

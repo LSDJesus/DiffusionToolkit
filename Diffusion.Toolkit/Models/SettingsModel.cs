@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Windows.Input;
+using Diffusion.Common;
 using Diffusion.Toolkit.Services;
 
 namespace Diffusion.Toolkit.Models;
@@ -94,8 +95,8 @@ public class SettingsModel : BaseNotify
     private int _captioningModelTTLMinutes = 2;
     
     // Caption provider & handling
-    private Diffusion.Toolkit.Configuration.CaptionHandlingMode _captionHandlingMode;
-    private Diffusion.Toolkit.Configuration.CaptionProviderType _captionProvider;
+    private CaptionHandlingMode _captionHandlingMode;
+    private CaptionProviderType _captionProvider;
     private string _externalCaptionBaseUrl;
     private string _externalCaptionModel;
     private string _externalCaptionApiKey;
@@ -148,8 +149,8 @@ public class SettingsModel : BaseNotify
         _writeGenerationParamsToMetadata = true;
         
         // Caption provider defaults
-        _captionHandlingMode = Diffusion.Toolkit.Configuration.CaptionHandlingMode.Overwrite;
-        _captionProvider = Diffusion.Toolkit.Configuration.CaptionProviderType.LocalJoyCaption;
+        _captionHandlingMode = CaptionHandlingMode.Overwrite;
+        _captionProvider = CaptionProviderType.LocalJoyCaption;
         _externalCaptionBaseUrl = string.Empty;
         _externalCaptionModel = string.Empty;
         _externalCaptionApiKey = string.Empty;
@@ -566,13 +567,13 @@ public class SettingsModel : BaseNotify
         set => SetField(ref _writeGenerationParamsToMetadata, value);
     }
 
-    public Diffusion.Toolkit.Configuration.CaptionHandlingMode CaptionHandlingMode
+    public CaptionHandlingMode CaptionHandlingMode
     {
         get => _captionHandlingMode;
         set => SetField(ref _captionHandlingMode, value);
     }
 
-    public Diffusion.Toolkit.Configuration.CaptionProviderType CaptionProvider
+    public CaptionProviderType CaptionProvider
     {
         get => _captionProvider;
         set => SetField(ref _captionProvider, value);
