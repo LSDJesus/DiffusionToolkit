@@ -10,7 +10,7 @@ public class PostgreSQLMigrations
 {
     private readonly NpgsqlConnection _connection;
     private readonly string _schema;
-    private const int CurrentVersion = 4;
+    private const int CurrentVersion = 7;
 
     public PostgreSQLMigrations(NpgsqlConnection connection, string schema = "public")
     {
@@ -39,6 +39,9 @@ public class PostgreSQLMigrations
             if (currentVersion < 2) await ApplyV2Async();
             if (currentVersion < 3) await ApplyV3Async();
             if (currentVersion < 4) await ApplyV4Async();
+            if (currentVersion < 5) await ApplyV5Async();
+            if (currentVersion < 6) await ApplyV6Async();
+            if (currentVersion < 7) await ApplyV7Async();
 
             // Only insert version if migrations were applied
             if (currentVersion < CurrentVersion)
@@ -645,4 +648,123 @@ public class PostgreSQLMigrations
     
         await _connection.ExecuteAsync(sql);
     }
-}
+
+    private async Task ApplyV5Async()
+    {
+        try
+        {
+            Diffusion.Common.Logger.Log("Applying V5 migration: Face Detection Schema");
+            
+            // Read SQL from embedded resource
+            var assembly = System.Reflection.Assembly.GetExecutingAssembly();
+            var resourceName = "Diffusion.Database.PostgreSQL.PostgreSQLMigrations_FaceDetection.sql";
+            
+            using var stream = assembly.GetManifestResourceStream(resourceName);
+            if (stream == null)
+            {
+                throw new InvalidOperationException($"Embedded resource not found: {resourceName}");
+            }
+            
+            using var reader = new System.IO.StreamReader(stream);
+            var sql = await reader.ReadToEndAsync();
+            
+            Diffusion.Common.Logger.Log($"Executing Face Detection schema SQL ({sql.Length} chars)...");
+            await _connection.ExecuteAsync(sql);
+            
+            Diffusion.Common.Logger.Log("V5 Face Detection migration completed successfully");
+        }
+        catch (Exception ex)
+        {
+            Diffusion.Common.Logger.Log($"Migration V5 failed: {ex.Message}");
+            throw;
+        }
+    }
+
+    private async Task ApplyV6Async()
+    {
+        try
+        {
+            Diffusion.Common.Logger.Log("Applying V6 migration: DAAM Heatmaps Schema");
+            
+            // Read SQL from embedded resource
+            var assembly = System.Reflection.Assembly.GetExecutingAssembly();
+            var resourceName = "Diffusion.Database.PostgreSQL.PostgreSQLMigrations_DAAM.sql";
+            
+            using var stream = assembly.GetManifestResourceStream(resourceName);
+            if (stream == null)
+            {
+                throw new InvalidOperationException($"Embedded resource not found: {resourceName}");
+            }
+            
+            using var reader = new System.IO.StreamReader(stream);
+            var sql = await reader.ReadToEndAsync();
+            
+            Diffusion.Common.Logger.Log($"Executing DAAM schema SQL ({sql.Length} chars)...");
+            await _connection.ExecuteAsync(sql);
+            
+            Diffusion.Common.Logger.Log("V6 DAAM migration completed successfully");
+        }
+        catch (Exception ex)
+        {
+            Diffusion.Common.Logger.Log($"Migration V6 failed: {ex.Message}");
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// V7: Embedding extraction tables + CivitAI registry
+    /// </summary>
+    private async Task ApplyV7Async()
+    {
+        try
+        {
+            Diffusion.Common.Logger.Log("Applying V7 migration: Embedding extraction + CivitAI registry...");
+            
+            var sql = @"
+-- Image embeddings junction table (explicit and implicit extracted embeddings)
+CREATE TABLE IF NOT EXISTS image_embeddings (
+    id SERIAL PRIMARY KEY,
+    image_id INT NOT NULL REFERENCES image(id) ON DELETE CASCADE,
+    embedding_name VARCHAR(255) NOT NULL,
+    weight DECIMAL(5, 3) DEFAULT 1.0,
+    is_implicit BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(image_id, embedding_name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_image_embeddings_image_id ON image_embeddings(image_id);
+CREATE INDEX IF NOT EXISTS idx_image_embeddings_name ON image_embeddings(embedding_name);
+CREATE INDEX IF NOT EXISTS idx_image_embeddings_is_implicit ON image_embeddings(is_implicit);
+
+-- CivitAI embedding registry (Phase 2: populated from model_resource table)
+CREATE TABLE IF NOT EXISTS embedding_registry (
+    id SERIAL PRIMARY KEY,
+    civitai_id INT UNIQUE,
+    embedding_name VARCHAR(255) NOT NULL UNIQUE,
+    description TEXT,
+    trigger_phrase VARCHAR(255),
+    base_model VARCHAR(100),
+    trained_words TEXT[],
+    nsfw BOOLEAN DEFAULT FALSE,
+    author VARCHAR(255),
+    published_at TIMESTAMP,
+    civitai_metadata JSONB,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_embedding_registry_name ON embedding_registry(embedding_name);
+CREATE INDEX IF NOT EXISTS idx_embedding_registry_base_model ON embedding_registry(base_model);
+CREATE INDEX IF NOT EXISTS idx_embedding_registry_civitai_id ON embedding_registry(civitai_id);
+            ";
+            
+            await _connection.ExecuteAsync(sql);
+            
+            Diffusion.Common.Logger.Log("V7 migration completed successfully");
+        }
+        catch (Exception ex)
+        {
+            Diffusion.Common.Logger.Log($"Migration V7 failed: {ex.Message}");
+            throw;
+        }
+    }}

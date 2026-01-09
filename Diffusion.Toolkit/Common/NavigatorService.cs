@@ -91,6 +91,26 @@ public class NavigatorService : INavigatorService
         Navigate(uri.Url);
     }
 
+    public void GoBack()
+    {
+        if (_history.Count > 0)
+        {
+            Back();
+        }
+    }
+
+    public void NavigateToFaceGallery(int groupId)
+    {
+        // Navigate to face gallery page with group ID
+        Goto($"facegallery/#{groupId}");
+    }
+
+    public void NavigateToImage(int imageId)
+    {
+        // Navigate to search page and select specific image
+        Goto($"search/#{imageId}");
+    }
+
 
     private void Navigate(string url)
     {

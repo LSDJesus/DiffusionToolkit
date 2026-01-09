@@ -67,6 +67,8 @@ public class UnboundDataWriterQueue
     private int _queueTotal = 0;
     protected readonly Action<int> _debounceQueueNotification;
     private bool _queueRunning;
+    protected readonly List<(string Path, List<(string, decimal, bool)> Embeddings)> _pendingEmbeddings = 
+        new();
 
     public UnboundDataWriterQueue(string completionMessage)
     {
@@ -178,10 +180,24 @@ public class UnboundDataWriterQueue
             if (newImages.Count == 33 || _queueChannel.Reader.Count == 0)
             {
                 completed += Write(newImages, newNodes, includeProperties, folderCache, Settings.StoreWorkflow, cancellationToken);
+                
+                // Process pending embeddings (fire-and-forget)
+                ProcessEmbeddingsAsync(_pendingEmbeddings, cancellationToken).ContinueWith(t => {
+                    if (t.IsFaulted)
+                        Logger.Log($"Embedding processing failed: {t.Exception?.Message}");
+                });
+                _pendingEmbeddings.Clear();
+                
                 _debounceQueueNotification(completed);
 
                 newNodes.Clear();
                 newImages.Clear();
+            }
+            
+            // Track embeddings if present in FileParameters
+            if (fp?.ProcessedEmbeddings?.Count > 0)
+            {
+                _pendingEmbeddings.Add((fp.Path, fp.ProcessedEmbeddings));
             }
             
             ServiceLocator.MainModel.HasQueued = true;
@@ -224,6 +240,41 @@ public class UnboundDataWriterQueue
         }
 
         return completed;
+    }
+
+    /// <summary>
+    /// Store embeddings for images asynchronously (fire-and-forget)
+    /// </summary>
+    protected async Task ProcessEmbeddingsAsync(
+        List<(string Path, List<(string, decimal, bool)> Embeddings)> pendingEmbeddings,
+        CancellationToken cancellationToken)
+    {
+        if (pendingEmbeddings?.Count == 0)
+            return;
+
+        try
+        {
+            foreach (var (imagePath, embeddings) in pendingEmbeddings)
+            {
+                try
+                {
+                    await ServiceLocator.DataStore!.InsertImageEmbeddingsByPathAsync(
+                        imagePath,
+                        embeddings,
+                        cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log($"Failed to store embeddings for {imagePath}: {ex.Message}");
+                    // Continue with other embeddings even if one fails
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"ProcessEmbeddingsAsync failed: {ex.Message}");
+        }
     }
 }
 

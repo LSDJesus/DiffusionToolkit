@@ -71,10 +71,10 @@ public partial class FaceGalleryWindow : Window
             _clusters.Add(new ClusterViewModel
             {
                 Id = cluster.Id,
-                Label = cluster.Label,
+                Label = cluster.Name,
                 FaceCount = cluster.FaceCount,
                 AvgQualityScore = cluster.AvgQualityScore,
-                IsManual = cluster.IsManual
+                IsManual = cluster.IsManualGroup
             });
         }
         
@@ -160,8 +160,8 @@ public partial class FaceGalleryWindow : Window
                     Id = face.Id,
                     ImageId = face.ImageId,
                     Confidence = face.Confidence,
-                    QualityScore = face.QualityScore,
-                    CharacterLabel = face.CharacterLabel
+                    QualityScore = face.QualityScore
+                    // CharacterLabel not in V5 schema - use FaceGroup.Name instead
                 };
                 
                 // Load thumbnail from face crop

@@ -38,6 +38,9 @@ public class FileParameters
     
     // Extracted searchable metadata
     public List<LoraInfo>? Loras { get; set; }
+    public List<EmbeddingInfo>? Embeddings { get; set; }
+    // Computed after extraction for storage
+    public List<(string Name, decimal Weight, bool IsImplicit)>? ProcessedEmbeddings { get; set; }
     public string? Vae { get; set; }
     public string? RefinerModel { get; set; }
     public decimal? RefinerSwitch { get; set; }
@@ -70,6 +73,15 @@ public class LoraInfo
 {
     public string Name { get; set; } = string.Empty;
     public decimal Strength { get; set; }
+}
+
+/// <summary>
+/// Embedding (Textual Inversion) information
+/// </summary>
+public class EmbeddingInfo
+{
+    public string Name { get; set; } = string.Empty;
+    public decimal Weight { get; set; } = 1.0m;
 }
 
 /// <summary>

@@ -402,15 +402,15 @@ public class BackgroundFaceDetectionService : IDisposable
                     if (similarFaces.Count > 0)
                     {
                         var existingFace = await _dataStore.GetFacesForImage(similarFaces[0].imageId);
-                        var clusterId = existingFace.FirstOrDefault(f => f.FaceClusterId.HasValue)?.FaceClusterId;
+                        var clusterId = existingFace.FirstOrDefault(f => f.FaceGroupId.HasValue)?.FaceGroupId;
                         
                         if (clusterId.HasValue)
                         {
                             await _dataStore.AssignFaceToCluster(faceId, clusterId.Value);
                             var cluster = (await _dataStore.GetAllClusters()).FirstOrDefault(c => c.Id == clusterId.Value);
-                            if (cluster?.Label != null)
+                            if (cluster?.Name != null)
                             {
-                                detectedCharacters.Add(cluster.Label);
+                                detectedCharacters.Add(cluster.Name);
                             }
                         }
                     }

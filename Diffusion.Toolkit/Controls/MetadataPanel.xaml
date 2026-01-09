@@ -314,7 +314,9 @@
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
                                     <Border BorderBrush="{DynamicResource SecondaryBrush}" BorderThickness="1" 
-                                            Margin="5" Padding="5" Background="#20000000">
+                                            Margin="5" Padding="5" Background="#20000000"
+                                            MouseDown="FaceThumbnail_OnMouseDown" Cursor="Hand"
+                                            ToolTip="Double-click to find similar faces">
                                         <StackPanel>
                                             <!-- Face crop image -->
                                             <Image Source="{Binding FaceCropImage}" Width="120" Height="120" 
@@ -324,6 +326,7 @@
                                             <TextBox Text="{Binding ClusterLabel, UpdateSourceTrigger=PropertyChanged}" 
                                                      FontSize="11" Padding="3" Width="120"
                                                      ToolTip="Edit person name"
+                                                     LostFocus="FaceName_OnLostFocus"
                                                      Foreground="{DynamicResource ForegroundBrush}"/>
                                             
                                             <!-- Face metadata -->

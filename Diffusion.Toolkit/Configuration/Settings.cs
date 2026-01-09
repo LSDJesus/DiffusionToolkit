@@ -134,6 +134,7 @@ public class Settings : SettingsContainer, IScanOptions
     private string _faceDetectionGpuDevices = "0";
     private float _faceDetectionConfidenceThreshold = 0.5f;
     private float _faceClusterThreshold = 0.6f;  // Similarity threshold for auto-clustering
+    private float _faceRecognitionThreshold = 0.65f;  // Similarity threshold for grouping/matching faces
     private bool _skipAlreadyProcessedFaces = true;
     private bool _storeFaceCrops = true;  // Store face crop images
     private bool _autoClusterFaces = true;  // Automatically cluster similar faces
@@ -868,6 +869,12 @@ public class Settings : SettingsContainer, IScanOptions
     {
         get => _faceClusterThreshold;
         set => UpdateValue(ref _faceClusterThreshold, Math.Max(0.3f, Math.Min(0.95f, value)));
+    }
+
+    public float FaceRecognitionThreshold
+    {
+        get => _faceRecognitionThreshold;
+        set => UpdateValue(ref _faceRecognitionThreshold, Math.Max(0.5f, Math.Min(0.9f, value)));
     }
 
     public bool SkipAlreadyProcessedFaces

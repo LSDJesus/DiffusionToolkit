@@ -12,6 +12,7 @@ using Diffusion.Common.Query;
 using Diffusion.Database.PostgreSQL;
 using Diffusion.Database.PostgreSQL.Models;
 using Diffusion.IO;
+using Diffusion.Scanner;
 using Diffusion.Toolkit.Configuration;
 using Diffusion.Toolkit.Localization;
 using Diffusion.Toolkit.Models;
@@ -20,6 +21,20 @@ namespace Diffusion.Toolkit.Services;
 
 public class ScanningService
 {
+    private EmbeddingExtractor? _embeddingExtractor;
+
+    private EmbeddingExtractor EmbeddingExtractor
+    {
+        get
+        {
+            if (_embeddingExtractor == null)
+            {
+                _embeddingExtractor = new EmbeddingExtractor(ServiceLocator.DataStore!);
+            }
+            return _embeddingExtractor;
+        }
+    }
+
     private string GetLocalizedText(string key)
     {
         return (string)JsonLocalizationProvider.Instance.GetLocalizedObject(key, null, CultureInfo.InvariantCulture);
@@ -425,7 +440,38 @@ public class ScanningService
             newNodes.AddRange(file.Nodes);
         }
 
+        // Extract embeddings from prompts
+        _ = ProcessEmbeddingsAsync(file, CancellationToken.None);
+
         return (image, newNodes);
+    }
+
+    /// <summary>
+    /// Extract and store embeddings from file parameters asynchronously (fire-and-forget)
+    /// </summary>
+    private async Task ProcessEmbeddingsAsync(FileParameters file, CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(file.Prompt) && string.IsNullOrWhiteSpace(file.NegativePrompt))
+                return;
+
+            // Extract embeddings (explicit + implicit matching)
+            var embeddings = await EmbeddingExtractor.ExtractEmbeddingsAsync(
+                file.Prompt,
+                file.NegativePrompt);
+
+            if (embeddings?.Count > 0)
+            {
+                // Store on FileParameters for later processing in AddImages
+                file.ProcessedEmbeddings = embeddings;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"ProcessEmbeddingsAsync failed for {file.Path}: {ex.Message}");
+            // Don't throw - embedding extraction is optional
+        }
     }
 
     private readonly object _lock = new object();

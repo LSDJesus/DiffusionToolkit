@@ -1851,6 +1851,24 @@ public class Metadata
                 }).ToList();
             }
 
+            // Extract Embeddings: embedding:name:weight or embedding:name (weight defaults to 1.0)
+            var embeddingRegex = new Regex(@"embedding:([a-zA-Z0-9_\-\.]+)(?::([0-9.]+))?", RegexOptions.IgnoreCase);
+            var embeddingMatches = embeddingRegex.Matches(parameters);
+            if (embeddingMatches.Count > 0)
+            {
+                fp.Embeddings = embeddingMatches.Select(m =>
+                {
+                    var weight = m.Groups[2].Success 
+                        ? decimal.Parse(m.Groups[2].Value, CultureInfo.InvariantCulture)
+                        : 1.0m;
+                    return new EmbeddingInfo
+                    {
+                        Name = m.Groups[1].Value,
+                        Weight = weight
+                    };
+                }).ToList();
+            }
+
             // Extract VAE
             var vaeMatch = Regex.Match(parameters, @"VAE:\s*([^,\n]+)", RegexOptions.IgnoreCase);
             if (vaeMatch.Success)

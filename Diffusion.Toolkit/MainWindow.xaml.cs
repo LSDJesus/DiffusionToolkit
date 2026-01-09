@@ -874,6 +874,7 @@ namespace Diffusion.Toolkit
 
             _prompts = new Prompts();
             _settingsPage = new Pages.Settings(this);
+            _faceGallery = new Pages.FaceGallery();
 
 
             _model.ThumbnailSize = _settings.ThumbnailSize;
@@ -910,8 +911,18 @@ namespace Diffusion.Toolkit
                     "models" => "Models",
                     "prompts" => "Prompts",
                     "settings" => "Settings",
+                    "facegallery" => "Face Gallery",
                     _ => _model.ActiveView
                 };
+                
+                // Handle FaceGallery page navigation with group ID fragment
+                if (args.TargetUri.Path.ToLower() == "facegallery" && args.TargetUri.Fragment != null)
+                {
+                    if (int.TryParse(args.TargetUri.Fragment, out var groupId))
+                    {
+                        _ = _faceGallery.LoadGroupAsync(groupId);
+                    }
+                }
             };
 
 
@@ -1186,6 +1197,7 @@ namespace Diffusion.Toolkit
 
         private ICollection<Model> _modelsCollection = new List<Model>();
         private Prompts _prompts;
+        private Pages.FaceGallery _faceGallery;
         private bool _isLoadingModels = false;
 
         private void LoadModels()
