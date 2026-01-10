@@ -285,6 +285,56 @@ public class ScanningService
     }
 
     /// <summary>
+    /// Scan a newly added folder with two-phase approach:
+    /// Phase 1: Quick scan for immediate visibility
+    /// Phase 2: Automatic background deep scan for metadata
+    /// </summary>
+    public async Task ScanNewFolder(List<string> filePaths, CancellationToken cancellationToken)
+    {
+        if (filePaths.Count == 0) return;
+
+        Logger.Log($"ScanNewFolder: Starting two-phase scan for {filePaths.Count} files");
+
+        // Phase 1: Quick scan - adds files with basic info immediately
+        var addedCount = await QuickScanFiles(filePaths, cancellationToken);
+
+        if (addedCount > 0)
+        {
+            Logger.Log($"ScanNewFolder: Quick scan added {addedCount} files. Starting background metadata extraction...");
+            ServiceLocator.ToastService.Toast($"{addedCount} images indexed. Extracting metadata in background...", "Scanning");
+            
+            // Refresh UI so quick-scanned images appear immediately
+            ServiceLocator.SearchService.RefreshResults();
+
+            // Phase 2: Automatically start deep scan in background (non-blocking)
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    // Small delay to let UI settle
+                    await Task.Delay(2000, cancellationToken);
+                    
+                    Logger.Log("ScanNewFolder: Starting background deep scan...");
+                    await DeepScanPendingImages(batchSize: 200, cancellationToken);
+                    
+                    Logger.Log("ScanNewFolder: Background metadata extraction complete");
+                    ServiceLocator.ToastService.Toast("Metadata extraction complete", "Scanning");
+                    ServiceLocator.SearchService.RefreshResults();
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log($"ScanNewFolder background deep scan error: {ex.Message}");
+                }
+            }, cancellationToken);
+        }
+        else
+        {
+            Logger.Log("ScanNewFolder: No new files found");
+            ServiceLocator.ToastService.Toast("No new images found", "Scanning");
+        }
+    }
+
+    /// <summary>
     /// Phase 1: Quick scan that rapidly indexes files with basic information
     /// Returns the number of files actually added to the database
     /// </summary>

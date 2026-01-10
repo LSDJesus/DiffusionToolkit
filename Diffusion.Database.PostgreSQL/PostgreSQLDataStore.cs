@@ -36,6 +36,16 @@ public partial class PostgreSQLDataStore : IDisposable
             }
         }
     }
+    
+    /// <summary>
+    /// Detected schema type: "diffusion_toolkit", "luna", "custom", or null if not detected
+    /// </summary>
+    public string? DetectedSchemaType { get; private set; }
+    
+    /// <summary>
+    /// True if database is in read-only mode (no write permissions)
+    /// </summary>
+    public bool IsReadOnlyMode { get; private set; }
 
     public PostgreSQLDataStore(string connectionString) : this(connectionString, DatabaseConfiguration.Default)
     {
@@ -282,6 +292,85 @@ public partial class PostgreSQLDataStore : IDisposable
     public void Dispose()
     {
         _dataSource?.Dispose();
+    }
+
+    /// <summary>
+    /// Detect schema type based on table structure
+    /// Returns: "diffusion_toolkit", "luna", or "custom"
+    /// </summary>
+    public async Task<string> DetectSchemaTypeAsync()
+    {
+        try
+        {
+            using var conn = OpenConnection();
+            
+            // Check for Luna-specific tables
+            var hasStories = await conn.ExecuteScalarAsync<bool>(
+                $"SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = @schema AND table_name = 'stories')",
+                new { schema = CurrentSchema });
+            var hasTurnImages = await conn.ExecuteScalarAsync<bool>(
+                $"SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = @schema AND table_name = 'turn_images')",
+                new { schema = CurrentSchema });
+            var hasCharacterPortraits = await conn.ExecuteScalarAsync<bool>(
+                $"SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = @schema AND table_name = 'character_portraits')",
+                new { schema = CurrentSchema });
+            
+            if (hasStories && (hasTurnImages || hasCharacterPortraits))
+            {
+                DetectedSchemaType = "luna";
+                Logger.Log($"Detected Luna Narrated schema in '{CurrentSchema}'");
+                return "luna";
+            }
+            
+            // Check for standard Diffusion Toolkit tables
+            var hasImage = await conn.ExecuteScalarAsync<bool>(
+                $"SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = @schema AND table_name = 'image')",
+                new { schema = CurrentSchema });
+            var hasFolder = await conn.ExecuteScalarAsync<bool>(
+                $"SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = @schema AND table_name = 'folder')",
+                new { schema = CurrentSchema });
+            
+            if (hasImage && hasFolder)
+            {
+                DetectedSchemaType = "diffusion_toolkit";
+                Logger.Log($"Detected Diffusion Toolkit schema in '{CurrentSchema}'");
+                return "diffusion_toolkit";
+            }
+            
+            DetectedSchemaType = "custom";
+            Logger.Log($"Unknown schema type in '{CurrentSchema}'");
+            return "custom";
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"Schema detection failed: {ex.Message}");
+            DetectedSchemaType = "unknown";
+            return "unknown";
+        }
+    }
+
+    /// <summary>
+    /// Test if current connection has write permissions
+    /// </summary>
+    public async Task<bool> HasWritePermissionAsync()
+    {
+        try
+        {
+            using var conn = OpenConnection();
+            
+            // Try to create and drop a temp table
+            await conn.ExecuteAsync($"CREATE TEMP TABLE _write_test (id INT)");
+            await conn.ExecuteAsync($"DROP TABLE _write_test");
+            
+            IsReadOnlyMode = false;
+            return true;
+        }
+        catch
+        {
+            IsReadOnlyMode = true;
+            Logger.Log($"Database is in read-only mode");
+            return false;
+        }
     }
 }
 

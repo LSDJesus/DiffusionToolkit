@@ -10,7 +10,7 @@ public class PostgreSQLMigrations
 {
     private readonly NpgsqlConnection _connection;
     private readonly string _schema;
-    private const int CurrentVersion = 7;
+    private const int CurrentVersion = 8;
 
     public PostgreSQLMigrations(NpgsqlConnection connection, string schema = "public")
     {
@@ -42,6 +42,7 @@ public class PostgreSQLMigrations
             if (currentVersion < 5) await ApplyV5Async();
             if (currentVersion < 6) await ApplyV6Async();
             if (currentVersion < 7) await ApplyV7Async();
+            if (currentVersion < 8) await ApplyV8Async();
 
             // Only insert version if migrations were applied
             if (currentVersion < CurrentVersion)
@@ -377,6 +378,14 @@ public class PostgreSQLMigrations
             CREATE INDEX IF NOT EXISTS idx_image_base_id ON image(base_image_id);
             CREATE INDEX IF NOT EXISTS idx_image_is_upscaled ON image(is_upscaled);
             CREATE INDEX IF NOT EXISTS idx_image_scan_phase ON image (scan_phase) WHERE scan_phase = 0;
+            
+            -- V8: Unified schema indexes
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_image_uuid ON image(image_uuid);
+            CREATE INDEX IF NOT EXISTS idx_image_story_id ON image(story_id) WHERE story_id IS NOT NULL;
+            CREATE INDEX IF NOT EXISTS idx_image_character_id ON image(character_id) WHERE character_id IS NOT NULL;
+            CREATE INDEX IF NOT EXISTS idx_image_location_id ON image(location_id) WHERE location_id IS NOT NULL;
+            CREATE INDEX IF NOT EXISTS idx_image_type ON image(image_type) WHERE image_type IS NOT NULL;
+            CREATE INDEX IF NOT EXISTS idx_image_status ON image(status) WHERE status IS NOT NULL;
             
             -- Composite indexes
             CREATE INDEX IF NOT EXISTS idx_image_for_deletion_created_date ON image (for_deletion, created_date);
@@ -767,4 +776,54 @@ CREATE INDEX IF NOT EXISTS idx_embedding_registry_civitai_id ON embedding_regist
             Diffusion.Common.Logger.Log($"Migration V7 failed: {ex.Message}");
             throw;
         }
-    }}
+    }
+
+    private async Task ApplyV8Async()
+    {
+        try
+        {
+            Diffusion.Common.Logger.Log("Applying V8 migration: Unified schema with UUID + narrative system integration...");
+            
+            var sql = @"
+-- Add UUID column for cross-project integration
+ALTER TABLE image ADD COLUMN IF NOT EXISTS image_uuid UUID DEFAULT gen_random_uuid() UNIQUE NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_image_uuid ON image(image_uuid);
+
+-- Add narrative system relationship fields
+ALTER TABLE image ADD COLUMN IF NOT EXISTS story_id UUID;
+ALTER TABLE image ADD COLUMN IF NOT EXISTS turn_number INTEGER;
+ALTER TABLE image ADD COLUMN IF NOT EXISTS character_id UUID;
+ALTER TABLE image ADD COLUMN IF NOT EXISTS location_id UUID;
+
+-- Add image categorization and workflow fields
+ALTER TABLE image ADD COLUMN IF NOT EXISTS image_type VARCHAR(50);
+ALTER TABLE image ADD COLUMN IF NOT EXISTS status VARCHAR(20);
+ALTER TABLE image ADD COLUMN IF NOT EXISTS generation_time_seconds DECIMAL(6, 2);
+ALTER TABLE image ADD COLUMN IF NOT EXISTS comfyui_workflow VARCHAR(100);
+ALTER TABLE image ADD COLUMN IF NOT EXISTS error_message TEXT;
+
+-- Create indexes for narrative relationships
+CREATE INDEX IF NOT EXISTS idx_image_story_id ON image(story_id) WHERE story_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_image_character_id ON image(character_id) WHERE character_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_image_location_id ON image(location_id) WHERE location_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_image_type ON image(image_type) WHERE image_type IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_image_status ON image(status) WHERE status IS NOT NULL;
+
+-- Populate UUIDs for existing records
+UPDATE image SET image_uuid = gen_random_uuid() WHERE image_uuid IS NULL;
+
+-- Fix image sequence to prevent ID gaps after bulk operations
+SELECT setval('image_id_seq', COALESCE((SELECT MAX(id) FROM image), 1), true);
+            ";
+            
+            await _connection.ExecuteAsync(sql);
+            
+            Diffusion.Common.Logger.Log("V8 migration completed successfully - UUID and narrative integration enabled");
+        }
+        catch (Exception ex)
+        {
+            Diffusion.Common.Logger.Log($"Migration V8 failed: {ex.Message}");
+            throw;
+        }
+    }
+}

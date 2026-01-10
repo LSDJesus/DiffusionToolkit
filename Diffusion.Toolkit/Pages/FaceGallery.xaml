@@ -5,9 +5,14 @@
       xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
       xmlns:local="clr-namespace:Diffusion.Toolkit.Pages"
       xmlns:fa="clr-namespace:FontAwesome.Sharp;assembly=FontAwesome.Sharp"
+      xmlns:converters="clr-namespace:Diffusion.Toolkit.Converters"
       mc:Ignorable="d" 
       d:DesignHeight="600" d:DesignWidth="800"
       Title="Face Gallery">
+    
+    <local:NavigationPage.Resources>
+        <converters:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
+    </local:NavigationPage.Resources>
     
     <Grid Background="{DynamicResource BackgroundBrush}">
         <Grid.RowDefinitions>

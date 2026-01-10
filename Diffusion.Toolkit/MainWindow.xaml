@@ -172,6 +172,28 @@
                                     </Style>
                                 </fa:IconImage.Style>
                             </fa:IconImage>
+                            
+                            <!-- Database Profile Switcher -->
+                            <ComboBox x:Name="DatabaseProfileSwitcher"
+                                      Width="150" Height="22" Margin="10,0,0,0"
+                                      ToolTip="Switch database profile (Ctrl+Shift+D)"
+                                      SelectionChanged="DatabaseProfile_SelectionChanged"
+                                      Background="{DynamicResource BackgroundBrushSecondary}"
+                                      Foreground="{DynamicResource ForegroundBrush}"
+                                      BorderBrush="{DynamicResource BorderBrush}">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal">
+                                            <Ellipse Width="8" Height="8" Margin="0,0,6,0" VerticalAlignment="Center">
+                                                <Ellipse.Fill>
+                                                    <SolidColorBrush Color="{Binding Color, FallbackValue=#808080}"/>
+                                                </Ellipse.Fill>
+                                            </Ellipse>
+                                            <TextBlock Text="{Binding Name}"/>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
                         </StackPanel>
                     </Grid>
 

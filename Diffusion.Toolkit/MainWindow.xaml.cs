@@ -203,6 +203,32 @@ namespace Diffusion.Toolkit
 
                 DataContext = _model;
 
+                // Initialize database profile switcher
+                if (DatabaseProfileSwitcher != null)
+                {
+                    var profiles = _settings.DatabaseProfiles ?? new List<DatabaseProfile>();
+                    if (profiles.Count == 0)
+                    {
+                        // Create a default profile from current connection
+                        profiles = new List<DatabaseProfile>
+                        {
+                            new DatabaseProfile
+                            {
+                                Name = "Default",
+                                ConnectionString = _settings.DatabaseConnectionString,
+                                Schema = _settings.DatabaseSchema ?? "public",
+                                Description = "Default connection",
+                                Color = "#4CAF50"
+                            }
+                        };
+                        _settings.DatabaseProfiles = profiles;
+                        _settings.ActiveDatabaseProfile = "Default";
+                    }
+                    
+                    DatabaseProfileSwitcher.ItemsSource = profiles;
+                    DatabaseProfileSwitcher.SelectedValue = _settings.ActiveDatabaseProfile;
+                    DatabaseProfileSwitcher.SelectionChanged += DatabaseProfile_SelectionChanged;
+                }
 
                 _messagePopupManager = new MessagePopupManager(this, PopupHost, Frame, Dispatcher);
 
@@ -598,9 +624,16 @@ namespace Diffusion.Toolkit
             ServiceLocator.SetSettings(_settings);
 
             // === PHASE 2: Initialize PostgreSQL with Retry Logic ===
-            var postgresConnectionString = !string.IsNullOrWhiteSpace(_settings.DatabaseConnectionString) 
-                ? _settings.DatabaseConnectionString 
-                : AppInfo.PostgreSQLConnectionString;
+            // Use active database profile if configured, otherwise fall back to direct connection string
+            var postgresConnectionString = _settings.GetActiveConnectionString();
+            if (string.IsNullOrWhiteSpace(postgresConnectionString))
+            {
+                postgresConnectionString = AppInfo.PostgreSQLConnectionString;
+            }
+            
+            // Get schema from active profile or settings
+            var activeProfile = _settings.DatabaseProfiles.FirstOrDefault(p => p.Name == _settings.ActiveDatabaseProfile);
+            var schema = activeProfile?.Schema ?? _settings.DatabaseSchema ?? "public";
             
             PostgreSQLDataStore? pgDataStore = null;
             const int maxRetries = 3;
@@ -613,14 +646,12 @@ namespace Diffusion.Toolkit
                     Logger.Log($"PostgreSQL connection attempt {attempt}/{maxRetries}...");
                     pgDataStore = new PostgreSQLDataStore(postgresConnectionString);
                     
-                    // Set active schema from settings BEFORE Create() so migrations use correct schema
-                    // Default to "public" which is the PostgreSQL default
-                    pgDataStore.CurrentSchema = _settings.DatabaseSchema ?? "public";
+                    // Set active schema from profile/settings BEFORE Create() so migrations use correct schema
+                    pgDataStore.CurrentSchema = schema;
                     
                     await pgDataStore.Create(() => null, _ => { });
                     
                     // Sync settings with actual schema (Create() may have detected fallback)
-                    // This prevents the Settings page from resetting it back to the wrong value
                     if (_settings.DatabaseSchema != pgDataStore.CurrentSchema)
                     {
                         Logger.Log($"Syncing settings schema: '{_settings.DatabaseSchema}' -> '{pgDataStore.CurrentSchema}'");
@@ -628,13 +659,29 @@ namespace Diffusion.Toolkit
                     }
                     
                     ServiceLocator.SetDataStore(pgDataStore);
-                    Logger.Log("✓ PostgreSQL connection established");
+                    Logger.Log($"✓ PostgreSQL connection established (Profile: {_settings.ActiveDatabaseProfile})");
+                    
+                    // Detect schema type and check permissions
+                    var schemaType = await pgDataStore.DetectSchemaTypeAsync();
+                    var hasWrite = await pgDataStore.HasWritePermissionAsync();
+                    
+                    // Update profile with detected info
+                    if (activeProfile != null)
+                    {
+                        activeProfile.SchemaType = schemaType;
+                        if (!hasWrite && !activeProfile.IsReadOnly)
+                        {
+                            Logger.Log($"⚠️ No write permission detected - consider enabling read-only mode for this profile");
+                        }
+                    }
                     
                     // Update UI status
                     if (ServiceLocator.MainModel != null)
                     {
                         ServiceLocator.MainModel.IsDatabaseConnected = true;
-                        ServiceLocator.MainModel.DatabaseStatus = $"Connected ({pgDataStore.GetStatus()})";
+                        var badge = activeProfile?.Badge ?? "";
+                        var readOnlyIndicator = (activeProfile?.IsReadOnly == true || !hasWrite) ? " [Read-Only]" : "";
+                        ServiceLocator.MainModel.DatabaseStatus = $"Connected: {_settings.ActiveDatabaseProfile}{badge}{readOnlyIndicator} ({pgDataStore.GetStatus()})";
                     }
                     break;
                 }
@@ -1836,6 +1883,40 @@ namespace Diffusion.Toolkit
                     _model.EmbeddingQueueCount = ServiceLocator.BackgroundTaggingService.EmbeddingQueueRemaining;
                 }
             });
+        }
+
+        private async void DatabaseProfile_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (DatabaseProfileSwitcher?.SelectedItem is DatabaseProfile profile)
+            {
+                if (profile.Name == _settings.ActiveDatabaseProfile)
+                    return; // No change
+
+                var result = MessageBox.Show(this,
+                    $"Switch to database profile '{profile.Name}'?\n\n" +
+                    $"This will close the current connection and reconnect to:\n{profile.ConnectionString.Split(';').FirstOrDefault()}\n\n" +
+                    $"The application will need to restart.",
+                    "Switch Database Profile",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Question);
+
+                if (result == MessageBoxResult.Yes)
+                {
+                    _settings.ActiveDatabaseProfile = profile.Name;
+                    _settings.Save();
+
+                    // Restart application
+                    System.Diagnostics.Process.Start(Environment.ProcessPath ?? System.Diagnostics.Process.GetCurrentProcess().MainModule!.FileName);
+                    Application.Current.Shutdown();
+                }
+                else
+                {
+                    // Revert selection
+                    DatabaseProfileSwitcher.SelectionChanged -= DatabaseProfile_SelectionChanged;
+                    DatabaseProfileSwitcher.SelectedValue = _settings.ActiveDatabaseProfile;
+                    DatabaseProfileSwitcher.SelectionChanged += DatabaseProfile_SelectionChanged;
+                }
+            }
         }
 
         #endregion

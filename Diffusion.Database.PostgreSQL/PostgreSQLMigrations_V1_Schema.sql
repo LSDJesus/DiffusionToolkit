@@ -93,6 +93,18 @@ CREATE TABLE IF NOT EXISTS image (
     embedding_source_id INT,
     is_embedding_representative BOOLEAN DEFAULT FALSE,
     
+    -- Unified schema with UUID and narrative integration (V8)
+    image_uuid UUID DEFAULT gen_random_uuid() UNIQUE NOT NULL,
+    story_id UUID,
+    turn_number INTEGER,
+    character_id UUID,
+    location_id UUID,
+    image_type VARCHAR(50),
+    status VARCHAR(20),
+    generation_time_seconds DECIMAL(6, 2),
+    comfyui_workflow VARCHAR(100),
+    error_message TEXT,
+    
     -- Vector embeddings for similarity search
     prompt_embedding vector(1024),              -- BGE-large-en-v1.5
     negative_prompt_embedding vector(1024),     -- BGE-large-en-v1.5

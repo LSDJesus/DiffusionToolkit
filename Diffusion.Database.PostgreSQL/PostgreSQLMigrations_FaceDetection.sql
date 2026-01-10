@@ -1,22 +1,24 @@
 -- Face Detection Schema Migration
 -- Adds tables for storing face detections, groups, and relationships
+-- NOTE: This migration is designed to be idempotent and handles existing schemas
 
 -- =============================================================================
--- FACE DETECTIONS TABLE
+-- FACE DETECTIONS TABLE  
 -- =============================================================================
+-- Create the table if it doesn't exist
 CREATE TABLE IF NOT EXISTS face_detection (
     id SERIAL PRIMARY KEY,
     image_id INTEGER NOT NULL REFERENCES image(id) ON DELETE CASCADE,
-    face_index INTEGER NOT NULL,  -- 0-based index for faces in same image
+    face_index INTEGER NOT NULL DEFAULT 0,
     
     -- Bounding box coordinates (in original image pixels)
-    x INTEGER NOT NULL,
-    y INTEGER NOT NULL,
-    width INTEGER NOT NULL,
-    height INTEGER NOT NULL,
+    x INTEGER NOT NULL DEFAULT 0,
+    y INTEGER NOT NULL DEFAULT 0,
+    width INTEGER NOT NULL DEFAULT 0,
+    height INTEGER NOT NULL DEFAULT 0,
     
     -- Detection metadata
-    confidence REAL NOT NULL,
+    confidence REAL NOT NULL DEFAULT 0.0,
     quality_score REAL DEFAULT 0.0,
     sharpness_score REAL DEFAULT 0.0,
     
@@ -49,11 +51,17 @@ CREATE TABLE IF NOT EXISTS face_detection (
     
     -- Metadata
     detected_date TIMESTAMP DEFAULT NOW(),
-    processing_time_ms REAL DEFAULT 0.0,
-    
-    -- Unique constraint: one face per index per image
-    CONSTRAINT unique_face_per_image UNIQUE (image_id, face_index)
+    processing_time_ms REAL DEFAULT 0.0
 );
+
+-- Add missing columns to existing table (IF NOT EXISTS is PostgreSQL 9.6+)
+ALTER TABLE face_detection ADD COLUMN IF NOT EXISTS face_group_id INTEGER;
+ALTER TABLE face_detection ADD COLUMN IF NOT EXISTS has_embedding BOOLEAN DEFAULT FALSE;
+ALTER TABLE face_detection ADD COLUMN IF NOT EXISTS face_index INTEGER DEFAULT 0;
+ALTER TABLE face_detection ADD COLUMN IF NOT EXISTS expression TEXT;
+ALTER TABLE face_detection ADD COLUMN IF NOT EXISTS expression_confidence REAL;
+ALTER TABLE face_detection ADD COLUMN IF NOT EXISTS detected_date TIMESTAMP DEFAULT NOW();
+ALTER TABLE face_detection ADD COLUMN IF NOT EXISTS processing_time_ms REAL DEFAULT 0.0;
 
 -- Create indexes for efficient querying
 CREATE INDEX IF NOT EXISTS idx_face_detection_image_id ON face_detection(image_id);
@@ -122,17 +130,28 @@ CREATE INDEX IF NOT EXISTS idx_face_group_member_face ON face_group_member(face_
 -- =============================================================================
 -- FACE SIMILARITY TABLE (pre-computed similarities for fast lookup)
 -- =============================================================================
+-- Create table if it doesn't exist (with new schema)
 CREATE TABLE IF NOT EXISTS face_similarity (
-    id SERIAL PRIMARY KEY,
     face_id_1 INTEGER NOT NULL REFERENCES face_detection(id) ON DELETE CASCADE,
     face_id_2 INTEGER NOT NULL REFERENCES face_detection(id) ON DELETE CASCADE,
-    cosine_similarity REAL NOT NULL,
+    cosine_similarity REAL,
     computed_date TIMESTAMP DEFAULT NOW(),
-    
-    -- Ensure we don't store duplicates (always store lower ID first)
-    CONSTRAINT unique_face_pair UNIQUE (face_id_1, face_id_2),
-    CONSTRAINT ordered_face_ids CHECK (face_id_1 < face_id_2)
+    PRIMARY KEY (face_id_1, face_id_2)
 );
+
+-- Handle existing table that may have similarity_score instead of cosine_similarity
+DO $$
+BEGIN
+    -- Rename similarity_score to cosine_similarity if needed
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'face_similarity' AND column_name = 'similarity_score' AND table_schema = current_schema()) 
+       AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'face_similarity' AND column_name = 'cosine_similarity' AND table_schema = current_schema()) THEN
+        ALTER TABLE face_similarity RENAME COLUMN similarity_score TO cosine_similarity;
+    END IF;
+END $$;
+
+-- Add missing columns
+ALTER TABLE face_similarity ADD COLUMN IF NOT EXISTS cosine_similarity REAL;
+ALTER TABLE face_similarity ADD COLUMN IF NOT EXISTS computed_date TIMESTAMP DEFAULT NOW();
 
 -- Create indexes
 CREATE INDEX IF NOT EXISTS idx_face_similarity_face1 ON face_similarity(face_id_1);
@@ -168,6 +187,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trigger_update_face_group_stats ON face_group_member;
 CREATE TRIGGER trigger_update_face_group_stats
 AFTER INSERT OR DELETE ON face_group_member
 FOR EACH ROW

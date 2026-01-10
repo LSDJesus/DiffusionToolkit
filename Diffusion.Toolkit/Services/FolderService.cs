@@ -767,7 +767,9 @@ namespace Diffusion.Toolkit.Services
                             filesToScan.AddRange(await ServiceLocator.ScanningService.GetFilesToScan(folder.Path, folder.Recursive, new HashSet<string>(), cancellationToken));
                         }
 
-                        await ServiceLocator.MetadataScannerService.QueueBatchAsync(filesToScan, null, cancellationToken);
+                        // Use two-phase scanning: quick scan first for immediate visibility
+                        Logger.Log($"Starting two-phase scan for {filesToScan.Count} new files...");
+                        await ServiceLocator.ScanningService.ScanNewFolder(filesToScan, cancellationToken);
                     }
                 }
 

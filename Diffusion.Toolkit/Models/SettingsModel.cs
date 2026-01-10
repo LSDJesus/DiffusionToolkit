@@ -101,6 +101,9 @@ public class SettingsModel : BaseNotify
     private string _externalCaptionModel;
     private string _externalCaptionApiKey;
     private ObservableCollection<string> _availableModels;
+    
+    // Database profiles
+    private ObservableCollection<Configuration.DatabaseProfile> _databaseProfiles;
 
     public SettingsModel()
     {
@@ -651,6 +654,12 @@ public class SettingsModel : BaseNotify
     {
         get => _availableModels;
         set => SetField(ref _availableModels, value);
+    }
+
+    public ObservableCollection<Configuration.DatabaseProfile> DatabaseProfiles
+    {
+        get => _databaseProfiles ??= new ObservableCollection<Configuration.DatabaseProfile>();
+        set => SetField(ref _databaseProfiles, value);
     }
 
     public override bool IsDirty => _isDirty;

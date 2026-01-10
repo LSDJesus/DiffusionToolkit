@@ -329,6 +329,14 @@ public partial class PostgreSQLDataStore
                 FROM {tempTableName}
                 ON CONFLICT (path) DO NOTHING");
 
+            // Fix the sequence after bulk insert to prevent ID gaps
+            if (inserted > 0)
+            {
+                var maxId = conn.ExecuteScalar<int?>("SELECT MAX(id) FROM image") ?? 0;
+                conn.Execute($"SELECT setval('image_id_seq', {maxId}, true)");
+                Logger.Log($"Updated image_id_seq to {maxId} after inserting {inserted} images");
+            }
+
             // Clean up temp table
             conn.Execute($"DROP TABLE IF EXISTS {tempTableName}");
             
@@ -369,6 +377,31 @@ public partial class PostgreSQLDataStore
         query += " LIMIT @limit";
 
         return conn.Query<string>(query, new { folderId, limit });
+    }
+
+    /// <summary>
+    /// Fix the PostgreSQL sequence for image.id to match the current max ID
+    /// This resolves issues where bulk operations cause sequence misalignment
+    /// </summary>
+    public void ResetImageSequence()
+    {
+        using var conn = OpenConnection();
+        
+        try
+        {
+            // Get the current max ID from the image table
+            var maxId = conn.ExecuteScalar<int?>("SELECT MAX(id) FROM image") ?? 0;
+            
+            // Reset the sequence to max_id + 1
+            conn.Execute($"SELECT setval('image_id_seq', {maxId}, true)");
+            
+            Logger.Log($"Reset image_id_seq to {maxId}");
+        }
+        catch (Exception e)
+        {
+            Logger.Log($"ResetImageSequence error: {e.Message}");
+            throw;
+        }
     }
 }
 

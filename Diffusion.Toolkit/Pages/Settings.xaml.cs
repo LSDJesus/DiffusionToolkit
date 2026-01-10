@@ -98,6 +98,9 @@ namespace Diffusion.Toolkit.Pages
             _model.ShowFilenames = _settings.ShowFilenames;
             _model.PermanentlyDelete = _settings.PermanentlyDelete;
             _model.ConfirmDeletion = _settings.ConfirmDeletion;
+            
+            // Initialize database profiles
+            _model.DatabaseProfiles = new ObservableCollection<DatabaseProfile>(_settings.DatabaseProfiles);
 
             _model.AutoTagNSFW = _settings.AutoTagNSFW;
             _model.NSFWTags = string.Join("\r\n", _settings.NSFWTags);
@@ -862,7 +865,74 @@ namespace Diffusion.Toolkit.Pages
             }
         }
 
+        // Database Profile Management
+        
+        private void ProfileComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            // Profile switching happens on Apply Changes or via quick switcher
+        }
 
+        private void AddProfile_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new DatabaseProfileDialog(null, _window);
+            if (dialog.ShowDialog() == true && dialog.Profile != null)
+            {
+                var profiles = _settings.DatabaseProfiles.ToList();
+                profiles.Add(dialog.Profile);
+                _settings.DatabaseProfiles = profiles;
+                _model.DatabaseProfiles = new ObservableCollection<DatabaseProfile>(profiles);
+                _settings.ActiveDatabaseProfile = dialog.Profile.Name;
+                _model.IsDirty = true;
+            }
+        }
 
-    }
-}
+        private void EditProfile_Click(object sender, RoutedEventArgs e)
+        {
+            if (ProfileComboBox.SelectedItem is DatabaseProfile profile)
+            {
+                var dialog = new DatabaseProfileDialog(profile, _window);
+                if (dialog.ShowDialog() == true && dialog.Profile != null)
+                {
+                    var profiles = _settings.DatabaseProfiles.ToList();
+                    var index = profiles.FindIndex(p => p.Name == profile.Name);
+                    if (index >= 0)
+                    {
+                        profiles[index] = dialog.Profile;
+                        _settings.DatabaseProfiles = profiles;
+                        _model.DatabaseProfiles = new ObservableCollection<DatabaseProfile>(profiles);
+                        _model.IsDirty = true;
+                    }
+                }
+            }
+        }
+
+        private void DeleteProfile_Click(object sender, RoutedEventArgs e)
+        {
+            if (ProfileComboBox.SelectedItem is DatabaseProfile profile)
+            {
+                var result = MessageBox.Show(
+                    _window,
+                    $"Are you sure you want to delete the profile '{profile.Name}'?\n\nThis will not delete any database data, only the profile configuration.",
+                    "Delete Profile",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Warning
+                );
+
+                if (result == MessageBoxResult.Yes)
+                {
+                    var profiles = _settings.DatabaseProfiles.ToList();
+                    profiles.RemoveAll(p => p.Name == profile.Name);
+                    _settings.DatabaseProfiles = profiles;
+                    _model.DatabaseProfiles = new ObservableCollection<DatabaseProfile>(profiles);
+                    
+                    // Switch to first profile if we deleted the active one
+                    if (_settings.ActiveDatabaseProfile == profile.Name && profiles.Count > 0)
+                    {
+                        _settings.ActiveDatabaseProfile = profiles[0].Name;
+                    }
+                    
+                    _model.IsDirty = true;
+                }
+            }
+        }
+

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Windows;
 using System.Windows.Interop;
 using Diffusion.Common;
@@ -109,6 +110,10 @@ public class Settings : SettingsContainer, IScanOptions
     private bool _createMetadataBackup;
     private bool _writeTagsToMetadata;
     private bool _writeCaptionsToMetadata;
+    
+    // Database profile management (V8)
+    private List<DatabaseProfile>? _databaseProfiles;
+    private string? _activeDatabaseProfile;
     
     // Tagging settings
     private int _taggingConcurrentWorkers = 4;
@@ -236,6 +241,23 @@ public class Settings : SettingsContainer, IScanOptions
         NavigationSection.Attach(this);
         PreviewWindowState = new PreviewWindowState();
         Version = "0.1.0";
+
+        // Initialize database profiles with default if empty
+        _databaseProfiles = new List<DatabaseProfile>();
+        _activeDatabaseProfile = "Default";
+        
+        // Create default profile if connection string exists
+        if (!string.IsNullOrEmpty(_databaseConnectionString))
+        {
+            _databaseProfiles.Add(new DatabaseProfile
+            {
+                Name = "Default",
+                ConnectionString = _databaseConnectionString,
+                Schema = "public",
+                Description = "Default database connection",
+                Color = "#4CAF50"
+            });
+        }
 
         //if (initialize)
         //{
@@ -981,6 +1003,90 @@ public class Settings : SettingsContainer, IScanOptions
         get => _captionHandlingMode;
         set => UpdateValue(ref _captionHandlingMode, value);
     }
+
+    /// <summary>
+    /// List of database profiles for switching between different databases
+    /// </summary>
+    public List<DatabaseProfile> DatabaseProfiles
+    {
+        get => _databaseProfiles ?? new List<DatabaseProfile>();
+        set => UpdateValue(ref _databaseProfiles, value);
+    }
+
+    /// <summary>
+    /// Name of the currently active database profile
+    /// </summary>
+    public string ActiveDatabaseProfile
+    {
+        get => _activeDatabaseProfile ?? "Default";
+        set => UpdateValue(ref _activeDatabaseProfile, value);
+    }
+
+    /// <summary>
+    /// Gets the current active database profile's connection string
+    /// Falls back to DatabaseConnectionString if no profile is active
+    /// </summary>
+    public string GetActiveConnectionString()
+    {
+        var profile = DatabaseProfiles.FirstOrDefault(p => p.Name == ActiveDatabaseProfile);
+        if (profile != null && !string.IsNullOrEmpty(profile.ConnectionString))
+        {
+            return profile.ConnectionString;
+        }
+        return DatabaseConnectionString;
+    }
+}
+
+/// <summary>
+/// Database profile for managing multiple PostgreSQL databases
+/// </summary>
+public class DatabaseProfile
+{
+    /// <summary>
+    /// Profile name (e.g., "Personal Images", "Luna Narrated", "Test Database")
+    /// </summary>
+    public string Name { get; set; } = "";
+
+    /// <summary>
+    /// PostgreSQL connection string
+    /// </summary>
+    public string ConnectionString { get; set; } = "";
+
+    /// <summary>
+    /// Optional description
+    /// </summary>
+    public string? Description { get; set; }
+
+    /// <summary>
+    /// Schema name (default: public)
+    /// </summary>
+    public string Schema { get; set; } = "public";
+
+    /// <summary>
+    /// Profile color for UI identification
+    /// </summary>
+    public string? Color { get; set; }
+
+    /// <summary>
+    /// Schema type hint: "diffusion_toolkit", "luna", "custom"
+    /// Auto-detected based on table structure
+    /// </summary>
+    public string? SchemaType { get; set; }
+
+    /// <summary>
+    /// Read-only mode (for viewing other project databases)
+    /// </summary>
+    public bool IsReadOnly { get; set; } = false;
+
+    /// <summary>
+    /// Display badge/indicator for special schema types
+    /// </summary>
+    public string? Badge => SchemaType switch
+    {
+        "luna" => "📖 Story",
+        "diffusion_toolkit" => "🖼️ Toolkit",
+        _ => null
+    };
 }
 
 public class PreviewWindowState

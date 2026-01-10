@@ -743,6 +743,63 @@
                         </Grid>
                     </GroupBox>
                     
+                    <GroupBox Header="Database Profiles" Margin="0,0,0,10" Padding="10">
+                        <StackPanel>
+                            <TextBlock TextWrapping="Wrap" Margin="0,0,0,10" FontSize="11" Opacity="0.8"
+                                       Foreground="{DynamicResource ForegroundBrush}">
+                                Manage multiple database connections for different image collections (e.g., Personal Images, Luna Narrated, Test Database).
+                                Switch profiles to work with different projects while using the same application.
+                            </TextBlock>
+                            
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                <Label Content="Active Profile:" VerticalAlignment="Center" Foreground="{DynamicResource ForegroundBrush}"/>
+                                <ComboBox x:Name="ProfileComboBox" Width="250" 
+                                          ItemsSource="{Binding DatabaseProfiles}"
+                                          SelectedValue="{Binding ActiveDatabaseProfile}"
+                                          DisplayMemberPath="Name"
+                                          SelectedValuePath="Name"
+                                          SelectionChanged="ProfileComboBox_SelectionChanged">
+                                    <ComboBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Orientation="Horizontal">
+                                                <Ellipse Width="10" Height="10" Margin="0,0,8,0" VerticalAlignment="Center">
+                                                    <Ellipse.Fill>
+                                                        <SolidColorBrush Color="{Binding Color, FallbackValue=#808080}"/>
+                                                    </Ellipse.Fill>
+                                                </Ellipse>
+                                                <TextBlock Text="{Binding Name}"/>
+                                                <TextBlock Text="{Binding Description, StringFormat=' - {0}'}" Opacity="0.6" Margin="5,0,0,0"/>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ComboBox.ItemTemplate>
+                                </ComboBox>
+                            </StackPanel>
+                            
+                            <StackPanel Orientation="Horizontal">
+                                <Button Click="AddProfile_Click" Width="120" Height="26" Margin="0,0,5,0">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="➕" Margin="0,0,5,0"/>
+                                        <TextBlock Text="Add Profile"/>
+                                    </StackPanel>
+                                </Button>
+                                <Button Click="EditProfile_Click" Width="120" Height="26" Margin="0,0,5,0"
+                                        IsEnabled="{Binding ElementName=ProfileComboBox, Path=SelectedItem, Converter={StaticResource NotNullConverter}}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="✏️" Margin="0,0,5,0"/>
+                                        <TextBlock Text="Edit Profile"/>
+                                    </StackPanel>
+                                </Button>
+                                <Button Click="DeleteProfile_Click" Width="120" Height="26"
+                                        IsEnabled="{Binding ElementName=ProfileComboBox, Path=SelectedItem, Converter={StaticResource NotNullConverter}}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="🗑️" Margin="0,0,5,0"/>
+                                        <TextBlock Text="Delete Profile"/>
+                                    </StackPanel>
+                                </Button>
+                            </StackPanel>
+                        </StackPanel>
+                    </GroupBox>
+                    
                     <GroupBox Header="Collection (Schema)" Margin="0,0,0,10" Padding="10">
                         <StackPanel>
                             <TextBlock TextWrapping="Wrap" Margin="0,0,0,10" FontSize="11" Opacity="0.8"
