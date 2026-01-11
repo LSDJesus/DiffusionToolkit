@@ -54,36 +54,40 @@ public partial class PostgreSQLDataStore
     }
 
     /// <summary>
-    /// Get images that need tagging (batch for processing)
+    /// Get images that need tagging (cursor-based pagination for large datasets)
     /// </summary>
-    public async Task<List<int>> GetImagesNeedingTagging(int batchSize = 100)
+    /// <param name="batchSize">Number of images to fetch</param>
+    /// <param name="lastId">Fetch images with id > lastId (use 0 for first batch)</param>
+    public async Task<List<int>> GetImagesNeedingTagging(int batchSize = 100, int lastId = 0)
     {
         await using var connection = await _dataSource.OpenConnectionAsync();
         
         var sql = $@"
             SELECT id FROM {Table("image")} 
-            WHERE needs_tagging = true AND for_deletion = false
+            WHERE needs_tagging = true AND for_deletion = false AND id > @lastId
             ORDER BY id
             LIMIT @batchSize";
         
-        var result = await connection.QueryAsync<int>(sql, new { batchSize });
+        var result = await connection.QueryAsync<int>(sql, new { batchSize, lastId });
         return result.ToList();
     }
 
     /// <summary>
-    /// Get images that need captioning (batch for processing)
+    /// Get images that need captioning (cursor-based pagination for large datasets)
     /// </summary>
-    public async Task<List<int>> GetImagesNeedingCaptioning(int batchSize = 100)
+    /// <param name="batchSize">Number of images to fetch</param>
+    /// <param name="lastId">Fetch images with id > lastId (use 0 for first batch)</param>
+    public async Task<List<int>> GetImagesNeedingCaptioning(int batchSize = 100, int lastId = 0)
     {
         await using var connection = await _dataSource.OpenConnectionAsync();
         
         var sql = $@"
             SELECT id FROM {Table("image")} 
-            WHERE needs_captioning = true AND for_deletion = false
+            WHERE needs_captioning = true AND for_deletion = false AND id > @lastId
             ORDER BY id
             LIMIT @batchSize";
         
-        var result = await connection.QueryAsync<int>(sql, new { batchSize });
+        var result = await connection.QueryAsync<int>(sql, new { batchSize, lastId });
         return result.ToList();
     }
 
@@ -205,9 +209,11 @@ public partial class PostgreSQLDataStore
     }
 
     /// <summary>
-    /// Get images that need embedding (batch for processing)
+    /// Get images that need embedding (cursor-based pagination for large datasets)
     /// </summary>
-    public async Task<List<int>> GetImagesNeedingEmbedding(int batchSize = 100)
+    /// <param name="batchSize">Number of images to fetch</param>
+    /// <param name="lastId">Fetch images with id > lastId (use 0 for first batch)</param>
+    public async Task<List<int>> GetImagesNeedingEmbedding(int batchSize = 100, int lastId = 0)
     {
         await using var connection = await _dataSource.OpenConnectionAsync();
         
@@ -215,11 +221,11 @@ public partial class PostgreSQLDataStore
         var sql = $@"
             SELECT id FROM {Table("image")} 
             WHERE (needs_embedding = true OR (prompt_embedding IS NULL AND image_embedding IS NULL))
-              AND for_deletion = false
+              AND for_deletion = false AND id > @lastId
             ORDER BY id
             LIMIT @batchSize";
         
-        var result = await connection.QueryAsync<int>(sql, new { batchSize });
+        var result = await connection.QueryAsync<int>(sql, new { batchSize, lastId });
         return result.ToList();
     }
 

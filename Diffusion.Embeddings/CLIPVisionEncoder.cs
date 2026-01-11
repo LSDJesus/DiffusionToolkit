@@ -32,24 +32,8 @@ namespace Diffusion.Embeddings
                 throw new System.IO.FileNotFoundException($"ONNX model not found: {modelPath}");
             }
 
-            var sessionOptions = new SessionOptions
-            {
-                GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL,
-                ExecutionMode = ExecutionMode.ORT_PARALLEL,
-                InterOpNumThreads = 2,
-                IntraOpNumThreads = 4
-            };
-
-            try
-            {
-                // Try CUDA first
-                sessionOptions.AppendExecutionProvider_CUDA(deviceId);
-            }
-            catch
-            {
-                // Fallback to CPU if CUDA unavailable
-                Console.WriteLine($"Warning: CUDA provider not available for {_modelName}, using CPU");
-            }
+            // Use memory-efficient CUDA session options
+            var sessionOptions = OnnxSessionHelper.CreateCudaSessionOptions(deviceId, memoryEfficientMode: true);
 
             _session = new InferenceSession(modelPath, sessionOptions);
         }

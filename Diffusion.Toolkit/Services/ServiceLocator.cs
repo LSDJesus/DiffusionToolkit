@@ -14,6 +14,7 @@ using Diffusion.Toolkit.Thumbnails;
 using Diffusion.Toolkit.Classes;
 using Diffusion.Tagging.Services;
 using Diffusion.Captioning.Services;
+using Diffusion.Toolkit.Services.Processing;
 
 namespace Diffusion.Toolkit.Services;
 
@@ -59,6 +60,7 @@ public class ServiceLocator
     private static BackgroundTaggingService? _backgroundTaggingService;
     private static BackgroundFaceDetectionService? _backgroundFaceDetectionService;
     private static GpuResourceOrchestrator? _gpuResourceOrchestrator;
+    private static GlobalProcessingOrchestrator? _globalProcessingOrchestrator;
 
     public static PostgreSQLDataStore? DataStore => _dataStore; // Primary PostgreSQL database
     public static Settings? Settings => _settings;
@@ -67,6 +69,7 @@ public class ServiceLocator
     public static BackgroundTaggingService? BackgroundTaggingService => _backgroundTaggingService;
     public static BackgroundFaceDetectionService? BackgroundFaceDetectionService => _backgroundFaceDetectionService;
     public static GpuResourceOrchestrator? GpuOrchestrator => _gpuResourceOrchestrator;
+    public static GlobalProcessingOrchestrator? ProcessingOrchestrator => _globalProcessingOrchestrator;
 
     public static void SetDataStore(PostgreSQLDataStore dataStore)
     {
@@ -75,22 +78,25 @@ public class ServiceLocator
         _backgroundTaggingService = new BackgroundTaggingService(dataStore);
         _backgroundFaceDetectionService = new BackgroundFaceDetectionService(dataStore);
         
-        // Refresh queue counts from database on startup
-        Task.Run(async () =>
+        // Initialize new processing orchestrator if feature flag is enabled
+        if (_settings?.UseNewProcessingArchitecture == true)
         {
-            try
-            {
-                await Task.Delay(500); // Brief delay to let UI initialize
-                if (_backgroundTaggingService != null)
-                    await _backgroundTaggingService.RefreshQueueCountsAsync();
-                if (_backgroundFaceDetectionService != null)
-                    await _backgroundFaceDetectionService.RefreshQueueCountAsync();
-            }
-            catch (Exception ex)
-            {
-                Logger.Log($"Error refreshing queue counts on startup: {ex.Message}");
-            }
-        });
+            InitializeProcessingOrchestrator();
+        }
+        
+        // Queue counts are refreshed in MainWindow.SubscribeToBackgroundServices()
+        // which is called right after this method and immediately updates the UI
+    }
+
+    /// <summary>
+    /// Initialize the new GlobalProcessingOrchestrator with all service orchestrators
+    /// </summary>
+    public static void InitializeProcessingOrchestrator()
+    {
+        if (_globalProcessingOrchestrator != null || _dataStore == null || _settings == null) return;
+        
+        _globalProcessingOrchestrator = new GlobalProcessingOrchestrator(_dataStore, _settings);
+        Logger.Log("GlobalProcessingOrchestrator initialized (new architecture enabled)");
     }
 
     public static void InitializeGpuOrchestrator()

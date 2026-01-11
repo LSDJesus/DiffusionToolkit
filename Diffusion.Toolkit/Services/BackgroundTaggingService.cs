@@ -11,6 +11,19 @@ using Diffusion.Database.PostgreSQL;
 namespace Diffusion.Toolkit.Services;
 
 /// <summary>
+/// VRAM allocation plan for unified processing
+/// </summary>
+public class VramAllocationPlan
+{
+    public double TotalVramGb { get; set; }
+    public double AvailableVramGb { get; set; }
+    public bool EnableTagging { get; set; }
+    public bool EnableCaptioning { get; set; }
+    public bool EnableEmbedding { get; set; }
+    public bool EnableFaceDetection { get; set; }
+}
+
+/// <summary>
 /// Background service for tagging and captioning images using persistent worker pools
 /// Integrates with GpuResourceOrchestrator for dynamic resource allocation
 /// </summary>
@@ -81,10 +94,19 @@ public class BackgroundTaggingService : IDisposable
     {
         try
         {
+            var hasSubscribers = QueueCountsChanged != null;
+            Logger.Log($"RaiseQueueCountsChanged: hasSubscribers={hasSubscribers}, T={_taggingQueueRemaining}, C={_captioningQueueRemaining}, E={_embeddingQueueRemaining}");
+            
+            if (!hasSubscribers)
+            {
+                return;
+            }
+            
             Application.Current?.Dispatcher?.InvokeAsync(() =>
             {
                 try
                 {
+                    Logger.Log($"RaiseQueueCountsChanged: Invoking on dispatcher");
                     QueueCountsChanged?.Invoke(this, EventArgs.Empty);
                 }
                 catch (Exception ex)
@@ -218,6 +240,13 @@ public class BackgroundTaggingService : IDisposable
         // Get optimal plan from orchestrator
         var fullPlan = orchestrator.GetOptimalAllocationPlan();
         
+        // Log full plan for debugging
+        Logger.Log($"GetAllocationPlan({processType}): Full plan has {fullPlan.Count} entries");
+        foreach (var entry in fullPlan)
+        {
+            Logger.Log($"  Full plan entry: {entry.Priority} -> GPU{entry.GpuId}, {entry.WorkerCount} workers");
+        }
+        
         // Filter to this process type and aggregate workers per GPU
         var filteredPlan = fullPlan
             .Where(p => p.Priority == processType)
@@ -225,9 +254,16 @@ public class BackgroundTaggingService : IDisposable
             .Select(g => (GpuId: g.Key, WorkerCount: g.Sum(x => x.WorkerCount)))
             .ToList();
         
+        Logger.Log($"GetAllocationPlan({processType}): Filtered plan has {filteredPlan.Count} GPU entries");
+        foreach (var entry in filteredPlan)
+        {
+            Logger.Log($"  Filtered: GPU{entry.GpuId} = {entry.WorkerCount} workers");
+        }
+        
         if (filteredPlan.Count == 0)
         {
             // No allocation available - try to get at least one
+            Logger.Log($"GetAllocationPlan({processType}): No allocation found, using fallback");
             var workersPerModel = ModelVramRequirements.GetWorkersPerModel(processType);
             return new List<(int, int)> { (0, workersPerModel) };
         }
@@ -264,6 +300,219 @@ public class BackgroundTaggingService : IDisposable
         _captioningCts?.Dispose();
         
         Logger.Log("BackgroundTaggingService disposed");
+    }
+
+    /// <summary>
+    /// Start selected processors with smart VRAM allocation.
+    /// This is the unified entry point that coordinates all enabled processes.
+    /// </summary>
+    /// <param name="enableTagging">Enable tagging processor</param>
+    /// <param name="enableCaptioning">Enable captioning processor</param>
+    /// <param name="enableEmbedding">Enable embedding processor</param>
+    /// <param name="enableFaceDetection">Enable face detection processor</param>
+    public async Task StartSelectedProcessorsAsync(bool enableTagging, bool enableCaptioning, bool enableEmbedding, bool enableFaceDetection)
+    {
+        var enabledProcesses = new List<string>();
+        if (enableTagging) enabledProcesses.Add("Tagging");
+        if (enableCaptioning) enabledProcesses.Add("Captioning");
+        if (enableEmbedding) enabledProcesses.Add("Embedding");
+        if (enableFaceDetection) enabledProcesses.Add("FaceDetection");
+        
+        if (enabledProcesses.Count == 0)
+        {
+            Logger.Log("No processes selected for unified start");
+            return;
+        }
+        
+        Logger.Log($"Starting unified processing with: {string.Join(", ", enabledProcesses)}");
+        
+        // Pre-register ALL enabled processes with the orchestrator BEFORE starting any
+        // This ensures the orchestrator knows about all processes when calculating allocations
+        var orchestrator = ServiceLocator.GpuOrchestrator;
+        if (orchestrator != null)
+        {
+            // Get pending counts for all processes
+            var (taggingCount, captioningCount, embeddingCount, faceCount) = await _dataStore.GetPendingCountsAsync();
+            
+            // Pre-register enabled processes with their queue counts
+            if (enableTagging && taggingCount > 0)
+            {
+                orchestrator.UpdateQueueStatus(ProcessPriority.Tagging, total: taggingCount, processed: 0, isRunning: true);
+                Logger.Log($"Pre-registered tagging with {taggingCount} pending items");
+            }
+            if (enableCaptioning && captioningCount > 0)
+            {
+                orchestrator.UpdateQueueStatus(ProcessPriority.Captioning, total: captioningCount, processed: 0, isRunning: true);
+                Logger.Log($"Pre-registered captioning with {captioningCount} pending items");
+            }
+            if (enableEmbedding && embeddingCount > 0)
+            {
+                orchestrator.UpdateQueueStatus(ProcessPriority.Embedding, total: embeddingCount, processed: 0, isRunning: true);
+                Logger.Log($"Pre-registered embedding with {embeddingCount} pending items");
+            }
+            if (enableFaceDetection && faceCount > 0)
+            {
+                orchestrator.UpdateQueueStatus(ProcessPriority.FaceDetection, total: faceCount, processed: 0, isRunning: true);
+                Logger.Log($"Pre-registered face detection with {faceCount} pending items");
+            }
+            
+            // Log the optimal allocation plan BEFORE starting
+            var plan = orchestrator.GetOptimalAllocationPlan();
+            Logger.Log($"Unified allocation plan ({enabledProcesses.Count} processes):");
+            foreach (var group in plan.GroupBy(p => p.Priority))
+            {
+                var gpuSummary = string.Join(", ", group.Select(p => $"GPU{p.GpuId}:{p.WorkerCount}w"));
+                Logger.Log($"  {group.Key}: {gpuSummary}");
+            }
+        }
+        
+        // Calculate total VRAM needed and create allocation plan
+        var vramPlan = CalculateVramAllocationPlan(enableTagging, enableCaptioning, enableEmbedding, enableFaceDetection);
+        Logger.Log($"VRAM allocation plan: {vramPlan.TotalVramGb:F1}GB needed, {vramPlan.AvailableVramGb:F1}GB available");
+        
+        if (vramPlan.TotalVramGb > vramPlan.AvailableVramGb)
+        {
+            Logger.Log($"Warning: Estimated VRAM ({vramPlan.TotalVramGb:F1}GB) exceeds available ({vramPlan.AvailableVramGb:F1}GB). Some processes may fail to load.");
+        }
+        
+        // Start processes in priority order (rocks, pebbles, sand approach)
+        // 1. Captioning first (largest model ~16GB)
+        // 2. Embedding (4 models ~6.6GB total)
+        // 3. Tagging (~1.7GB)
+        // 4. Face Detection (~1GB)
+        
+        var tasks = new List<Task>();
+        
+        if (enableCaptioning && !_isCaptioningRunning)
+        {
+            Logger.Log("Starting captioning as part of unified processing");
+            StartCaptioning();
+            await Task.Delay(500); // Allow model to start loading before next
+        }
+        
+        if (enableEmbedding && !_isEmbeddingRunning)
+        {
+            Logger.Log("Starting embedding as part of unified processing");
+            StartEmbedding();
+            await Task.Delay(500);
+        }
+        
+        if (enableTagging && !_isTaggingRunning)
+        {
+            Logger.Log("Starting tagging as part of unified processing");
+            StartTagging();
+            await Task.Delay(500);
+        }
+        
+        if (enableFaceDetection)
+        {
+            var faceService = ServiceLocator.BackgroundFaceDetectionService;
+            if (faceService != null && !faceService.IsFaceDetectionRunning)
+            {
+                Logger.Log("Starting face detection as part of unified processing");
+                faceService.StartFaceDetection();
+            }
+        }
+        
+        StatusChanged?.Invoke(this, $"Started {enabledProcesses.Count} processors");
+    }
+    
+    /// <summary>
+    /// Stop all running processors
+    /// </summary>
+    public void StopAllProcessors()
+    {
+        Logger.Log("Stopping all processors");
+        
+        if (_isTaggingRunning) StopTagging();
+        if (_isCaptioningRunning) StopCaptioning();
+        if (_isEmbeddingRunning) StopEmbedding();
+        
+        var faceService = ServiceLocator.BackgroundFaceDetectionService;
+        if (faceService?.IsFaceDetectionRunning == true)
+        {
+            faceService.StopFaceDetection();
+        }
+        
+        StatusChanged?.Invoke(this, "All processors stopped");
+    }
+    
+    /// <summary>
+    /// Pause all running processors
+    /// </summary>
+    public void PauseAllProcessors()
+    {
+        Logger.Log("Pausing all processors");
+        
+        if (_isTaggingRunning && !_isTaggingPaused) PauseTagging();
+        if (_isCaptioningRunning && !_isCaptioningPaused) PauseCaptioning();
+        if (_isEmbeddingRunning && !_isEmbeddingPaused) PauseEmbedding();
+        
+        var faceService = ServiceLocator.BackgroundFaceDetectionService;
+        if (faceService?.IsFaceDetectionRunning == true && !faceService.IsFaceDetectionPaused)
+        {
+            faceService.PauseFaceDetection();
+        }
+    }
+    
+    /// <summary>
+    /// Resume all paused processors
+    /// </summary>
+    public void ResumeAllProcessors()
+    {
+        Logger.Log("Resuming all processors");
+        
+        if (_isTaggingPaused) ResumeTagging();
+        if (_isCaptioningPaused) ResumeCaptioning();
+        if (_isEmbeddingPaused) ResumeEmbedding();
+        
+        var faceService = ServiceLocator.BackgroundFaceDetectionService;
+        if (faceService?.IsFaceDetectionPaused == true)
+        {
+            faceService.ResumeFaceDetection();
+        }
+    }
+    
+    /// <summary>
+    /// Check if any processor is currently running
+    /// </summary>
+    public bool IsAnyProcessorRunning => _isTaggingRunning || _isCaptioningRunning || _isEmbeddingRunning || 
+                                          (ServiceLocator.BackgroundFaceDetectionService?.IsFaceDetectionRunning == true);
+    
+    /// <summary>
+    /// Check if any processor is paused
+    /// </summary>
+    public bool IsAnyProcessorPaused => _isTaggingPaused || _isCaptioningPaused || _isEmbeddingPaused ||
+                                         (ServiceLocator.BackgroundFaceDetectionService?.IsFaceDetectionPaused == true);
+    
+    /// <summary>
+    /// Calculate VRAM allocation plan for selected processes
+    /// </summary>
+    private VramAllocationPlan CalculateVramAllocationPlan(bool tagging, bool captioning, bool embedding, bool faceDetection)
+    {
+        double totalNeeded = 0;
+        
+        // MEASURED runtime VRAM values
+        if (tagging) totalNeeded += 3.1;       // Measured: 3.1GB
+        if (captioning) totalNeeded += 5.8;    // Measured: 5.8GB
+        if (embedding) totalNeeded += 7.5;     // Measured: 7.5GB
+        if (faceDetection) totalNeeded += 0.8; // Measured: 0.8GB
+        
+        // Get available VRAM from GPU orchestrator
+        var orchestrator = ServiceLocator.GpuOrchestrator;
+        double availableVram = 32.0; // Default fallback
+        
+        // TODO: Query actual available VRAM from orchestrator
+        
+        return new VramAllocationPlan
+        {
+            TotalVramGb = totalNeeded,
+            AvailableVramGb = availableVram,
+            EnableTagging = tagging,
+            EnableCaptioning = captioning,
+            EnableEmbedding = embedding,
+            EnableFaceDetection = faceDetection
+        };
     }
 
     /// <summary>
@@ -398,7 +647,7 @@ public class BackgroundTaggingService : IDisposable
                 SingleWriter = true
             });
             
-            // Populate queue with all pending image IDs
+            // Populate queue with all pending image IDs using cursor-based pagination
             Task.Run(async () =>
             {
                 try
@@ -410,9 +659,11 @@ public class BackgroundTaggingService : IDisposable
                     
                     const int batchSize = 1000;
                     int totalQueued = 0;
+                    int lastId = 0;  // Cursor for pagination
+                    
                     while (!_taggingCts.Token.IsCancellationRequested)
                     {
-                        var batch = await _dataStore.GetImagesNeedingTagging(batchSize);
+                        var batch = await _dataStore.GetImagesNeedingTagging(batchSize, lastId);
                         if (batch.Count == 0) break;
                         
                         foreach (var imageId in batch)
@@ -421,7 +672,10 @@ public class BackgroundTaggingService : IDisposable
                             totalQueued++;
                         }
                         
-                        if (batch.Count < batchSize) break;
+                        // Move cursor to last ID in batch
+                        lastId = batch[batch.Count - 1];
+                        
+                        if (batch.Count < batchSize) break;  // Last batch
                     }
                     
                     _taggingQueue.Writer.Complete();
@@ -524,21 +778,28 @@ public class BackgroundTaggingService : IDisposable
                     UpdateOrchestratorStatus(ProcessPriority.Captioning, _captioningTotal, 0, totalWorkers, true);
                     
                     const int batchSize = 500;
+                    int lastId = 0;  // Cursor for pagination
+                    int totalQueued = 0;
+                    
                     while (!_captioningCts.Token.IsCancellationRequested)
                     {
-                        var batch = await _dataStore.GetImagesNeedingCaptioning(batchSize);
+                        var batch = await _dataStore.GetImagesNeedingCaptioning(batchSize, lastId);
                         if (batch.Count == 0) break;
                         
                         foreach (var imageId in batch)
                         {
                             await _captioningQueue.Writer.WriteAsync(imageId, _captioningCts.Token);
+                            totalQueued++;
                         }
                         
-                        if (batch.Count < batchSize) break;
+                        // Move cursor to last ID in batch
+                        lastId = batch[batch.Count - 1];
+                        
+                        if (batch.Count < batchSize) break;  // Last batch
                     }
                     
                     _captioningQueue.Writer.Complete();
-                    Logger.Log($"Captioning queue populated");
+                    Logger.Log($"Captioning queue populated with {totalQueued} images");
                 }
                 catch (Exception ex)
                 {
@@ -630,7 +891,7 @@ public class BackgroundTaggingService : IDisposable
                 SingleWriter = true
             });
             
-            // Queue population task
+            // Queue population task using cursor-based pagination
             Task.Run(async () =>
             {
                 try
@@ -644,21 +905,28 @@ public class BackgroundTaggingService : IDisposable
                     UpdateOrchestratorStatus(ProcessPriority.Embedding, _embeddingTotal, 0, totalWorkers, true);
                     
                     const int batchSize = 1000;
+                    int lastId = 0;  // Cursor for pagination
+                    int totalQueued = 0;
+                    
                     while (!_embeddingCts.Token.IsCancellationRequested)
                     {
-                        var batch = await _dataStore.GetImagesNeedingEmbedding(batchSize);
+                        var batch = await _dataStore.GetImagesNeedingEmbedding(batchSize, lastId);
                         if (batch.Count == 0) break;
                         
                         foreach (var imageId in batch)
                         {
                             await _embeddingQueue.Writer.WriteAsync(imageId, _embeddingCts.Token);
+                            totalQueued++;
                         }
                         
-                        if (batch.Count < batchSize) break;
+                        // Move cursor to last ID in batch
+                        lastId = batch[batch.Count - 1];
+                        
+                        if (batch.Count < batchSize) break;  // Last batch
                     }
                     
                     _embeddingQueue.Writer.Complete();
-                    Logger.Log("Embedding queue populated");
+                    Logger.Log($"Embedding queue populated with {totalQueued} images");
                 }
                 catch (Exception ex)
                 {
@@ -897,7 +1165,7 @@ public class BackgroundTaggingService : IDisposable
     }
 
     /// <summary>
-    /// Orchestrator: Populates queue with image IDs from database
+    /// Orchestrator: Populates queue with image IDs from database using cursor-based pagination
     /// </summary>
     private async Task RunTaggingOrchestrator(CancellationToken ct)
     {
@@ -910,13 +1178,14 @@ public class BackgroundTaggingService : IDisposable
             _taggingQueueRemaining = _taggingTotal;
             Logger.Log($"Found {_taggingTotal} images to tag");
             
-            // Populate queue with all pending image IDs
+            // Populate queue with all pending image IDs using cursor-based pagination
             const int batchSize = 1000;
-            int offset = 0;
+            int lastId = 0;  // Cursor for pagination
+            int totalQueued = 0;
             
             while (!ct.IsCancellationRequested)
             {
-                var batch = await _dataStore.GetImagesNeedingTagging(batchSize);
+                var batch = await _dataStore.GetImagesNeedingTagging(batchSize, lastId);
                 if (batch.Count == 0)
                     break;
                 
@@ -924,18 +1193,20 @@ public class BackgroundTaggingService : IDisposable
                 {
                     if (_taggingQueue != null)
                         await _taggingQueue.Writer.WriteAsync(imageId, ct);
+                    totalQueued++;
                 }
                 
-                offset += batch.Count;
+                // Move cursor to last ID in batch
+                lastId = batch[batch.Count - 1];
                 
                 if (batch.Count < batchSize)
-                    break; // No more images
+                    break; // Last batch
             }
             
             // Signal workers that no more work is coming
             if (_taggingQueue != null)
                 _taggingQueue.Writer.Complete();
-            Logger.Log($"Tagging orchestrator populated queue with {offset} images");
+            Logger.Log($"Tagging orchestrator populated queue with {totalQueued} images");
         }
         catch (OperationCanceledException)
         {
@@ -1231,7 +1502,7 @@ public class BackgroundTaggingService : IDisposable
     }
 
     /// <summary>
-    /// Orchestrator: Populates queue with image IDs from database
+    /// Orchestrator: Populates queue with image IDs from database using cursor-based pagination
     /// </summary>
     private async Task RunCaptioningOrchestrator(CancellationToken ct)
     {
@@ -1244,13 +1515,14 @@ public class BackgroundTaggingService : IDisposable
             _captioningQueueRemaining = _captioningTotal;
             Logger.Log($"Found {_captioningTotal} images to caption");
             
-            // Populate queue with all pending image IDs
+            // Populate queue with all pending image IDs using cursor-based pagination
             const int batchSize = 500; // Smaller batches for captioning
-            int offset = 0;
+            int lastId = 0;  // Cursor for pagination
+            int totalQueued = 0;
             
             while (!ct.IsCancellationRequested)
             {
-                var batch = await _dataStore.GetImagesNeedingCaptioning(batchSize);
+                var batch = await _dataStore.GetImagesNeedingCaptioning(batchSize, lastId);
                 if (batch.Count == 0)
                     break;
                 
@@ -1258,18 +1530,20 @@ public class BackgroundTaggingService : IDisposable
                 {
                     if (_captioningQueue != null)
                         await _captioningQueue.Writer.WriteAsync(imageId, ct);
+                    totalQueued++;
                 }
                 
-                offset += batch.Count;
+                // Move cursor to last ID in batch
+                lastId = batch[batch.Count - 1];
                 
                 if (batch.Count < batchSize)
-                    break; // No more images
+                    break; // Last batch
             }
             
             // Signal workers that no more work is coming
             if (_captioningQueue != null)
                 _captioningQueue.Writer.Complete();
-            Logger.Log($"Captioning orchestrator populated queue with {offset} images");
+            Logger.Log($"Captioning orchestrator populated queue with {totalQueued} images");
         }
         catch (OperationCanceledException)
         {

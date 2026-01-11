@@ -133,6 +133,7 @@ namespace Diffusion.Toolkit
                 _model.StopBackgroundProcessingCommand = new RelayCommand<object>((o) => StopBackgroundProcessing());
                 _model.ReleaseModelsCommand = new RelayCommand<object>((o) => ReleaseModels());
                 
+                // Legacy individual commands (kept for compatibility)
                 _model.StartTaggingCommand = new RelayCommand<object>((o) => StartTagging());
                 _model.PauseTaggingCommand = new RelayCommand<object>((o) => PauseTagging());
                 _model.StopTaggingCommand = new RelayCommand<object>((o) => StopTagging());
@@ -153,27 +154,17 @@ namespace Diffusion.Toolkit
                 _model.StopFaceDetectionCommand = new RelayCommand<object>((o) => StopFaceDetection());
                 _model.ClearFaceDetectionQueueCommand = new RelayCommand<object>((o) => ClearFaceDetectionQueue());
                 
-                // Subscribe to background tagging service events
-                if (ServiceLocator.BackgroundTaggingService != null)
-                {
-                    ServiceLocator.BackgroundTaggingService.TaggingProgressChanged += OnTaggingProgressChanged;
-                    ServiceLocator.BackgroundTaggingService.CaptioningProgressChanged += OnCaptioningProgressChanged;
-                    ServiceLocator.BackgroundTaggingService.EmbeddingProgressChanged += OnEmbeddingProgressChanged;
-                    ServiceLocator.BackgroundTaggingService.TaggingCompleted += OnTaggingCompleted;
-                    ServiceLocator.BackgroundTaggingService.CaptioningCompleted += OnCaptioningCompleted;
-                    ServiceLocator.BackgroundTaggingService.EmbeddingCompleted += OnEmbeddingCompleted;
-                    ServiceLocator.BackgroundTaggingService.StatusChanged += OnBackgroundStatusChanged;
-                    ServiceLocator.BackgroundTaggingService.QueueCountsChanged += OnQueueCountsChanged;
-                }
+                // Unified processing commands
+                _model.StartUnifiedProcessingCommand = new RelayCommand<object>((o) => StartUnifiedProcessing());
+                _model.PauseUnifiedProcessingCommand = new RelayCommand<object>((o) => PauseUnifiedProcessing());
+                _model.StopUnifiedProcessingCommand = new RelayCommand<object>((o) => StopUnifiedProcessing());
+                _model.ClearAllQueuesCommand = new RelayCommand<object>((o) => ClearAllQueues());
                 
-                // Subscribe to face detection service events
-                if (ServiceLocator.BackgroundFaceDetectionService != null)
-                {
-                    ServiceLocator.BackgroundFaceDetectionService.FaceDetectionProgressChanged += OnFaceDetectionProgressChanged;
-                    ServiceLocator.BackgroundFaceDetectionService.FaceDetectionCompleted += OnFaceDetectionCompleted;
-                    ServiceLocator.BackgroundFaceDetectionService.StatusChanged += OnFaceDetectionStatusChanged;
-                    ServiceLocator.BackgroundFaceDetectionService.QueueCountChanged += OnFaceDetectionQueueCountChanged;
-                }
+                // Initialize VRAM estimate
+                _model.UpdateEstimatedVramUsage();
+                
+                // NOTE: Background service event subscriptions are done in SubscribeToBackgroundServices()
+                // which is called after SetDataStore() creates the services
 
                 InitEvents();
                 InitAlbums();
@@ -661,6 +652,9 @@ namespace Diffusion.Toolkit
                     
                     ServiceLocator.SetDataStore(pgDataStore);
                     Logger.Log($"✓ PostgreSQL connection established (Profile: {_settings.ActiveDatabaseProfile})");
+                    
+                    // Subscribe to background services now that they exist
+                    SubscribeToBackgroundServices();
                     
                     // Detect schema type and check permissions
                     var schemaType = await pgDataStore.DetectSchemaTypeAsync();
@@ -1600,8 +1594,27 @@ namespace Diffusion.Toolkit
             Logger.Log("All models released from VRAM");
         }
 
-        private void StartTagging()
+        private async void StartTagging()
         {
+            // Check if new processing architecture is enabled
+            if (ServiceLocator.Settings?.UseNewProcessingArchitecture == true)
+            {
+                var orchestrator = ServiceLocator.ProcessingOrchestrator;
+                if (orchestrator == null)
+                {
+                    ServiceLocator.InitializeProcessingOrchestrator();
+                    orchestrator = ServiceLocator.ProcessingOrchestrator;
+                }
+                if (orchestrator == null) return;
+                
+                var gpuAllocation = ParseGpuAllocation(ServiceLocator.Settings.SoloTaggingAllocation);
+                await orchestrator.StartServiceAsync(Services.Processing.ProcessingType.Tagging, gpuAllocation, default);
+                _model.IsTaggingActive = true;
+                Logger.Log("Started tagging from UI (new architecture)");
+                return;
+            }
+            
+            // Legacy path
             var service = ServiceLocator.BackgroundTaggingService;
             if (service == null) return;
 
@@ -1610,8 +1623,23 @@ namespace Diffusion.Toolkit
             Logger.Log("Started tagging from UI");
         }
 
-        private void PauseTagging()
+        private async void PauseTagging()
         {
+            // Check if new processing architecture is enabled
+            if (ServiceLocator.Settings?.UseNewProcessingArchitecture == true)
+            {
+                var orchestrator = ServiceLocator.ProcessingOrchestrator;
+                if (orchestrator == null) return;
+                
+                var tagOrch = orchestrator.GetOrchestrator(Services.Processing.ProcessingType.Tagging);
+                if (tagOrch?.IsPaused == true)
+                    await orchestrator.ResumeServiceAsync(Services.Processing.ProcessingType.Tagging);
+                else
+                    await orchestrator.PauseServiceAsync(Services.Processing.ProcessingType.Tagging);
+                return;
+            }
+            
+            // Legacy path
             var service = ServiceLocator.BackgroundTaggingService;
             if (service == null) return;
 
@@ -1627,8 +1655,22 @@ namespace Diffusion.Toolkit
             }
         }
 
-        private void StopTagging()
+        private async void StopTagging()
         {
+            // Check if new processing architecture is enabled
+            if (ServiceLocator.Settings?.UseNewProcessingArchitecture == true)
+            {
+                var orchestrator = ServiceLocator.ProcessingOrchestrator;
+                if (orchestrator == null) return;
+                
+                await orchestrator.StopServiceAsync(Services.Processing.ProcessingType.Tagging);
+                _model.IsTaggingActive = false;
+                _model.TaggingStatus = "";
+                Logger.Log("Stopped tagging from UI (new architecture)");
+                return;
+            }
+            
+            // Legacy path
             var service = ServiceLocator.BackgroundTaggingService;
             if (service == null) return;
 
@@ -1656,8 +1698,27 @@ namespace Diffusion.Toolkit
             }
         }
 
-        private void StartCaptioning()
+        private async void StartCaptioning()
         {
+            // Check if new processing architecture is enabled
+            if (ServiceLocator.Settings?.UseNewProcessingArchitecture == true)
+            {
+                var orchestrator = ServiceLocator.ProcessingOrchestrator;
+                if (orchestrator == null)
+                {
+                    ServiceLocator.InitializeProcessingOrchestrator();
+                    orchestrator = ServiceLocator.ProcessingOrchestrator;
+                }
+                if (orchestrator == null) return;
+                
+                var gpuAllocation = ParseGpuAllocation(ServiceLocator.Settings.SoloCaptioningAllocation);
+                await orchestrator.StartServiceAsync(Services.Processing.ProcessingType.Captioning, gpuAllocation, default);
+                _model.IsCaptioningActive = true;
+                Logger.Log("Started captioning from UI (new architecture)");
+                return;
+            }
+            
+            // Legacy path
             var service = ServiceLocator.BackgroundTaggingService;
             if (service == null) return;
 
@@ -1666,8 +1727,23 @@ namespace Diffusion.Toolkit
             Logger.Log("Started captioning from UI");
         }
 
-        private void PauseCaptioning()
+        private async void PauseCaptioning()
         {
+            // Check if new processing architecture is enabled
+            if (ServiceLocator.Settings?.UseNewProcessingArchitecture == true)
+            {
+                var orchestrator = ServiceLocator.ProcessingOrchestrator;
+                if (orchestrator == null) return;
+                
+                var captOrch = orchestrator.GetOrchestrator(Services.Processing.ProcessingType.Captioning);
+                if (captOrch?.IsPaused == true)
+                    await orchestrator.ResumeServiceAsync(Services.Processing.ProcessingType.Captioning);
+                else
+                    await orchestrator.PauseServiceAsync(Services.Processing.ProcessingType.Captioning);
+                return;
+            }
+            
+            // Legacy path
             var service = ServiceLocator.BackgroundTaggingService;
             if (service == null) return;
 
@@ -1683,8 +1759,22 @@ namespace Diffusion.Toolkit
             }
         }
 
-        private void StopCaptioning()
+        private async void StopCaptioning()
         {
+            // Check if new processing architecture is enabled
+            if (ServiceLocator.Settings?.UseNewProcessingArchitecture == true)
+            {
+                var orchestrator = ServiceLocator.ProcessingOrchestrator;
+                if (orchestrator == null) return;
+                
+                await orchestrator.StopServiceAsync(Services.Processing.ProcessingType.Captioning);
+                _model.IsCaptioningActive = false;
+                _model.CaptioningStatus = "";
+                Logger.Log("Stopped captioning from UI (new architecture)");
+                return;
+            }
+            
+            // Legacy path
             var service = ServiceLocator.BackgroundTaggingService;
             if (service == null) return;
 
@@ -1712,8 +1802,27 @@ namespace Diffusion.Toolkit
             }
         }
 
-        private void StartEmbedding()
+        private async void StartEmbedding()
         {
+            // Check if new processing architecture is enabled
+            if (ServiceLocator.Settings?.UseNewProcessingArchitecture == true)
+            {
+                var orchestrator = ServiceLocator.ProcessingOrchestrator;
+                if (orchestrator == null)
+                {
+                    ServiceLocator.InitializeProcessingOrchestrator();
+                    orchestrator = ServiceLocator.ProcessingOrchestrator;
+                }
+                if (orchestrator == null) return;
+                
+                var gpuAllocation = ParseGpuAllocation(ServiceLocator.Settings.SoloEmbeddingAllocation);
+                await orchestrator.StartServiceAsync(Services.Processing.ProcessingType.Embedding, gpuAllocation, default);
+                _model.IsEmbeddingActive = true;
+                Logger.Log("Started embedding from UI (new architecture)");
+                return;
+            }
+            
+            // Legacy path
             var service = ServiceLocator.BackgroundTaggingService;
             if (service == null) return;
 
@@ -1722,8 +1831,23 @@ namespace Diffusion.Toolkit
             Logger.Log("Started embedding from UI");
         }
 
-        private void PauseEmbedding()
+        private async void PauseEmbedding()
         {
+            // Check if new processing architecture is enabled
+            if (ServiceLocator.Settings?.UseNewProcessingArchitecture == true)
+            {
+                var orchestrator = ServiceLocator.ProcessingOrchestrator;
+                if (orchestrator == null) return;
+                
+                var embOrch = orchestrator.GetOrchestrator(Services.Processing.ProcessingType.Embedding);
+                if (embOrch?.IsPaused == true)
+                    await orchestrator.ResumeServiceAsync(Services.Processing.ProcessingType.Embedding);
+                else
+                    await orchestrator.PauseServiceAsync(Services.Processing.ProcessingType.Embedding);
+                return;
+            }
+            
+            // Legacy path
             var service = ServiceLocator.BackgroundTaggingService;
             if (service == null) return;
 
@@ -1739,8 +1863,22 @@ namespace Diffusion.Toolkit
             }
         }
 
-        private void StopEmbedding()
+        private async void StopEmbedding()
         {
+            // Check if new processing architecture is enabled
+            if (ServiceLocator.Settings?.UseNewProcessingArchitecture == true)
+            {
+                var orchestrator = ServiceLocator.ProcessingOrchestrator;
+                if (orchestrator == null) return;
+                
+                await orchestrator.StopServiceAsync(Services.Processing.ProcessingType.Embedding);
+                _model.IsEmbeddingActive = false;
+                _model.EmbeddingStatus = "";
+                Logger.Log("Stopped embedding from UI (new architecture)");
+                return;
+            }
+            
+            // Legacy path
             var service = ServiceLocator.BackgroundTaggingService;
             if (service == null) return;
 
@@ -1792,8 +1930,27 @@ namespace Diffusion.Toolkit
 
         #region Face Detection
 
-        private void StartFaceDetection()
+        private async void StartFaceDetection()
         {
+            // Check if new processing architecture is enabled
+            if (ServiceLocator.Settings?.UseNewProcessingArchitecture == true)
+            {
+                var orchestrator = ServiceLocator.ProcessingOrchestrator;
+                if (orchestrator == null)
+                {
+                    ServiceLocator.InitializeProcessingOrchestrator();
+                    orchestrator = ServiceLocator.ProcessingOrchestrator;
+                }
+                if (orchestrator == null) return;
+                
+                var gpuAllocation = ParseGpuAllocation(ServiceLocator.Settings.SoloFaceDetectionAllocation);
+                await orchestrator.StartServiceAsync(Services.Processing.ProcessingType.FaceDetection, gpuAllocation, default);
+                _model.IsFaceDetectionActive = true;
+                Logger.Log("Started face detection from UI (new architecture)");
+                return;
+            }
+            
+            // Legacy path
             var service = ServiceLocator.BackgroundFaceDetectionService;
             if (service == null) return;
 
@@ -1802,8 +1959,23 @@ namespace Diffusion.Toolkit
             Logger.Log("Started face detection from UI");
         }
 
-        private void PauseFaceDetection()
+        private async void PauseFaceDetection()
         {
+            // Check if new processing architecture is enabled
+            if (ServiceLocator.Settings?.UseNewProcessingArchitecture == true)
+            {
+                var orchestrator = ServiceLocator.ProcessingOrchestrator;
+                if (orchestrator == null) return;
+                
+                var faceOrch = orchestrator.GetOrchestrator(Services.Processing.ProcessingType.FaceDetection);
+                if (faceOrch?.IsPaused == true)
+                    await orchestrator.ResumeServiceAsync(Services.Processing.ProcessingType.FaceDetection);
+                else
+                    await orchestrator.PauseServiceAsync(Services.Processing.ProcessingType.FaceDetection);
+                return;
+            }
+            
+            // Legacy path
             var service = ServiceLocator.BackgroundFaceDetectionService;
             if (service == null) return;
 
@@ -1819,8 +1991,22 @@ namespace Diffusion.Toolkit
             }
         }
 
-        private void StopFaceDetection()
+        private async void StopFaceDetection()
         {
+            // Check if new processing architecture is enabled
+            if (ServiceLocator.Settings?.UseNewProcessingArchitecture == true)
+            {
+                var orchestrator = ServiceLocator.ProcessingOrchestrator;
+                if (orchestrator == null) return;
+                
+                await orchestrator.StopServiceAsync(Services.Processing.ProcessingType.FaceDetection);
+                _model.IsFaceDetectionActive = false;
+                _model.FaceDetectionStatus = "";
+                Logger.Log("Stopped face detection from UI (new architecture)");
+                return;
+            }
+            
+            // Legacy path
             var service = ServiceLocator.BackgroundFaceDetectionService;
             if (service == null) return;
 
@@ -1847,6 +2033,218 @@ namespace Diffusion.Toolkit
                 Logger.Log("Cleared face detection queue from UI");
             }
         }
+
+        #region Unified Processing Commands
+        
+        private async void StartUnifiedProcessing()
+        {
+            // Check if at least one process is enabled
+            if (!_model.EnableTagging && !_model.EnableCaptioning && !_model.EnableEmbedding && !_model.EnableFaceDetection)
+            {
+                ServiceLocator.ToastService?.Toast("Select at least one processor to start", "Background Processing");
+                return;
+            }
+            
+            _model.IsUnifiedProcessingActive = true;
+            
+            // Check if new processing architecture is enabled
+            if (ServiceLocator.Settings?.UseNewProcessingArchitecture == true)
+            {
+                var orchestrator = ServiceLocator.ProcessingOrchestrator;
+                if (orchestrator == null)
+                {
+                    ServiceLocator.InitializeProcessingOrchestrator();
+                    orchestrator = ServiceLocator.ProcessingOrchestrator;
+                }
+                if (orchestrator == null) return;
+                
+                try
+                {
+                    // Build GPU allocation from concurrent settings (all services share)
+                    var gpuAllocation = new Dictionary<int, int>();
+                    var settings = ServiceLocator.Settings;
+                    
+                    // For concurrent mode, use the concurrent allocations
+                    if (_model.EnableTagging)
+                        MergeGpuAllocation(gpuAllocation, ParseGpuAllocation(settings.ConcurrentTaggingAllocation));
+                    if (_model.EnableCaptioning)
+                        MergeGpuAllocation(gpuAllocation, ParseGpuAllocation(settings.ConcurrentCaptioningAllocation));
+                    if (_model.EnableEmbedding)
+                        MergeGpuAllocation(gpuAllocation, ParseGpuAllocation(settings.ConcurrentEmbeddingAllocation));
+                    if (_model.EnableFaceDetection)
+                        MergeGpuAllocation(gpuAllocation, ParseGpuAllocation(settings.ConcurrentFaceDetectionAllocation));
+                    
+                    // Start all enabled services
+                    await orchestrator.StartAllAsync(gpuAllocation, Services.Processing.ProcessingMode.Concurrent);
+                    
+                    // Update individual active states
+                    _model.IsTaggingActive = _model.EnableTagging;
+                    _model.IsCaptioningActive = _model.EnableCaptioning;
+                    _model.IsEmbeddingActive = _model.EnableEmbedding;
+                    _model.IsFaceDetectionActive = _model.EnableFaceDetection;
+                    
+                    var enabledCount = new[] { _model.EnableTagging, _model.EnableCaptioning, _model.EnableEmbedding, _model.EnableFaceDetection }.Count(x => x);
+                    ServiceLocator.ToastService?.Toast($"Started {enabledCount} processor(s) (new architecture)", "Background Processing");
+                    Logger.Log($"Started unified processing with {enabledCount} processors (new architecture)");
+                }
+                catch (Exception ex)
+                {
+                    _model.IsUnifiedProcessingActive = false;
+                    Logger.Log($"Failed to start unified processing: {ex.Message}");
+                    ServiceLocator.ToastService?.Toast($"Failed to start: {ex.Message}", "Error");
+                }
+                return;
+            }
+            
+            // Legacy path
+            var service = ServiceLocator.BackgroundTaggingService;
+            if (service == null) return;
+            
+            try
+            {
+                await service.StartSelectedProcessorsAsync(
+                    _model.EnableTagging,
+                    _model.EnableCaptioning,
+                    _model.EnableEmbedding,
+                    _model.EnableFaceDetection);
+                
+                // Update individual active states
+                _model.IsTaggingActive = _model.EnableTagging;
+                _model.IsCaptioningActive = _model.EnableCaptioning;
+                _model.IsEmbeddingActive = _model.EnableEmbedding;
+                _model.IsFaceDetectionActive = _model.EnableFaceDetection;
+                
+                var enabledCount = new[] { _model.EnableTagging, _model.EnableCaptioning, _model.EnableEmbedding, _model.EnableFaceDetection }.Count(x => x);
+                ServiceLocator.ToastService?.Toast($"Started {enabledCount} processor(s)", "Background Processing");
+                Logger.Log($"Started unified processing with {enabledCount} processors");
+            }
+            catch (Exception ex)
+            {
+                _model.IsUnifiedProcessingActive = false;
+                Logger.Log($"Failed to start unified processing: {ex.Message}");
+                ServiceLocator.ToastService?.Toast($"Failed to start: {ex.Message}", "Error");
+            }
+        }
+        
+        private async void PauseUnifiedProcessing()
+        {
+            // Check if new processing architecture is enabled
+            if (ServiceLocator.Settings?.UseNewProcessingArchitecture == true)
+            {
+                var orchestrator = ServiceLocator.ProcessingOrchestrator;
+                if (orchestrator == null) return;
+                
+                if (orchestrator.IsAnyPaused)
+                {
+                    await orchestrator.ResumeAllAsync();
+                    Logger.Log("Resumed all processors (new architecture)");
+                    ServiceLocator.ToastService?.Toast("Resumed all processors", "Background Processing");
+                }
+                else
+                {
+                    await orchestrator.PauseAllAsync();
+                    Logger.Log("Paused all processors (new architecture)");
+                    ServiceLocator.ToastService?.Toast("Paused all processors", "Background Processing");
+                }
+                return;
+            }
+            
+            // Legacy path
+            var service = ServiceLocator.BackgroundTaggingService;
+            if (service == null) return;
+
+            if (service.IsAnyProcessorPaused)
+            {
+                service.ResumeAllProcessors();
+                Logger.Log("Resumed all processors");
+                ServiceLocator.ToastService?.Toast("Resumed all processors", "Background Processing");
+            }
+            else
+            {
+                service.PauseAllProcessors();
+                Logger.Log("Paused all processors");
+                ServiceLocator.ToastService?.Toast("Paused all processors", "Background Processing");
+            }
+        }
+        
+        private async void StopUnifiedProcessing()
+        {
+            // Check if new processing architecture is enabled
+            if (ServiceLocator.Settings?.UseNewProcessingArchitecture == true)
+            {
+                var orchestrator = ServiceLocator.ProcessingOrchestrator;
+                if (orchestrator == null) return;
+                
+                await orchestrator.StopAllAsync();
+                
+                _model.IsUnifiedProcessingActive = false;
+                _model.IsTaggingActive = false;
+                _model.IsCaptioningActive = false;
+                _model.IsEmbeddingActive = false;
+                _model.IsFaceDetectionActive = false;
+                _model.TaggingStatus = "";
+                _model.CaptioningStatus = "";
+                _model.EmbeddingStatus = "";
+                _model.FaceDetectionStatus = "";
+                
+                Logger.Log("Stopped all processors from UI (new architecture)");
+                ServiceLocator.ToastService?.Toast("Stopped all processors", "Background Processing");
+                return;
+            }
+            
+            // Legacy path
+            var service = ServiceLocator.BackgroundTaggingService;
+            if (service == null) return;
+
+            service.StopAllProcessors();
+            
+            _model.IsUnifiedProcessingActive = false;
+            _model.IsTaggingActive = false;
+            _model.IsCaptioningActive = false;
+            _model.IsEmbeddingActive = false;
+            _model.IsFaceDetectionActive = false;
+            _model.TaggingStatus = "";
+            _model.CaptioningStatus = "";
+            _model.EmbeddingStatus = "";
+            _model.FaceDetectionStatus = "";
+            
+            Logger.Log("Stopped all processors from UI");
+            ServiceLocator.ToastService?.Toast("Stopped all processors", "Background Processing");
+        }
+        
+        private async void ClearAllQueues()
+        {
+            var result = MessageBox.Show(
+                "Clear ALL processing queues? This will reset all needs_* flags without removing existing data.",
+                "Clear All Queues",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+
+            if (result != MessageBoxResult.Yes) return;
+            
+            var service = ServiceLocator.BackgroundTaggingService;
+            var dataStore = ServiceLocator.DataStore;
+            
+            if (service != null)
+            {
+                await service.ClearTaggingQueue();
+                await service.ClearCaptioningQueue();
+            }
+            
+            if (dataStore != null)
+            {
+                await dataStore.ClearEmbeddingQueue();
+                await dataStore.ClearFaceDetectionQueue();
+            }
+            
+            // Refresh queue counts
+            await service?.RefreshQueueCountsAsync()!;
+            
+            Logger.Log("Cleared all processing queues from UI");
+            ServiceLocator.ToastService?.Toast("Cleared all queues", "Background Processing");
+        }
+        
+        #endregion
 
         private void OnFaceDetectionProgressChanged(object? sender, ProgressEventArgs e)
         {
@@ -1890,9 +2288,13 @@ namespace Diffusion.Toolkit
             {
                 if (ServiceLocator.BackgroundTaggingService != null)
                 {
-                    _model.TaggingQueueCount = ServiceLocator.BackgroundTaggingService.TaggingQueueRemaining;
-                    _model.CaptioningQueueCount = ServiceLocator.BackgroundTaggingService.CaptioningQueueRemaining;
-                    _model.EmbeddingQueueCount = ServiceLocator.BackgroundTaggingService.EmbeddingQueueRemaining;
+                    var t = ServiceLocator.BackgroundTaggingService.TaggingQueueRemaining;
+                    var c = ServiceLocator.BackgroundTaggingService.CaptioningQueueRemaining;
+                    var em = ServiceLocator.BackgroundTaggingService.EmbeddingQueueRemaining;
+                    Logger.Log($"OnQueueCountsChanged: Setting model T={t}, C={c}, E={em}");
+                    _model.TaggingQueueCount = t;
+                    _model.CaptioningQueueCount = c;
+                    _model.EmbeddingQueueCount = em;
                 }
             });
         }
@@ -1907,6 +2309,157 @@ namespace Diffusion.Toolkit
                 }
             });
         }
+
+        /// <summary>
+        /// Subscribe to background service events after SetDataStore creates the services
+        /// </summary>
+        private void SubscribeToBackgroundServices()
+        {
+            Logger.Log("Subscribing to background service events...");
+            
+            // Subscribe to new processing orchestrator events (when enabled)
+            if (ServiceLocator.ProcessingOrchestrator != null)
+            {
+                ServiceLocator.ProcessingOrchestrator.ProgressChanged += OnNewOrchestratorProgressChanged;
+                ServiceLocator.ProcessingOrchestrator.StatusChanged += OnNewOrchestratorStatusChanged;
+                ServiceLocator.ProcessingOrchestrator.ServiceCompleted += OnNewOrchestratorServiceCompleted;
+                ServiceLocator.ProcessingOrchestrator.AllServicesCompleted += OnNewOrchestratorAllCompleted;
+            }
+            
+            // Subscribe to background tagging service events (legacy)
+            if (ServiceLocator.BackgroundTaggingService != null)
+            {
+                ServiceLocator.BackgroundTaggingService.TaggingProgressChanged += OnTaggingProgressChanged;
+                ServiceLocator.BackgroundTaggingService.CaptioningProgressChanged += OnCaptioningProgressChanged;
+                ServiceLocator.BackgroundTaggingService.EmbeddingProgressChanged += OnEmbeddingProgressChanged;
+                ServiceLocator.BackgroundTaggingService.TaggingCompleted += OnTaggingCompleted;
+                ServiceLocator.BackgroundTaggingService.CaptioningCompleted += OnCaptioningCompleted;
+                ServiceLocator.BackgroundTaggingService.EmbeddingCompleted += OnEmbeddingCompleted;
+                ServiceLocator.BackgroundTaggingService.StatusChanged += OnBackgroundStatusChanged;
+                ServiceLocator.BackgroundTaggingService.QueueCountsChanged += OnQueueCountsChanged;
+            }
+            
+            // Subscribe to face detection service events
+            if (ServiceLocator.BackgroundFaceDetectionService != null)
+            {
+                ServiceLocator.BackgroundFaceDetectionService.FaceDetectionProgressChanged += OnFaceDetectionProgressChanged;
+                ServiceLocator.BackgroundFaceDetectionService.FaceDetectionCompleted += OnFaceDetectionCompleted;
+                ServiceLocator.BackgroundFaceDetectionService.StatusChanged += OnFaceDetectionStatusChanged;
+                ServiceLocator.BackgroundFaceDetectionService.QueueCountChanged += OnFaceDetectionQueueCountChanged;
+            }
+            
+            // Trigger async refresh of queue counts from database
+            // This will fire the events we just subscribed to
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    if (ServiceLocator.BackgroundTaggingService != null)
+                        await ServiceLocator.BackgroundTaggingService.RefreshQueueCountsAsync();
+                    if (ServiceLocator.BackgroundFaceDetectionService != null)
+                        await ServiceLocator.BackgroundFaceDetectionService.RefreshQueueCountAsync();
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log($"Error refreshing queue counts: {ex.Message}");
+                }
+            });
+        }
+        
+        #region New Processing Orchestrator Event Handlers
+        
+        private void OnNewOrchestratorProgressChanged(object? sender, Services.Processing.ProcessingProgressEventArgs e)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                var etaStr = e.EstimatedTimeRemaining.HasValue 
+                    ? $" | ETA: {e.EstimatedTimeRemaining.Value:hh\\:mm\\:ss}" 
+                    : "";
+                    
+                switch (e.ProcessingType)
+                {
+                    case Services.Processing.ProcessingType.Tagging:
+                        _model.TaggingStatus = $"Tagging: {e.Current}/{e.Total} ({e.Percentage:F1}%){etaStr}";
+                        _model.TaggingQueueCount = e.Remaining;
+                        break;
+                    case Services.Processing.ProcessingType.Captioning:
+                        _model.CaptioningStatus = $"Captioning: {e.Current}/{e.Total} ({e.Percentage:F1}%){etaStr}";
+                        _model.CaptioningQueueCount = e.Remaining;
+                        break;
+                    case Services.Processing.ProcessingType.Embedding:
+                        _model.EmbeddingStatus = $"Embedding: {e.Current}/{e.Total} ({e.Percentage:F1}%){etaStr}";
+                        _model.EmbeddingQueueCount = e.Remaining;
+                        break;
+                    case Services.Processing.ProcessingType.FaceDetection:
+                        _model.FaceDetectionStatus = $"Faces: {e.Current}/{e.Total} ({e.Percentage:F1}%){etaStr}";
+                        _model.FaceDetectionQueueCount = e.Remaining;
+                        break;
+                }
+            });
+        }
+        
+        private void OnNewOrchestratorStatusChanged(object? sender, Services.Processing.ProcessingStatusEventArgs e)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                switch (e.ProcessingType)
+                {
+                    case Services.Processing.ProcessingType.Tagging:
+                        _model.TaggingStatus = e.Status;
+                        _model.IsTaggingActive = e.IsRunning;
+                        break;
+                    case Services.Processing.ProcessingType.Captioning:
+                        _model.CaptioningStatus = e.Status;
+                        _model.IsCaptioningActive = e.IsRunning;
+                        break;
+                    case Services.Processing.ProcessingType.Embedding:
+                        _model.EmbeddingStatus = e.Status;
+                        _model.IsEmbeddingActive = e.IsRunning;
+                        break;
+                    case Services.Processing.ProcessingType.FaceDetection:
+                        _model.FaceDetectionStatus = e.Status;
+                        _model.IsFaceDetectionActive = e.IsRunning;
+                        break;
+                }
+            });
+        }
+        
+        private void OnNewOrchestratorServiceCompleted(object? sender, Services.Processing.ProcessingType type)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                switch (type)
+                {
+                    case Services.Processing.ProcessingType.Tagging:
+                        _model.IsTaggingActive = false;
+                        _model.TaggingStatus = "";
+                        break;
+                    case Services.Processing.ProcessingType.Captioning:
+                        _model.IsCaptioningActive = false;
+                        _model.CaptioningStatus = "";
+                        break;
+                    case Services.Processing.ProcessingType.Embedding:
+                        _model.IsEmbeddingActive = false;
+                        _model.EmbeddingStatus = "";
+                        break;
+                    case Services.Processing.ProcessingType.FaceDetection:
+                        _model.IsFaceDetectionActive = false;
+                        _model.FaceDetectionStatus = "";
+                        break;
+                }
+            });
+        }
+        
+        private void OnNewOrchestratorAllCompleted(object? sender, EventArgs e)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                _model.IsUnifiedProcessingActive = false;
+                ServiceLocator.ToastService?.Toast("All processing complete", "Background Processing");
+            });
+        }
+        
+        #endregion
 
         private async void DatabaseProfile_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
@@ -1955,6 +2508,40 @@ namespace Diffusion.Toolkit
                 DatabaseProfileSwitcher.ItemsSource = profiles;
                 DatabaseProfileSwitcher.SelectedValue = _settings.ActiveDatabaseProfile;
                 DatabaseProfileSwitcher.SelectionChanged += DatabaseProfile_SelectionChanged;
+            }
+        }
+
+        /// <summary>
+        /// Parse GPU allocation string (e.g., "1,0" means 1 worker on GPU 0, 0 workers on GPU 1)
+        /// Returns dictionary of GPU ID -> worker count
+        /// </summary>
+        private Dictionary<int, int> ParseGpuAllocation(string allocation)
+        {
+            var result = new Dictionary<int, int>();
+            if (string.IsNullOrEmpty(allocation)) return result;
+            
+            var parts = allocation.Split(',');
+            for (int gpuId = 0; gpuId < parts.Length; gpuId++)
+            {
+                if (int.TryParse(parts[gpuId].Trim(), out var workerCount) && workerCount > 0)
+                {
+                    result[gpuId] = workerCount;
+                }
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// Merge GPU allocations - takes the maximum worker count per GPU
+        /// </summary>
+        private void MergeGpuAllocation(Dictionary<int, int> target, Dictionary<int, int> source)
+        {
+            foreach (var kvp in source)
+            {
+                if (target.TryGetValue(kvp.Key, out var existing))
+                    target[kvp.Key] = Math.Max(existing, kvp.Value);
+                else
+                    target[kvp.Key] = kvp.Value;
             }
         }
 

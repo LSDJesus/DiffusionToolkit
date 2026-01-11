@@ -47,6 +47,7 @@
         <ResourceDictionary>
             <converters:BoolToVisibilityCollapsedConverter x:Key="boolToVisCol"></converters:BoolToVisibilityCollapsedConverter>
             <converters:InverseBoolToVisibilityCollapsedConverter x:Key="inverseBoolToVisCol"></converters:InverseBoolToVisibilityCollapsedConverter>
+            <converters:InvertBoolConverter x:Key="inverseBoolConverter"></converters:InvertBoolConverter>
             <converters:ThumbnailSizeCheckedConverter x:Key="thumbSizeChecked"></converters:ThumbnailSizeCheckedConverter>
             <converters:StringMatchConverter x:Key="StringMatchConverter"></converters:StringMatchConverter>
             <converters:PopoutIconConverter x:Key="PopoutIconConverter"></converters:PopoutIconConverter>
@@ -551,67 +552,67 @@
         <!-- Database Status Bar - visible when no task is running -->
         <Grid Grid.Row="2" ColumnSpan="3" Visibility="{Binding HasPendingTask, Converter={StaticResource inverseBoolToVisCol}}" Height="22">
             <DockPanel HorizontalAlignment="Stretch" Background="{DynamicResource PrimaryBrush}">
-                <!-- Background Processing Controls - Always Visible -->
+                <!-- Unified Background Processing Controls -->
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Left" Margin="10,0">
-                    <!-- Tagging Controls -->
-                    <Button Content="▶" ToolTip="Start Tagging Queue" Width="18" Height="18" FontSize="9"
-                            Command="{Binding StartTaggingCommand}" Margin="0,0,2,0" Foreground="Green"/>
-                    <Button Content="⏸" ToolTip="Pause Tagging" Width="18" Height="18" FontSize="10"
-                            Command="{Binding PauseTaggingCommand}" Margin="0,0,2,0"/>
-                    <Button Content="⏹" ToolTip="Stop Tagging" Width="18" Height="18" FontSize="10" 
-                            Command="{Binding StopTaggingCommand}" Foreground="Red" Margin="0,0,2,0"/>
-                    <Button Content="✕" ToolTip="Clear Tagging Queue" Width="18" Height="18" FontSize="10" 
-                            Command="{Binding ClearTaggingQueueCommand}" Margin="0,0,5,0"/>
-                    <TextBlock FontSize="10" Margin="0,0,10,0"
-                               Foreground="{DynamicResource ForegroundBrush}" VerticalAlignment="Center">
-                        <Run Text="T:"/>
+                    <!-- Start/Pause/Stop Controls -->
+                    <Button Content="▶" ToolTip="Start Selected Processors" Width="18" Height="18" FontSize="9"
+                            Command="{Binding StartUnifiedProcessingCommand}" Margin="0,0,2,0" Foreground="Green"
+                            IsEnabled="{Binding IsUnifiedProcessingActive, Converter={StaticResource inverseBoolConverter}}"/>
+                    <Button Content="⏸" ToolTip="Pause/Resume All" Width="18" Height="18" FontSize="10"
+                            Command="{Binding PauseUnifiedProcessingCommand}" Margin="0,0,2,0"
+                            IsEnabled="{Binding IsUnifiedProcessingActive}"/>
+                    <Button Content="⏹" ToolTip="Stop All Processors" Width="18" Height="18" FontSize="10" 
+                            Command="{Binding StopUnifiedProcessingCommand}" Foreground="Red" Margin="0,0,2,0"
+                            IsEnabled="{Binding IsUnifiedProcessingActive}"/>
+                    <Button Content="🗑" ToolTip="Clear All Queues" Width="18" Height="18" FontSize="10" 
+                            Command="{Binding ClearAllQueuesCommand}" Margin="0,0,8,0"
+                            IsEnabled="{Binding IsUnifiedProcessingActive, Converter={StaticResource inverseBoolConverter}}"/>
+                    
+                    <Rectangle Width="1" Fill="{DynamicResource ForegroundBrush}" Opacity="0.3" Margin="0,3,8,3"/>
+                    
+                    <!-- Process Toggles -->
+                    <CheckBox Content="T" ToolTip="Enable Tagging" IsChecked="{Binding EnableTagging}" 
+                              VerticalAlignment="Center" Margin="0,0,2,0" FontSize="10"
+                              IsEnabled="{Binding IsUnifiedProcessingActive, Converter={StaticResource inverseBoolConverter}}"/>
+                    <TextBlock FontSize="9" Foreground="{DynamicResource ForegroundBrush}" VerticalAlignment="Center" Margin="0,0,6,0">
+                        <Run Text="("/>
                         <Run Text="{Binding TaggingQueueCount, FallbackValue=0}"/>
+                        <Run Text=")"/>
                     </TextBlock>
                     
-                    <!-- Captioning Controls -->
-                    <Button Content="▶" ToolTip="Start Captioning Queue" Width="18" Height="18" FontSize="9"
-                            Command="{Binding StartCaptioningCommand}" Margin="0,0,2,0" Foreground="Blue"/>
-                    <Button Content="⏸" ToolTip="Pause Captioning" Width="18" Height="18" FontSize="10"
-                            Command="{Binding PauseCaptioningCommand}" Margin="0,0,2,0"/>
-                    <Button Content="⏹" ToolTip="Stop Captioning" Width="18" Height="18" FontSize="10" 
-                            Command="{Binding StopCaptioningCommand}" Foreground="Red" Margin="0,0,2,0"/>
-                    <Button Content="✕" ToolTip="Clear Captioning Queue" Width="18" Height="18" FontSize="10" 
-                            Command="{Binding ClearCaptioningQueueCommand}" Margin="0,0,5,0"/>
-                    <TextBlock FontSize="10" Margin="0,0,10,0"
-                               Foreground="{DynamicResource ForegroundBrush}" VerticalAlignment="Center">
-                        <Run Text="C:"/>
+                    <CheckBox Content="C" ToolTip="Enable Captioning" IsChecked="{Binding EnableCaptioning}" 
+                              VerticalAlignment="Center" Margin="0,0,2,0" FontSize="10"
+                              IsEnabled="{Binding IsUnifiedProcessingActive, Converter={StaticResource inverseBoolConverter}}"/>
+                    <TextBlock FontSize="9" Foreground="{DynamicResource ForegroundBrush}" VerticalAlignment="Center" Margin="0,0,6,0">
+                        <Run Text="("/>
                         <Run Text="{Binding CaptioningQueueCount, FallbackValue=0}"/>
+                        <Run Text=")"/>
                     </TextBlock>
                     
-                    <!-- Embedding Controls -->
-                    <Button Content="▶" ToolTip="Start Embedding Queue" Width="18" Height="18" FontSize="9"
-                            Command="{Binding StartEmbeddingCommand}" Margin="0,0,2,0" Foreground="Purple"/>
-                    <Button Content="⏸" ToolTip="Pause Embedding" Width="18" Height="18" FontSize="10"
-                            Command="{Binding PauseEmbeddingCommand}" Margin="0,0,2,0"/>
-                    <Button Content="⏹" ToolTip="Stop Embedding" Width="18" Height="18" FontSize="10" 
-                            Command="{Binding StopEmbeddingCommand}" Foreground="Red" Margin="0,0,2,0"/>
-                    <Button Content="✕" ToolTip="Clear Embedding Queue" Width="18" Height="18" FontSize="10" 
-                            Command="{Binding ClearEmbeddingQueueCommand}" Margin="0,0,5,0"/>
-                    <TextBlock FontSize="10" Margin="0,0,10,0"
-                               Foreground="{DynamicResource ForegroundBrush}" VerticalAlignment="Center">
-                        <Run Text="E:"/>
+                    <CheckBox Content="E" ToolTip="Enable Embedding" IsChecked="{Binding EnableEmbedding}" 
+                              VerticalAlignment="Center" Margin="0,0,2,0" FontSize="10"
+                              IsEnabled="{Binding IsUnifiedProcessingActive, Converter={StaticResource inverseBoolConverter}}"/>
+                    <TextBlock FontSize="9" Foreground="{DynamicResource ForegroundBrush}" VerticalAlignment="Center" Margin="0,0,6,0">
+                        <Run Text="("/>
                         <Run Text="{Binding EmbeddingQueueCount, FallbackValue=0}"/>
+                        <Run Text=")"/>
                     </TextBlock>
                     
-                    <!-- Face Detection Controls -->
-                    <Button Content="▶" ToolTip="Start Face Detection Queue" Width="18" Height="18" FontSize="9"
-                            Command="{Binding StartFaceDetectionCommand}" Margin="0,0,2,0" Foreground="Cyan"/>
-                    <Button Content="⏸" ToolTip="Pause Face Detection" Width="18" Height="18" FontSize="10"
-                            Command="{Binding PauseFaceDetectionCommand}" Margin="0,0,2,0"/>
-                    <Button Content="⏹" ToolTip="Stop Face Detection" Width="18" Height="18" FontSize="10" 
-                            Command="{Binding StopFaceDetectionCommand}" Foreground="Red" Margin="0,0,2,0"/>
-                    <Button Content="✕" ToolTip="Clear Face Detection Queue" Width="18" Height="18" FontSize="10" 
-                            Command="{Binding ClearFaceDetectionQueueCommand}" Margin="0,0,5,0"/>
-                    <TextBlock FontSize="10" Margin="0,0,10,0"
-                               Foreground="{DynamicResource ForegroundBrush}" VerticalAlignment="Center">
-                        <Run Text="F:"/>
+                    <CheckBox Content="F" ToolTip="Enable Face Detection" IsChecked="{Binding EnableFaceDetection}" 
+                              VerticalAlignment="Center" Margin="0,0,2,0" FontSize="10"
+                              IsEnabled="{Binding IsUnifiedProcessingActive, Converter={StaticResource inverseBoolConverter}}"/>
+                    <TextBlock FontSize="9" Foreground="{DynamicResource ForegroundBrush}" VerticalAlignment="Center" Margin="0,0,8,0">
+                        <Run Text="("/>
                         <Run Text="{Binding FaceDetectionQueueCount, FallbackValue=0}"/>
+                        <Run Text=")"/>
                     </TextBlock>
+                    
+                    <Rectangle Width="1" Fill="{DynamicResource ForegroundBrush}" Opacity="0.3" Margin="0,3,8,3"/>
+                    
+                    <!-- VRAM Estimate and Release -->
+                    <TextBlock FontSize="9" Foreground="{DynamicResource ForegroundBrush}" 
+                               VerticalAlignment="Center" Margin="0,0,8,0" Opacity="0.7"
+                               Text="{Binding EstimatedVramUsage, FallbackValue='~0GB VRAM'}"/>
                     
                     <Button Content="🔓" ToolTip="Release Models from VRAM" Width="20" Height="18" FontSize="10"
                             Command="{Binding ReleaseModelsCommand}" Foreground="Orange"/>

@@ -389,6 +389,13 @@
                                 The system automatically distributes work across GPUs and manages VRAM efficiently.
                             </TextBlock>
                             
+                            <!-- New Processing Architecture Toggle -->
+                            <CheckBox Content="Use New Processing Architecture (Experimental)" 
+                                      IsChecked="{Binding UseNewProcessingArchitecture}"
+                                      Margin="0,0,0,15"
+                                      ToolTip="Enable the new modular processing orchestrator. More efficient GPU utilization and better progress tracking. Restart required after changing."
+                                      Foreground="{DynamicResource ForegroundBrush}"/>
+                            
                             <Grid Margin="0,0,0,10">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="180"/>
@@ -422,6 +429,110 @@
                                             TickFrequency="5" IsSnapToTickEnabled="True" VerticalAlignment="Center"/>
                                     <Label Content="{Binding MaxVramUsagePercent, StringFormat={}{0}%}" Margin="10,0,0,0" 
                                            VerticalAlignment="Center" Foreground="{DynamicResource ForegroundBrush}"/>
+                                </StackPanel>
+                            </Grid>
+                            
+                            <!-- GPU Model Allocation Calculator -->
+                            <TextBlock Text="GPU Model Allocation" FontWeight="SemiBold" Margin="0,15,0,5" Foreground="{DynamicResource ForegroundBrush}"/>
+                            <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource ForegroundBrush}" Margin="0,0,0,10" FontSize="11">
+                                Configure how many model instances to load per GPU. Use comma-separated values matching your GPU order.
+                                Example: "1,1" means 1 model on GPU0, 1 on GPU1. VRAM per model: Captioning=5.8GB, Tagging=3.1GB, Embedding=7.5GB, FaceDetect=0.8GB
+                            </TextBlock>
+                            
+                            <Grid Margin="0,0,0,10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="200"/>
+                                    <ColumnDefinition Width="100"/>
+                                    <ColumnDefinition Width="20"/>
+                                    <ColumnDefinition Width="100"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                
+                                <!-- Headers -->
+                                <Label Grid.Row="0" Grid.Column="0" Content="" Foreground="{DynamicResource ForegroundBrush}"/>
+                                <Label Grid.Row="0" Grid.Column="1" Content="Concurrent" FontWeight="Bold" 
+                                       ToolTip="Models to load when running all processes together"
+                                       Foreground="{DynamicResource ForegroundBrush}" HorizontalAlignment="Center"/>
+                                <Label Grid.Row="0" Grid.Column="3" Content="Solo" FontWeight="Bold"
+                                       ToolTip="Models to load when running a single process alone"
+                                       Foreground="{DynamicResource ForegroundBrush}" HorizontalAlignment="Center"/>
+                                
+                                <!-- Captioning Row -->
+                                <Label Grid.Row="1" Grid.Column="0" Content="Captioning (5.8GB each):" 
+                                       Foreground="{DynamicResource ForegroundBrush}"/>
+                                <TextBox Grid.Row="1" Grid.Column="1" 
+                                         Text="{Binding ConcurrentCaptioningAllocation, UpdateSourceTrigger=PropertyChanged}" 
+                                         Width="80" Height="24" VerticalContentAlignment="Center" HorizontalAlignment="Center"/>
+                                <TextBox Grid.Row="1" Grid.Column="3" 
+                                         Text="{Binding SoloCaptioningAllocation, UpdateSourceTrigger=PropertyChanged}" 
+                                         Width="80" Height="24" VerticalContentAlignment="Center" HorizontalAlignment="Center"/>
+                                
+                                <!-- Tagging Row -->
+                                <Label Grid.Row="2" Grid.Column="0" Content="Tagging (3.1GB each):" 
+                                       Foreground="{DynamicResource ForegroundBrush}"/>
+                                <TextBox Grid.Row="2" Grid.Column="1" 
+                                         Text="{Binding ConcurrentTaggingAllocation, UpdateSourceTrigger=PropertyChanged}" 
+                                         Width="80" Height="24" VerticalContentAlignment="Center" HorizontalAlignment="Center"/>
+                                <TextBox Grid.Row="2" Grid.Column="3" 
+                                         Text="{Binding SoloTaggingAllocation, UpdateSourceTrigger=PropertyChanged}" 
+                                         Width="80" Height="24" VerticalContentAlignment="Center" HorizontalAlignment="Center"/>
+                                
+                                <!-- Embedding Row -->
+                                <Label Grid.Row="3" Grid.Column="0" Content="Embedding (7.5GB each):" 
+                                       Foreground="{DynamicResource ForegroundBrush}"/>
+                                <TextBox Grid.Row="3" Grid.Column="1" 
+                                         Text="{Binding ConcurrentEmbeddingAllocation, UpdateSourceTrigger=PropertyChanged}" 
+                                         Width="80" Height="24" VerticalContentAlignment="Center" HorizontalAlignment="Center"/>
+                                <TextBox Grid.Row="3" Grid.Column="3" 
+                                         Text="{Binding SoloEmbeddingAllocation, UpdateSourceTrigger=PropertyChanged}" 
+                                         Width="80" Height="24" VerticalContentAlignment="Center" HorizontalAlignment="Center"/>
+                                
+                                <!-- Face Detection Row -->
+                                <Label Grid.Row="4" Grid.Column="0" Content="Face Detection (0.8GB each):" 
+                                       Foreground="{DynamicResource ForegroundBrush}"/>
+                                <TextBox Grid.Row="4" Grid.Column="1" 
+                                         Text="{Binding ConcurrentFaceDetectionAllocation, UpdateSourceTrigger=PropertyChanged}" 
+                                         Width="80" Height="24" VerticalContentAlignment="Center" HorizontalAlignment="Center"/>
+                                <TextBox Grid.Row="4" Grid.Column="3" 
+                                         Text="{Binding SoloFaceDetectionAllocation, UpdateSourceTrigger=PropertyChanged}" 
+                                         Width="80" Height="24" VerticalContentAlignment="Center" HorizontalAlignment="Center"/>
+                            </Grid>
+                            
+                            <!-- Calculate Button and Results -->
+                            <StackPanel Orientation="Horizontal" Margin="0,5,0,10">
+                                <Button Content="Calculate VRAM" Click="CalculateVram_Click" Padding="15,5" 
+                                        ToolTip="Check if your allocation fits within available VRAM"/>
+                            </StackPanel>
+                            
+                            <Grid Margin="0,0,0,5">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                
+                                <!-- Concurrent Results -->
+                                <StackPanel Grid.Column="0" Margin="0,0,20,0">
+                                    <TextBlock Text="Concurrent Mode (All Together):" FontWeight="SemiBold" 
+                                               Foreground="{DynamicResource ForegroundBrush}" Margin="0,0,0,5"/>
+                                    <TextBlock Text="{Binding ConcurrentVramResult}" 
+                                               Foreground="{DynamicResource ForegroundBrush}" 
+                                               FontFamily="Consolas" TextWrapping="Wrap"/>
+                                </StackPanel>
+                                
+                                <!-- Solo Results -->
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Text="Solo Mode (One Process Only):" FontWeight="SemiBold" 
+                                               Foreground="{DynamicResource ForegroundBrush}" Margin="0,0,0,5"/>
+                                    <TextBlock Text="{Binding SoloVramResults}" 
+                                               Foreground="{DynamicResource ForegroundBrush}" 
+                                               FontFamily="Consolas" TextWrapping="Wrap"/>
                                 </StackPanel>
                             </Grid>
                         </StackPanel>

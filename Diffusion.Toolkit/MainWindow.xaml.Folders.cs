@@ -386,6 +386,15 @@ namespace Diffusion.Toolkit
                 faceDetectionQueued = imageIds.Count;
             }
 
+            // Update queue counts in UI directly (faster than re-querying database)
+            if (ServiceLocator.MainModel != null)
+            {
+                ServiceLocator.MainModel.TaggingQueueCount += taggedQueued;
+                ServiceLocator.MainModel.CaptioningQueueCount += captionQueued;
+                ServiceLocator.MainModel.EmbeddingQueueCount += embeddingQueued;
+                ServiceLocator.MainModel.FaceDetectionQueueCount += faceDetectionQueued;
+            }
+
             var priorityText = highPriority ? " (high priority)" : "";
             var parts = new List<string>();
             if (taggedQueued > 0) parts.Add($"{taggedQueued} for tagging");

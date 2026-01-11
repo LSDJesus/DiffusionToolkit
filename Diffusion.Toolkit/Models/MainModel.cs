@@ -163,6 +163,19 @@ public class MainModel : BaseNotify
     private int _captioningQueueCount;
     private int _embeddingQueueCount;
     private int _faceDetectionQueueCount;
+    
+    // Unified processing toggles
+    private bool _enableTagging = true;
+    private bool _enableCaptioning = true;
+    private bool _enableEmbedding = true;
+    private bool _enableFaceDetection = true;
+    private bool _isUnifiedProcessingActive;
+    private ICommand _startUnifiedProcessingCommand;
+    private ICommand _pauseUnifiedProcessingCommand;
+    private ICommand _stopUnifiedProcessingCommand;
+    private ICommand _clearAllQueuesCommand;
+    private string _estimatedVramUsage = "";
+    private string _unifiedProcessingStatus = "";
 
     public bool IsBackgroundProcessingActive
     {
@@ -256,6 +269,101 @@ public class MainModel : BaseNotify
     {
         get => _faceDetectionQueueCount;
         set => SetField(ref _faceDetectionQueueCount, value);
+    }
+
+    // Unified Processing Properties
+    public bool EnableTagging
+    {
+        get => _enableTagging;
+        set
+        {
+            if (SetField(ref _enableTagging, value))
+                UpdateEstimatedVramUsage();
+        }
+    }
+
+    public bool EnableCaptioning
+    {
+        get => _enableCaptioning;
+        set
+        {
+            if (SetField(ref _enableCaptioning, value))
+                UpdateEstimatedVramUsage();
+        }
+    }
+
+    public bool EnableEmbedding
+    {
+        get => _enableEmbedding;
+        set
+        {
+            if (SetField(ref _enableEmbedding, value))
+                UpdateEstimatedVramUsage();
+        }
+    }
+
+    public bool EnableFaceDetection
+    {
+        get => _enableFaceDetection;
+        set
+        {
+            if (SetField(ref _enableFaceDetection, value))
+                UpdateEstimatedVramUsage();
+        }
+    }
+
+    public bool IsUnifiedProcessingActive
+    {
+        get => _isUnifiedProcessingActive;
+        set => SetField(ref _isUnifiedProcessingActive, value);
+    }
+
+    public string EstimatedVramUsage
+    {
+        get => _estimatedVramUsage;
+        set => SetField(ref _estimatedVramUsage, value);
+    }
+
+    public string UnifiedProcessingStatus
+    {
+        get => _unifiedProcessingStatus;
+        set => SetField(ref _unifiedProcessingStatus, value);
+    }
+
+    public ICommand StartUnifiedProcessingCommand
+    {
+        get => _startUnifiedProcessingCommand;
+        set => SetField(ref _startUnifiedProcessingCommand, value);
+    }
+
+    public ICommand PauseUnifiedProcessingCommand
+    {
+        get => _pauseUnifiedProcessingCommand;
+        set => SetField(ref _pauseUnifiedProcessingCommand, value);
+    }
+
+    public ICommand StopUnifiedProcessingCommand
+    {
+        get => _stopUnifiedProcessingCommand;
+        set => SetField(ref _stopUnifiedProcessingCommand, value);
+    }
+
+    public ICommand ClearAllQueuesCommand
+    {
+        get => _clearAllQueuesCommand;
+        set => SetField(ref _clearAllQueuesCommand, value);
+    }
+
+    public void UpdateEstimatedVramUsage()
+    {
+        // Calculate estimated VRAM based on enabled processes (MEASURED runtime values)
+        double totalGb = 0;
+        if (_enableTagging) totalGb += 3.1;       // Measured: 3.1GB
+        if (_enableCaptioning) totalGb += 5.8;    // Measured: 5.8GB
+        if (_enableEmbedding) totalGb += 7.5;     // Measured: 7.5GB
+        if (_enableFaceDetection) totalGb += 0.8; // Measured: 0.8GB
+        
+        EstimatedVramUsage = $"~{totalGb:F1}GB VRAM";
     }
 
     public QueryOptions QueryOptions

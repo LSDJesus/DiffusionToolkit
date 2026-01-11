@@ -87,6 +87,22 @@ public class SettingsModel : BaseNotify
     private string _gpuVramCapacity = "32";
     private int _maxVramUsagePercent = 85;
     
+    // GPU Model Allocation - Concurrent mode (all processes running together)
+    private string _concurrentCaptioningAllocation = "1,0";
+    private string _concurrentTaggingAllocation = "1,0";
+    private string _concurrentEmbeddingAllocation = "1,0";
+    private string _concurrentFaceDetectionAllocation = "1,0";
+    
+    // GPU Model Allocation - Solo mode (single process running alone)
+    private string _soloCaptioningAllocation = "1,0";
+    private string _soloTaggingAllocation = "1,0";
+    private string _soloEmbeddingAllocation = "1,0";
+    private string _soloFaceDetectionAllocation = "1,0";
+    
+    // VRAM Calculator results
+    private string _concurrentVramResult = "";
+    private string _soloVramResults = "";
+    
     // Processing skip settings
     private bool _skipAlreadyTaggedImages;
     private bool _skipAlreadyCaptionedImages;
@@ -624,6 +640,69 @@ public class SettingsModel : BaseNotify
     {
         get => _maxVramUsagePercent;
         set => SetField(ref _maxVramUsagePercent, Math.Max(50, Math.Min(95, value)));
+    }
+
+    // GPU Model Allocation - Concurrent mode (all processes running together)
+    public string ConcurrentCaptioningAllocation
+    {
+        get => _concurrentCaptioningAllocation;
+        set => SetField(ref _concurrentCaptioningAllocation, value);
+    }
+
+    public string ConcurrentTaggingAllocation
+    {
+        get => _concurrentTaggingAllocation;
+        set => SetField(ref _concurrentTaggingAllocation, value);
+    }
+
+    public string ConcurrentEmbeddingAllocation
+    {
+        get => _concurrentEmbeddingAllocation;
+        set => SetField(ref _concurrentEmbeddingAllocation, value);
+    }
+
+    public string ConcurrentFaceDetectionAllocation
+    {
+        get => _concurrentFaceDetectionAllocation;
+        set => SetField(ref _concurrentFaceDetectionAllocation, value);
+    }
+
+    // GPU Model Allocation - Solo mode (single process running alone)
+    public string SoloCaptioningAllocation
+    {
+        get => _soloCaptioningAllocation;
+        set => SetField(ref _soloCaptioningAllocation, value);
+    }
+
+    public string SoloTaggingAllocation
+    {
+        get => _soloTaggingAllocation;
+        set => SetField(ref _soloTaggingAllocation, value);
+    }
+
+    public string SoloEmbeddingAllocation
+    {
+        get => _soloEmbeddingAllocation;
+        set => SetField(ref _soloEmbeddingAllocation, value);
+    }
+
+    public string SoloFaceDetectionAllocation
+    {
+        get => _soloFaceDetectionAllocation;
+        set => SetField(ref _soloFaceDetectionAllocation, value);
+    }
+
+    // VRAM Calculator results (display only)
+    public string ConcurrentVramResult
+    {
+        get => _concurrentVramResult;
+        set => SetField(ref _concurrentVramResult, value);
+    }
+
+    public string SoloVramResults
+    {
+        get => _soloVramResults;
+        set => SetField(ref _soloVramResults, value);
     }
 
     // Processing skip settings

@@ -213,7 +213,7 @@ public class BackgroundFaceDetectionService : IDisposable
                 SingleWriter = true
             });
             
-            // Queue population task
+            // Queue population task using cursor-based pagination
             Task.Run(async () =>
             {
                 try
@@ -227,21 +227,28 @@ public class BackgroundFaceDetectionService : IDisposable
                     UpdateOrchestratorStatus(ProcessPriority.FaceDetection, _faceDetectionTotal, 0, totalWorkers, true);
                     
                     const int batchSize = 500;
+                    int lastId = 0;  // Cursor for pagination
+                    int totalQueued = 0;
+                    
                     while (!_faceDetectionCts.Token.IsCancellationRequested)
                     {
-                        var batch = await _dataStore.GetImagesNeedingFaceDetection(batchSize);
+                        var batch = await _dataStore.GetImagesNeedingFaceDetection(batchSize, lastId);
                         if (batch.Count == 0) break;
                         
                         foreach (var imageId in batch)
                         {
                             await _faceDetectionQueue.Writer.WriteAsync(imageId, _faceDetectionCts.Token);
+                            totalQueued++;
                         }
                         
-                        if (batch.Count < batchSize) break;
+                        // Move cursor to last ID in batch
+                        lastId = batch[batch.Count - 1];
+                        
+                        if (batch.Count < batchSize) break;  // Last batch
                     }
                     
                     _faceDetectionQueue.Writer.Complete();
-                    Logger.Log("Face detection queue populated");
+                    Logger.Log($"Face detection queue populated with {totalQueued} images");
                 }
                 catch (Exception ex)
                 {

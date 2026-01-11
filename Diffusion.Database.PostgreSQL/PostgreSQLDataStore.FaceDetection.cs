@@ -28,19 +28,21 @@ public partial class PostgreSQLDataStore
     }
 
     /// <summary>
-    /// Get images that need face detection (batch for processing)
+    /// Get images that need face detection (cursor-based pagination for large datasets)
     /// </summary>
-    public async Task<List<int>> GetImagesNeedingFaceDetection(int batchSize = 100)
+    /// <param name="batchSize">Number of images to fetch</param>
+    /// <param name="lastId">Fetch images with id > lastId (use 0 for first batch)</param>
+    public async Task<List<int>> GetImagesNeedingFaceDetection(int batchSize = 100, int lastId = 0)
     {
         await using var connection = await _dataSource.OpenConnectionAsync();
         
         var sql = $@"
             SELECT id FROM {Table("image")} 
-            WHERE needs_face_detection = true AND for_deletion = false
+            WHERE needs_face_detection = true AND for_deletion = false AND id > @lastId
             ORDER BY id
             LIMIT @batchSize";
         
-        var result = await connection.QueryAsync<int>(sql, new { batchSize });
+        var result = await connection.QueryAsync<int>(sql, new { batchSize, lastId });
         return result.ToList();
     }
 

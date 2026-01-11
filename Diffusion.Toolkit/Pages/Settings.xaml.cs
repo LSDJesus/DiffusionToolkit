@@ -156,6 +156,18 @@ namespace Diffusion.Toolkit.Pages
             _model.GpuVramCapacity = _settings.GpuVramCapacity;
             _model.MaxVramUsagePercent = _settings.MaxVramUsagePercent;
             
+            // GPU Model Allocation - Concurrent mode
+            _model.ConcurrentCaptioningAllocation = _settings.ConcurrentCaptioningAllocation;
+            _model.ConcurrentTaggingAllocation = _settings.ConcurrentTaggingAllocation;
+            _model.ConcurrentEmbeddingAllocation = _settings.ConcurrentEmbeddingAllocation;
+            _model.ConcurrentFaceDetectionAllocation = _settings.ConcurrentFaceDetectionAllocation;
+            
+            // GPU Model Allocation - Solo mode
+            _model.SoloCaptioningAllocation = _settings.SoloCaptioningAllocation;
+            _model.SoloTaggingAllocation = _settings.SoloTaggingAllocation;
+            _model.SoloEmbeddingAllocation = _settings.SoloEmbeddingAllocation;
+            _model.SoloFaceDetectionAllocation = _settings.SoloFaceDetectionAllocation;
+            
             // Processing skip settings
             _model.SkipAlreadyTaggedImages = _settings.SkipAlreadyTaggedImages;
             _model.SkipAlreadyCaptionedImages = _settings.SkipAlreadyCaptionedImages;
@@ -591,6 +603,18 @@ namespace Diffusion.Toolkit.Pages
                 _settings.GpuVramCapacity = _model.GpuVramCapacity;
                 _settings.MaxVramUsagePercent = _model.MaxVramUsagePercent;
                 
+                // GPU Model Allocation - Concurrent mode
+                _settings.ConcurrentCaptioningAllocation = _model.ConcurrentCaptioningAllocation;
+                _settings.ConcurrentTaggingAllocation = _model.ConcurrentTaggingAllocation;
+                _settings.ConcurrentEmbeddingAllocation = _model.ConcurrentEmbeddingAllocation;
+                _settings.ConcurrentFaceDetectionAllocation = _model.ConcurrentFaceDetectionAllocation;
+                
+                // GPU Model Allocation - Solo mode
+                _settings.SoloCaptioningAllocation = _model.SoloCaptioningAllocation;
+                _settings.SoloTaggingAllocation = _model.SoloTaggingAllocation;
+                _settings.SoloEmbeddingAllocation = _model.SoloEmbeddingAllocation;
+                _settings.SoloFaceDetectionAllocation = _model.SoloFaceDetectionAllocation;
+                
                 // Processing skip settings
                 _settings.SkipAlreadyTaggedImages = _model.SkipAlreadyTaggedImages;
                 _settings.SkipAlreadyCaptionedImages = _model.SkipAlreadyCaptionedImages;
@@ -955,6 +979,128 @@ namespace Diffusion.Toolkit.Pages
                         mainWindow.RefreshDatabaseProfileSwitcher();
                     }
                 }
+            }
+        }
+        
+        /// <summary>
+        /// Calculate VRAM usage for the current allocation settings
+        /// </summary>
+        private void CalculateVram_Click(object sender, RoutedEventArgs e)
+        {
+            // Measured VRAM values (in GB)
+            const double CaptioningVram = 5.8;
+            const double TaggingVram = 3.1;
+            const double EmbeddingVram = 7.5;
+            const double FaceDetectionVram = 0.8;
+            
+            // Parse GPU capacities and max usage
+            var vramCapacities = _model.GpuVramCapacity
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(s => double.TryParse(s, out var v) ? v : 32.0)
+                .ToArray();
+            
+            var maxUsage = _model.MaxVramUsagePercent / 100.0;
+            var maxUsableVram = vramCapacities.Select(v => v * maxUsage).ToArray();
+            
+            // Calculate concurrent mode
+            var concurrentResult = CalculateAllocationVram(
+                _model.ConcurrentCaptioningAllocation,
+                _model.ConcurrentTaggingAllocation,
+                _model.ConcurrentEmbeddingAllocation,
+                _model.ConcurrentFaceDetectionAllocation,
+                CaptioningVram, TaggingVram, EmbeddingVram, FaceDetectionVram,
+                maxUsableVram);
+            
+            _model.ConcurrentVramResult = concurrentResult;
+            
+            // Calculate solo modes
+            var soloResults = new System.Text.StringBuilder();
+            
+            var soloCaptioning = CalculateSingleAllocationVram(
+                _model.SoloCaptioningAllocation, CaptioningVram, maxUsableVram);
+            soloResults.AppendLine($"Captioning: {soloCaptioning}");
+            
+            var soloTagging = CalculateSingleAllocationVram(
+                _model.SoloTaggingAllocation, TaggingVram, maxUsableVram);
+            soloResults.AppendLine($"Tagging: {soloTagging}");
+            
+            var soloEmbedding = CalculateSingleAllocationVram(
+                _model.SoloEmbeddingAllocation, EmbeddingVram, maxUsableVram);
+            soloResults.AppendLine($"Embedding: {soloEmbedding}");
+            
+            var soloFaceDetection = CalculateSingleAllocationVram(
+                _model.SoloFaceDetectionAllocation, FaceDetectionVram, maxUsableVram);
+            soloResults.AppendLine($"Face Detection: {soloFaceDetection}");
+            
+            _model.SoloVramResults = soloResults.ToString().TrimEnd();
+        }
+        
+        private string CalculateAllocationVram(
+            string captioningAlloc, string taggingAlloc, string embeddingAlloc, string faceDetectionAlloc,
+            double captioningVram, double taggingVram, double embeddingVram, double faceDetectionVram,
+            double[] maxUsableVram)
+        {
+            var gpuCount = maxUsableVram.Length;
+            var gpuUsage = new double[gpuCount];
+            
+            // Parse allocations and sum VRAM per GPU
+            AddAllocationVram(captioningAlloc, captioningVram, gpuUsage);
+            AddAllocationVram(taggingAlloc, taggingVram, gpuUsage);
+            AddAllocationVram(embeddingAlloc, embeddingVram, gpuUsage);
+            AddAllocationVram(faceDetectionAlloc, faceDetectionVram, gpuUsage);
+            
+            // Check each GPU
+            var results = new System.Text.StringBuilder();
+            bool allOk = true;
+            
+            for (int i = 0; i < gpuCount; i++)
+            {
+                var used = gpuUsage[i];
+                var max = maxUsableVram[i];
+                var status = used <= max ? "✓ OK" : "✗ OVER!";
+                
+                if (used > max) allOk = false;
+                
+                results.AppendLine($"GPU{i}: {used:F1}GB / {max:F1}GB {status}");
+            }
+            
+            return (allOk ? "✓ All GPUs OK\n" : "✗ VRAM EXCEEDED!\n") + results.ToString().TrimEnd();
+        }
+        
+        private string CalculateSingleAllocationVram(string allocation, double vramPerModel, double[] maxUsableVram)
+        {
+            var gpuCount = maxUsableVram.Length;
+            var gpuUsage = new double[gpuCount];
+            
+            AddAllocationVram(allocation, vramPerModel, gpuUsage);
+            
+            bool allOk = true;
+            var parts = new List<string>();
+            
+            for (int i = 0; i < gpuCount; i++)
+            {
+                if (gpuUsage[i] > 0)
+                {
+                    var max = maxUsableVram[i];
+                    var ok = gpuUsage[i] <= max;
+                    if (!ok) allOk = false;
+                    parts.Add($"GPU{i}:{gpuUsage[i]:F1}/{max:F1}GB");
+                }
+            }
+            
+            return (allOk ? "✓ " : "✗ ") + string.Join(" ", parts);
+        }
+        
+        private void AddAllocationVram(string allocation, double vramPerModel, double[] gpuUsage)
+        {
+            var counts = allocation
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(s => int.TryParse(s, out var v) ? v : 0)
+                .ToArray();
+            
+            for (int i = 0; i < Math.Min(counts.Length, gpuUsage.Length); i++)
+            {
+                gpuUsage[i] += counts[i] * vramPerModel;
             }
         }
     }

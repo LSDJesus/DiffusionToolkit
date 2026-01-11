@@ -44,18 +44,8 @@ public class CLIPTextEncoder : IDisposable
         _embeddingDim = embeddingDim;
         _modelName = modelName;
 
-        // Configure ONNX Runtime for GPU
-        var sessionOptions = new SessionOptions
-        {
-            GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL,
-            ExecutionMode = ExecutionMode.ORT_PARALLEL,
-            InterOpNumThreads = 2,
-            IntraOpNumThreads = 4
-        };
-
-        // Use CUDA execution provider
-        sessionOptions.AppendExecutionProvider_CUDA(deviceId);
-        sessionOptions.AppendExecutionProvider_CPU(); // Fallback
+        // Use memory-efficient CUDA session options
+        var sessionOptions = OnnxSessionHelper.CreateCudaSessionOptions(deviceId, memoryEfficientMode: true);
 
         _session = new InferenceSession(modelPath, sessionOptions);
         _tokenizer = new CLIPTokenizer(vocabPath, mergesPath);

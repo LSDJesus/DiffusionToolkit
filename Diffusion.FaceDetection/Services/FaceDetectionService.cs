@@ -24,7 +24,7 @@ public class FaceDetectionConfig
     {
         return new FaceDetectionConfig
         {
-            YoloModelPath = Path.Combine(baseDir, "models", "onnx", "yolo", "yolov12m-face.onnx"),
+            YoloModelPath = Path.Combine(baseDir, "models", "onnx", "yolo", "yolov11l-face.onnx"),
             ArcFaceModelPath = Path.Combine(baseDir, "models", "onnx", "arcface", "w600k_r50.onnx"),
             GpuDeviceId = 0,
             DetectionInputSize = 640,

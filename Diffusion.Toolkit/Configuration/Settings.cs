@@ -120,6 +120,21 @@ public class Settings : SettingsContainer, IScanOptions
     private string _gpuVramCapacity = "32";     // VRAM per GPU in GB (e.g., "32" or "32,10")
     private int _maxVramUsagePercent = 85;      // Maximum VRAM usage percentage (50-95%)
     
+    // GPU Model Allocation Settings - Concurrent mode (all 4 processes running together)
+    private string _concurrentCaptioningAllocation = "1,0";   // Models per GPU when running with others
+    private string _concurrentTaggingAllocation = "1,0";
+    private string _concurrentEmbeddingAllocation = "1,0";
+    private string _concurrentFaceDetectionAllocation = "1,0";
+    
+    // GPU Model Allocation Settings - Solo mode (single process running alone)
+    private string _soloCaptioningAllocation = "1,0";         // Models per GPU when running alone
+    private string _soloTaggingAllocation = "1,0";
+    private string _soloEmbeddingAllocation = "1,0";
+    private string _soloFaceDetectionAllocation = "1,0";
+    
+    // New processing architecture feature flag
+    private bool _useNewProcessingArchitecture = false;  // Set to true to enable new orchestrator-based processing
+    
     // Processing skip settings
     private bool _skipAlreadyTaggedImages = false;
     private bool _skipAlreadyCaptionedImages = false;
@@ -806,6 +821,67 @@ public class Settings : SettingsContainer, IScanOptions
     {
         get => _maxVramUsagePercent;
         set => UpdateValue(ref _maxVramUsagePercent, Math.Max(50, Math.Min(95, value)));
+    }
+
+    // GPU Model Allocation - Concurrent mode (all processes running together)
+    public string ConcurrentCaptioningAllocation
+    {
+        get => _concurrentCaptioningAllocation;
+        set => UpdateValue(ref _concurrentCaptioningAllocation, value ?? "1,0");
+    }
+
+    public string ConcurrentTaggingAllocation
+    {
+        get => _concurrentTaggingAllocation;
+        set => UpdateValue(ref _concurrentTaggingAllocation, value ?? "1,0");
+    }
+
+    public string ConcurrentEmbeddingAllocation
+    {
+        get => _concurrentEmbeddingAllocation;
+        set => UpdateValue(ref _concurrentEmbeddingAllocation, value ?? "1,0");
+    }
+
+    public string ConcurrentFaceDetectionAllocation
+    {
+        get => _concurrentFaceDetectionAllocation;
+        set => UpdateValue(ref _concurrentFaceDetectionAllocation, value ?? "1,0");
+    }
+
+    // GPU Model Allocation - Solo mode (single process running alone)
+    public string SoloCaptioningAllocation
+    {
+        get => _soloCaptioningAllocation;
+        set => UpdateValue(ref _soloCaptioningAllocation, value ?? "1,0");
+    }
+
+    public string SoloTaggingAllocation
+    {
+        get => _soloTaggingAllocation;
+        set => UpdateValue(ref _soloTaggingAllocation, value ?? "1,0");
+    }
+
+    public string SoloEmbeddingAllocation
+    {
+        get => _soloEmbeddingAllocation;
+        set => UpdateValue(ref _soloEmbeddingAllocation, value ?? "1,0");
+    }
+
+    public string SoloFaceDetectionAllocation
+    {
+        get => _soloFaceDetectionAllocation;
+        set => UpdateValue(ref _soloFaceDetectionAllocation, value ?? "1,0");
+    }
+
+    /// <summary>
+    /// Feature flag to enable the new processing architecture.
+    /// When true, uses the new GlobalProcessingOrchestrator with modular workers.
+    /// When false, uses the legacy BackgroundTaggingService.
+    /// </summary>
+    public bool UseNewProcessingArchitecture
+    {
+        get => _useNewProcessingArchitecture;
+        set => UpdateValue(ref _useNewProcessingArchitecture, value);
     }
 
     // Legacy properties - delegate to global settings for backward compatibility

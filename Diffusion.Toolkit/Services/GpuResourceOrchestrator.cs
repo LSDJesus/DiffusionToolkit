@@ -97,11 +97,11 @@ public class ModelAllocation
 /// </summary>
 public static class ModelVramRequirements
 {
-    // All values in bytes
-    public const long CaptioningModelBytes = 8L * 1024 * 1024 * 1024;   // ~8GB for JoyCaption
-    public const long TaggingModelSetBytes = 2L * 1024 * 1024 * 1024;   // ~2GB for JoyTag + WD (shared by 10 workers)
-    public const long EmbeddingModelSetBytes = 4L * 1024 * 1024 * 1024; // ~4GB for BGE + CLIP models
-    public const long FaceDetectionModelSetBytes = 1L * 1024 * 1024 * 1024; // ~1GB for YOLO + ArcFace
+    // All values in bytes - MEASURED runtime VRAM usage (not file sizes)
+    public const long CaptioningModelBytes = 5939L * 1024 * 1024;     // 5.8GB measured
+    public const long TaggingModelSetBytes = 3174L * 1024 * 1024;     // 3.1GB measured
+    public const long EmbeddingModelSetBytes = 7680L * 1024 * 1024;   // 7.5GB measured
+    public const long FaceDetectionModelSetBytes = 819L * 1024 * 1024; // 0.8GB measured
     
     public const int TaggingWorkersPerModel = 10;
     public const int EmbeddingWorkersPerModel = 3;
@@ -422,27 +422,17 @@ public class GpuResourceOrchestrator : IDisposable
     
     /// <summary>
     /// Get optimal allocation plan for all active processes
-    /// Uses "rocks, pebbles, sand" approach with special handling for captioning
-    /// Captioning is limited to 1 per GPU when other processes have pending work
+    /// SIMPLIFIED: Allocates exactly ONE model set per process type on GPU 0 only
+    /// This is for VRAM measurement - will be enhanced after collecting real usage data
     /// </summary>
     public List<(ProcessPriority Priority, int GpuId, int WorkerCount)> GetOptimalAllocationPlan()
     {
         var plan = new List<(ProcessPriority, int, int)>();
         
-        // Check if any non-captioning processes have pending work
-        var otherProcessesHaveWork = _queueStatuses
-            .Where(kvp => kvp.Key != ProcessPriority.Captioning)
-            .Any(kvp => kvp.Value.RemainingItems > 0 || kvp.Value.IsRunning);
+        // Simple allocation: one model per process type, all on GPU 0
+        // Workers are kept minimal for measurement purposes
+        const int measurementGpuId = 0;
         
-        // Create temporary tracking of available VRAM
-        var availableVram = _gpuDevices.ToDictionary(
-            kvp => kvp.Key, 
-            kvp => kvp.Value.MaxUsableVramBytes);
-        
-        // Track captioning allocations per GPU (for limiting when others have work)
-        var captioningPerGpu = _gpuDevices.Keys.ToDictionary(id => id, _ => 0);
-        
-        // First pass: allocate one of each type per GPU (respecting captioning limit)
         foreach (ProcessPriority priority in Enum.GetValues<ProcessPriority>())
         {
             // Skip if this queue has no work
@@ -452,77 +442,18 @@ public class GpuResourceOrchestrator : IDisposable
                 continue;
             }
             
-            var vramNeeded = ModelVramRequirements.GetVramRequirement(priority);
-            var workersPerModel = ModelVramRequirements.GetWorkersPerModel(priority);
-            
-            // Try to fit one model per GPU first
-            foreach (var (gpuId, vram) in availableVram.OrderByDescending(kvp => kvp.Value))
+            // Single model set with minimal workers for measurement
+            var workerCount = priority switch
             {
-                // Captioning limit: only 1 per GPU when other processes have work
-                if (priority == ProcessPriority.Captioning && 
-                    otherProcessesHaveWork && 
-                    captioningPerGpu[gpuId] >= 1)
-                {
-                    continue;
-                }
-                
-                if (vram >= vramNeeded)
-                {
-                    plan.Add((priority, gpuId, workersPerModel));
-                    availableVram[gpuId] -= vramNeeded;
-                    
-                    if (priority == ProcessPriority.Captioning)
-                    {
-                        captioningPerGpu[gpuId]++;
-                    }
-                }
-            }
-        }
-        
-        // Second pass: try to fit more models where possible (for processes with large queues)
-        // Priority: Embedding > Tagging > FaceDetection > (Captioning if alone)
-        var fillOrder = new[] { ProcessPriority.Embedding, ProcessPriority.Tagging, ProcessPriority.FaceDetection };
-        
-        foreach (var priority in fillOrder)
-        {
-            // Skip if this queue has no work
-            if (!_queueStatuses.TryGetValue(priority, out var status) || 
-                (status.RemainingItems <= 0 && !status.IsRunning))
-            {
-                continue;
-            }
+                ProcessPriority.Captioning => 1,      // 1 caption worker
+                ProcessPriority.Tagging => 2,         // 2 tagging workers (share models)
+                ProcessPriority.Embedding => 1,       // 1 embedding worker
+                ProcessPriority.FaceDetection => 1,   // 1 face detection worker
+                _ => 1
+            };
             
-            var vramNeeded = ModelVramRequirements.GetVramRequirement(priority);
-            var workersPerModel = ModelVramRequirements.GetWorkersPerModel(priority);
-            
-            foreach (var (gpuId, vram) in availableVram.OrderByDescending(kvp => kvp.Value).ToList())
-            {
-                while (availableVram[gpuId] >= vramNeeded)
-                {
-                    plan.Add((priority, gpuId, workersPerModel));
-                    availableVram[gpuId] -= vramNeeded;
-                }
-            }
-        }
-        
-        // Final pass: if only captioning has work, fill remaining VRAM with captioning models
-        if (!otherProcessesHaveWork && 
-            _queueStatuses.TryGetValue(ProcessPriority.Captioning, out var captionStatus) &&
-            (captionStatus.RemainingItems > 0 || captionStatus.IsRunning))
-        {
-            var vramNeeded = ModelVramRequirements.GetVramRequirement(ProcessPriority.Captioning);
-            var workersPerModel = ModelVramRequirements.GetWorkersPerModel(ProcessPriority.Captioning);
-            
-            foreach (var (gpuId, vram) in availableVram.OrderByDescending(kvp => kvp.Value).ToList())
-            {
-                while (availableVram[gpuId] >= vramNeeded)
-                {
-                    plan.Add((ProcessPriority.Captioning, gpuId, workersPerModel));
-                    availableVram[gpuId] -= vramNeeded;
-                }
-            }
-            
-            Log("Captioning-only mode: filling VRAM with additional captioning models");
+            plan.Add((priority, measurementGpuId, workerCount));
+            Log($"Measurement mode: {priority} -> GPU{measurementGpuId} with {workerCount} worker(s)");
         }
         
         return plan;
