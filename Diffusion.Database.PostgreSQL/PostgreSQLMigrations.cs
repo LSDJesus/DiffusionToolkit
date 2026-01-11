@@ -10,7 +10,7 @@ public class PostgreSQLMigrations
 {
     private readonly NpgsqlConnection _connection;
     private readonly string _schema;
-    private const int CurrentVersion = 8;
+    private const int CurrentVersion = 9;
 
     public PostgreSQLMigrations(NpgsqlConnection connection, string schema = "public")
     {
@@ -43,6 +43,7 @@ public class PostgreSQLMigrations
             if (currentVersion < 6) await ApplyV6Async();
             if (currentVersion < 7) await ApplyV7Async();
             if (currentVersion < 8) await ApplyV8Async();
+            if (currentVersion < 9) await ApplyV9Async();
 
             // Only insert version if migrations were applied
             if (currentVersion < CurrentVersion)
@@ -823,6 +824,86 @@ SELECT setval('image_id_seq', COALESCE((SELECT MAX(id) FROM image), 1), true);
         catch (Exception ex)
         {
             Diffusion.Common.Logger.Log($"Migration V8 failed: {ex.Message}");
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// V9: Convert needs_* boolean columns to nullable with three-state logic:
+    /// NULL = never queued, TRUE = needs processing, FALSE = completed
+    /// </summary>
+    private async Task ApplyV9Async()
+    {
+        try
+        {
+            Diffusion.Common.Logger.Log("Applying V9 migration: Convert queue columns to nullable three-state logic...");
+            
+            var sql = @"
+-- Change needs_* columns to nullable with NULL as default
+-- NULL = never queued, TRUE = needs processing, FALSE = completed
+
+-- needs_tagging: drop default, allow nulls
+ALTER TABLE image ALTER COLUMN needs_tagging DROP DEFAULT;
+ALTER TABLE image ALTER COLUMN needs_tagging DROP NOT NULL;
+UPDATE image SET needs_tagging = NULL WHERE needs_tagging = false;
+
+-- needs_captioning: drop default, allow nulls
+ALTER TABLE image ALTER COLUMN needs_captioning DROP DEFAULT;
+ALTER TABLE image ALTER COLUMN needs_captioning DROP NOT NULL;
+UPDATE image SET needs_captioning = NULL WHERE needs_captioning = false;
+
+-- needs_embedding: drop default, allow nulls
+ALTER TABLE image ALTER COLUMN needs_embedding DROP DEFAULT;
+ALTER TABLE image ALTER COLUMN needs_embedding DROP NOT NULL;
+UPDATE image SET needs_embedding = NULL WHERE needs_embedding = false;
+
+-- needs_face_detection: drop default, allow nulls
+ALTER TABLE image ALTER COLUMN needs_face_detection DROP DEFAULT;
+ALTER TABLE image ALTER COLUMN needs_face_detection DROP NOT NULL;
+UPDATE image SET needs_face_detection = NULL WHERE needs_face_detection = false;
+
+-- Add individual embedding status columns (nullable three-state)
+-- NULL = not started, TRUE = in progress/queued, FALSE = completed
+ALTER TABLE image ADD COLUMN IF NOT EXISTS bge_embedding_status BOOLEAN;
+ALTER TABLE image ADD COLUMN IF NOT EXISTS clip_l_embedding_status BOOLEAN;
+ALTER TABLE image ADD COLUMN IF NOT EXISTS clip_g_embedding_status BOOLEAN;
+ALTER TABLE image ADD COLUMN IF NOT EXISTS clip_vision_embedding_status BOOLEAN;
+
+-- Add face detection step status columns
+ALTER TABLE image ADD COLUMN IF NOT EXISTS face_detection_status BOOLEAN;
+ALTER TABLE image ADD COLUMN IF NOT EXISTS face_embedding_status BOOLEAN;
+ALTER TABLE image ADD COLUMN IF NOT EXISTS face_clustering_status BOOLEAN;
+
+-- Recreate partial indexes for pending items (WHERE column = true)
+DROP INDEX IF EXISTS idx_image_needs_tagging;
+DROP INDEX IF EXISTS idx_image_needs_captioning;
+DROP INDEX IF EXISTS idx_image_needs_embedding;
+DROP INDEX IF EXISTS idx_image_needs_face_detection;
+
+CREATE INDEX IF NOT EXISTS idx_image_needs_tagging ON image (needs_tagging) WHERE needs_tagging = true;
+CREATE INDEX IF NOT EXISTS idx_image_needs_captioning ON image (needs_captioning) WHERE needs_captioning = true;
+CREATE INDEX IF NOT EXISTS idx_image_needs_embedding ON image (needs_embedding) WHERE needs_embedding = true;
+CREATE INDEX IF NOT EXISTS idx_image_needs_face_detection ON image (needs_face_detection) WHERE needs_face_detection = true;
+
+-- Indexes for new embedding status columns
+CREATE INDEX IF NOT EXISTS idx_image_bge_status ON image (bge_embedding_status) WHERE bge_embedding_status = true;
+CREATE INDEX IF NOT EXISTS idx_image_clip_l_status ON image (clip_l_embedding_status) WHERE clip_l_embedding_status = true;
+CREATE INDEX IF NOT EXISTS idx_image_clip_g_status ON image (clip_g_embedding_status) WHERE clip_g_embedding_status = true;
+CREATE INDEX IF NOT EXISTS idx_image_clip_vision_status ON image (clip_vision_embedding_status) WHERE clip_vision_embedding_status = true;
+
+-- Indexes for face detection status columns
+CREATE INDEX IF NOT EXISTS idx_image_face_det_status ON image (face_detection_status) WHERE face_detection_status = true;
+CREATE INDEX IF NOT EXISTS idx_image_face_emb_status ON image (face_embedding_status) WHERE face_embedding_status = true;
+CREATE INDEX IF NOT EXISTS idx_image_face_cluster_status ON image (face_clustering_status) WHERE face_clustering_status = true;
+            ";
+            
+            await _connection.ExecuteAsync(sql);
+            
+            Diffusion.Common.Logger.Log("V9 migration completed successfully - queue columns now use three-state logic");
+        }
+        catch (Exception ex)
+        {
+            Diffusion.Common.Logger.Log($"Migration V9 failed: {ex.Message}");
             throw;
         }
     }

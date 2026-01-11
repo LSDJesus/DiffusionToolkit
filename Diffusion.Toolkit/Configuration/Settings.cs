@@ -115,32 +115,44 @@ public class Settings : SettingsContainer, IScanOptions
     private List<DatabaseProfile>? _databaseProfiles;
     private string? _activeDatabaseProfile;
     
-    // Tagging settings
-    private int _taggingConcurrentWorkers = 4;
-    private bool _skipAlreadyTaggedImages = false;
-    private string _taggingGpuDevices = "0";
-    private string _taggingGpuVramRatios = "32";
+    // Global GPU Settings (V9) - shared by all processing pipelines
+    private string _gpuDevices = "0";           // CUDA device IDs (e.g., "0" or "0,1")
+    private string _gpuVramCapacity = "32";     // VRAM per GPU in GB (e.g., "32" or "32,10")
+    private int _maxVramUsagePercent = 85;      // Maximum VRAM usage percentage (50-95%)
     
-    // Captioning settings
+    // Processing skip settings
+    private bool _skipAlreadyTaggedImages = false;
     private bool _skipAlreadyCaptionedImages = false;
+    private bool _skipAlreadyEmbeddedImages = true;
+    private bool _skipAlreadyProcessedFaces = true;
+    
+    // Legacy settings (deprecated - kept for migration)
+    [Obsolete("Use global GPU settings instead")]
+    private int _taggingConcurrentWorkers = 4;
+    [Obsolete("Use global GpuDevices instead")]
+    private string _taggingGpuDevices = "0";
+    [Obsolete("Use global GpuVramCapacity instead")]
+    private string _taggingGpuVramRatios = "32";
+    [Obsolete("Use global GpuDevices instead")]
     private string _captioningGpuDevices = "0";
+    [Obsolete("Handled by orchestrator")]
     private string _captioningModelsPerDevice = "3";
     private int _captioningModelTTLMinutes = 2;
-    
-    // Embedding settings
-    private int _embeddingConcurrentWorkers = 9;  // Default: 7 on GPU0 + 2 on GPU1
+    [Obsolete("Handled by orchestrator")]
+    private int _embeddingConcurrentWorkers = 3;
+    [Obsolete("Use global GpuDevices instead")]
     private string _embeddingGpuDevices = "0,1";
-    private string _embeddingGpuVramRatios = "32,12";  // RTX 5090 + RTX 3080 Ti
+    [Obsolete("Use global GpuVramCapacity instead")]
+    private string _embeddingGpuVramRatios = "32,10";
     private int _embeddingBatchSize = 32;
-    private bool _skipAlreadyEmbeddedImages = true;
-    
-    // Face detection settings
-    private int _faceDetectionConcurrentWorkers = 4;
+    [Obsolete("Handled by orchestrator")]
+    private int _faceDetectionConcurrentWorkers = 2;
+    [Obsolete("Use global GpuDevices instead")]
     private string _faceDetectionGpuDevices = "0";
     private float _faceDetectionConfidenceThreshold = 0.5f;
     private float _faceClusterThreshold = 0.6f;  // Similarity threshold for auto-clustering
     private float _faceRecognitionThreshold = 0.65f;  // Similarity threshold for grouping/matching faces
-    private bool _skipAlreadyProcessedFaces = true;
+    // _skipAlreadyProcessedFaces moved to global processing settings
     private bool _storeFaceCrops = true;  // Store face crop images
     private bool _autoClusterFaces = true;  // Automatically cluster similar faces
     
@@ -777,10 +789,31 @@ public class Settings : SettingsContainer, IScanOptions
         set => UpdateValue(ref _tagDialogCaptionEnabled, value);
     }
 
+    // Global GPU Settings
+    public string GpuDevices
+    {
+        get => _gpuDevices;
+        set => UpdateValue(ref _gpuDevices, value ?? "0");
+    }
+
+    public string GpuVramCapacity
+    {
+        get => _gpuVramCapacity;
+        set => UpdateValue(ref _gpuVramCapacity, value ?? "32");
+    }
+
+    public int MaxVramUsagePercent
+    {
+        get => _maxVramUsagePercent;
+        set => UpdateValue(ref _maxVramUsagePercent, Math.Max(50, Math.Min(95, value)));
+    }
+
+    // Legacy properties - delegate to global settings for backward compatibility
+    [Obsolete("Use GpuDevices instead")]
     public int TaggingConcurrentWorkers
     {
         get => _taggingConcurrentWorkers;
-        set => UpdateValue(ref _taggingConcurrentWorkers, Math.Max(1, Math.Min(30, value))); // 1-30 workers
+        set => UpdateValue(ref _taggingConcurrentWorkers, Math.Max(1, Math.Min(30, value)));
     }
 
     public bool SkipAlreadyTaggedImages
@@ -789,15 +822,17 @@ public class Settings : SettingsContainer, IScanOptions
         set => UpdateValue(ref _skipAlreadyTaggedImages, value);
     }
 
+    [Obsolete("Use GpuDevices instead")]
     public string TaggingGpuDevices
     {
-        get => _taggingGpuDevices;
+        get => _gpuDevices; // Delegate to global
         set => UpdateValue(ref _taggingGpuDevices, value ?? "0");
     }
 
+    [Obsolete("Use GpuVramCapacity instead")]
     public string TaggingGpuVramRatios
     {
-        get => _taggingGpuVramRatios;
+        get => _gpuVramCapacity; // Delegate to global
         set => UpdateValue(ref _taggingGpuVramRatios, value ?? "32");
     }
 
@@ -807,12 +842,14 @@ public class Settings : SettingsContainer, IScanOptions
         set => UpdateValue(ref _skipAlreadyCaptionedImages, value);
     }
 
+    [Obsolete("Use GpuDevices instead")]
     public string CaptioningGpuDevices
     {
-        get => _captioningGpuDevices;
+        get => _gpuDevices; // Delegate to global
         set => UpdateValue(ref _captioningGpuDevices, value ?? "0");
     }
 
+    [Obsolete("Handled by GPU orchestrator")]
     public string CaptioningModelsPerDevice
     {
         get => _captioningModelsPerDevice;
@@ -822,7 +859,7 @@ public class Settings : SettingsContainer, IScanOptions
     public int CaptioningModelTTLMinutes
     {
         get => _captioningModelTTLMinutes;
-        set => UpdateValue(ref _captioningModelTTLMinutes, Math.Max(-1, Math.Min(60, value))); // -1=keep loaded, 0=instant, 1-60 min
+        set => UpdateValue(ref _captioningModelTTLMinutes, Math.Max(-1, Math.Min(60, value)));
     }
 
     // Embedding settings
@@ -832,21 +869,24 @@ public class Settings : SettingsContainer, IScanOptions
         set => UpdateValue(ref _tagDialogEmbeddingEnabled, value);
     }
 
+    [Obsolete("Handled by GPU orchestrator")]
     public int EmbeddingConcurrentWorkers
     {
         get => _embeddingConcurrentWorkers;
         set => UpdateValue(ref _embeddingConcurrentWorkers, Math.Max(1, Math.Min(16, value)));
     }
 
+    [Obsolete("Use GpuDevices instead")]
     public string EmbeddingGpuDevices
     {
-        get => _embeddingGpuDevices;
+        get => _gpuDevices; // Delegate to global
         set => UpdateValue(ref _embeddingGpuDevices, value);
     }
 
+    [Obsolete("Use GpuVramCapacity instead")]
     public string EmbeddingGpuVramRatios
     {
-        get => _embeddingGpuVramRatios;
+        get => _gpuVramCapacity; // Delegate to global
         set => UpdateValue(ref _embeddingGpuVramRatios, value);
     }
 
@@ -869,15 +909,17 @@ public class Settings : SettingsContainer, IScanOptions
         set => UpdateValue(ref _tagDialogFaceDetectionEnabled, value);
     }
 
+    [Obsolete("Handled by GPU orchestrator")]
     public int FaceDetectionConcurrentWorkers
     {
         get => _faceDetectionConcurrentWorkers;
         set => UpdateValue(ref _faceDetectionConcurrentWorkers, Math.Max(1, Math.Min(16, value)));
     }
 
+    [Obsolete("Use GpuDevices instead")]
     public string FaceDetectionGpuDevices
     {
-        get => _faceDetectionGpuDevices;
+        get => _gpuDevices; // Delegate to global
         set => UpdateValue(ref _faceDetectionGpuDevices, value);
     }
 

@@ -31,29 +31,31 @@ public class ToastService
 
     private void DisplayToast()
     {
-        if (_settings.ShowNotifications)
+        if (_settings == null || !_settings.ShowNotifications)
         {
-            _dispatcher.Invoke(() =>
-            {
-                if (_toastMessages.Any())
-                {
-                    var toast = _toastMessages.Dequeue();
-                    _popup.IsOpen = true;
-                    ServiceLocator.MainModel.ToastMessage = toast.Message;
-
-                    Task.Delay(toast.Timeout * 1000).ContinueWith((_) =>
-                    {
-                        DismissToast();
-                    });
-                }
-            });
+            return;
         }
 
+        _dispatcher.Invoke(() =>
+        {
+            if (_toastMessages.Any())
+            {
+                var toast = _toastMessages.Dequeue();
+                _popup.IsOpen = true;
+                ServiceLocator.MainModel.ToastMessage = toast.Message;
+
+                Task.Delay(toast.Timeout * 1000).ContinueWith((_) =>
+                {
+                    DismissToast();
+                });
+            }
+        });
     }
 
     public void Toast(string message, string caption, int timeout = 5)
     {
-        if (!_settings.ShowNotifications)
+        // Null safety for early startup calls before settings are loaded
+        if (_settings == null || !_settings.ShowNotifications)
         {
             return;
         }

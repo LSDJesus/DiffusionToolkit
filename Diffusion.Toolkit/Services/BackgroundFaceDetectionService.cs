@@ -39,6 +39,7 @@ public class BackgroundFaceDetectionService : IDisposable
     public event EventHandler<ProgressEventArgs>? FaceDetectionProgressChanged;
     public event EventHandler? FaceDetectionCompleted;
     public event EventHandler<string>? StatusChanged;
+    public event EventHandler? QueueCountChanged;
 
     public bool IsFaceDetectionRunning => _isFaceDetectionRunning;
     public bool IsFaceDetectionPaused => _isFaceDetectionPaused;
@@ -60,12 +61,52 @@ public class BackgroundFaceDetectionService : IDisposable
         StopFaceDetection();
     }
 
+    /// <summary>
+    /// Refresh face detection queue count from the database and notify UI
+    /// </summary>
+    public async Task RefreshQueueCountAsync()
+    {
+        try
+        {
+            var (_, _, _, faceDetection) = await _dataStore.GetPendingCountsAsync();
+            _faceDetectionQueueRemaining = faceDetection;
+            RaiseQueueCountChanged();
+            Logger.Log($"Face detection queue count refreshed: {faceDetection}");
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"Error refreshing face detection queue count: {ex.Message}");
+        }
+    }
+
     private void RaiseFaceDetectionProgress(int current, int total)
     {
         Application.Current?.Dispatcher?.InvokeAsync(() =>
         {
             FaceDetectionProgressChanged?.Invoke(this, new ProgressEventArgs(current, total));
         });
+    }
+
+    private void RaiseQueueCountChanged()
+    {
+        try
+        {
+            Application.Current?.Dispatcher?.InvokeAsync(() =>
+            {
+                try
+                {
+                    QueueCountChanged?.Invoke(this, EventArgs.Empty);
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log($"Error in QueueCountChanged event: {ex.Message}");
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"Error raising QueueCountChanged: {ex.Message}");
+        }
     }
 
     private void RaiseFaceDetectionCompleted()
@@ -83,9 +124,54 @@ public class BackgroundFaceDetectionService : IDisposable
             StatusChanged?.Invoke(this, status);
         });
     }
+    
+    /// <summary>
+    /// Get allocation plan from GPU orchestrator
+    /// </summary>
+    private List<(int GpuId, int WorkerCount)> GetAllocationPlan(ProcessPriority processType)
+    {
+        var orchestrator = ServiceLocator.GpuOrchestrator;
+        if (orchestrator == null)
+        {
+            // Fallback to default single GPU
+            Logger.Log($"GPU Orchestrator not available, using fallback allocation for {processType}");
+            return new List<(int, int)> { (0, 2) };
+        }
+        
+        // Get optimal plan from orchestrator
+        var fullPlan = orchestrator.GetOptimalAllocationPlan();
+        
+        // Filter to this process type and aggregate workers per GPU
+        var filteredPlan = fullPlan
+            .Where(p => p.Priority == processType)
+            .GroupBy(p => p.GpuId)
+            .Select(g => (GpuId: g.Key, WorkerCount: g.Sum(x => x.WorkerCount)))
+            .ToList();
+        
+        if (filteredPlan.Count == 0)
+        {
+            // No allocation available - try to get at least one
+            return new List<(int, int)> { (0, 2) };
+        }
+        
+        return filteredPlan;
+    }
+    
+    /// <summary>
+    /// Update orchestrator with queue status
+    /// </summary>
+    private void UpdateOrchestratorStatus(ProcessPriority processType, int total, int processed, int activeWorkers, bool isRunning)
+    {
+        ServiceLocator.GpuOrchestrator?.UpdateQueueStatus(
+            processType, 
+            total: total, 
+            processed: processed, 
+            activeWorkers: activeWorkers, 
+            isRunning: isRunning);
+    }
 
     /// <summary>
-    /// Start background face detection with multi-GPU worker pool
+    /// Start background face detection with multi-GPU worker pool - uses GPU orchestrator
     /// </summary>
     public void StartFaceDetection()
     {
@@ -106,20 +192,19 @@ public class BackgroundFaceDetectionService : IDisposable
             _faceDetectionStartTime = DateTime.Now;
             _faceDetectionQueueRemaining = 0;
             
-            var gpuDevices = ServiceLocator.Settings?.FaceDetectionGpuDevices ?? "0";
-            var totalWorkers = ServiceLocator.Settings?.FaceDetectionConcurrentWorkers ?? 4;
+            // Get allocation plan from GPU orchestrator
+            var allocationPlan = GetAllocationPlan(ProcessPriority.FaceDetection);
             
-            // Parse GPU device IDs
-            var deviceIds = gpuDevices.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                                       .Select(d => int.TryParse(d, out var id) ? id : 0)
-                                       .Distinct()
-                                       .ToList();
+            if (allocationPlan.Count == 0)
+            {
+                Logger.Log("No GPU allocation available for face detection");
+                _isFaceDetectionRunning = false;
+                return;
+            }
             
-            if (deviceIds.Count == 0) deviceIds.Add(0);
+            var totalWorkers = allocationPlan.Sum(a => a.WorkerCount);
             
-            // Distribute workers across GPUs
-            var workersPerGpu = totalWorkers / deviceIds.Count;
-            var extraWorkers = totalWorkers % deviceIds.Count;
+            Logger.Log($"Face detection allocation plan: {string.Join(", ", allocationPlan.Select(a => $"GPU{a.GpuId}={a.WorkerCount} workers"))}");
             
             // Create unbounded channel for shared work queue
             _faceDetectionQueue = Channel.CreateUnbounded<int>(new UnboundedChannelOptions
@@ -135,7 +220,11 @@ public class BackgroundFaceDetectionService : IDisposable
                 {
                     _faceDetectionTotal = await _dataStore.CountImagesNeedingFaceDetection();
                     _faceDetectionQueueRemaining = _faceDetectionTotal;
+                    RaiseQueueCountChanged();
                     Logger.Log($"Found {_faceDetectionTotal} images for face detection");
+                    
+                    // Update orchestrator with queue status
+                    UpdateOrchestratorStatus(ProcessPriority.FaceDetection, _faceDetectionTotal, 0, totalWorkers, true);
                     
                     const int batchSize = 500;
                     while (!_faceDetectionCts.Token.IsCancellationRequested)
@@ -160,18 +249,15 @@ public class BackgroundFaceDetectionService : IDisposable
                 }
             });
             
-            // Create workers
+            // Create workers based on allocation plan
             _faceDetectionOrchestrators = new List<Task>();
             int workerIndex = 0;
             
-            for (int i = 0; i < deviceIds.Count; i++)
+            foreach (var (gpuId, workerCount) in allocationPlan)
             {
-                int gpuId = deviceIds[i];
-                int workersOnGpu = workersPerGpu + (i < extraWorkers ? 1 : 0);
+                Logger.Log($"GPU {gpuId}: Creating {workerCount} face detection workers");
                 
-                Logger.Log($"GPU {gpuId}: Creating {workersOnGpu} face detection workers");
-                
-                for (int w = 0; w < workersOnGpu; w++)
+                for (int w = 0; w < workerCount; w++)
                 {
                     int currentWorkerIndex = workerIndex++;
                     var workerTask = Task.Run(async () =>
@@ -190,13 +276,12 @@ public class BackgroundFaceDetectionService : IDisposable
                 }
             }
             
-            Logger.Log($"Started {totalWorkers} face detection workers across {deviceIds.Count} GPU(s)");
+            Logger.Log($"Started {totalWorkers} face detection workers via GPU orchestrator");
         }
         catch (Exception ex)
         {
             Logger.Log($"Failed to start face detection: {ex.Message}\n{ex.StackTrace}");
-            _isFaceDetectionRunning = false;
-        }
+            _isFaceDetectionRunning = false;            UpdateOrchestratorStatus(ProcessPriority.FaceDetection, 0, 0, 0, false);        }
     }
 
     public void PauseFaceDetection()
@@ -239,6 +324,11 @@ public class BackgroundFaceDetectionService : IDisposable
         }
         
         _faceDetectionOrchestrators?.Clear();
+        
+        // Notify orchestrator that face detection is stopped
+        UpdateOrchestratorStatus(ProcessPriority.FaceDetection, _faceDetectionTotal, _faceDetectionProgress, 0, false);
+        ServiceLocator.GpuOrchestrator?.MarkQueueCompleted(ProcessPriority.FaceDetection);
+        
         Logger.Log("Face detection stopped");
     }
 

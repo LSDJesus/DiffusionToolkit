@@ -37,7 +37,14 @@ public class ScanningService
 
     private string GetLocalizedText(string key)
     {
-        return (string)JsonLocalizationProvider.Instance.GetLocalizedObject(key, null, CultureInfo.InvariantCulture);
+        try
+        {
+            return (string?)JsonLocalizationProvider.Instance?.GetLocalizedObject(key, null, CultureInfo.InvariantCulture) ?? key;
+        }
+        catch
+        {
+            return key;
+        }
     }
 
     private Settings _settings => ServiceLocator.Settings!;
@@ -196,13 +203,27 @@ public class ScanningService
     public async Task ScanWatchedFolders(bool updateImages, bool reportIfNone, CancellationToken cancellationToken)
     {
         Logger.Log($"ScanWatchedFolders called - updateImages={updateImages}, reportIfNone={reportIfNone}");
+        
+        // Ensure required services are available
+        if (ServiceLocator.DataStore == null)
+        {
+            Logger.Log("ScanWatchedFolders: DataStore is null, aborting");
+            return;
+        }
+        
+        if (ServiceLocator.FolderService == null)
+        {
+            Logger.Log("ScanWatchedFolders: FolderService is null, aborting");
+            return;
+        }
+        
         bool foldersUnavailable = false;
         bool foldersRestored = false;
 
         var unavailable = 0;
         var added = 0;
 
-        ServiceLocator.ProgressService.SetStatus(GetLocalizedText("Actions.Scanning.BeginScanning"));
+        ServiceLocator.ProgressService?.SetStatus(GetLocalizedText("Actions.Scanning.BeginScanning"));
 
         try
         {
@@ -253,15 +274,15 @@ public class ScanningService
                 if (addedCount > 0)
                 {
                     Logger.Log($"Quick scan complete: {addedCount} new files indexed. Use 'Rebuild' to extract full metadata.");
-                    ServiceLocator.ToastService.Toast($"{addedCount} images quick-scanned. Use Rebuild for full metadata extraction.", "Quick Scan Complete");
+                    ServiceLocator.ToastService?.Toast($"{addedCount} images quick-scanned. Use Rebuild for full metadata extraction.", "Quick Scan Complete");
                     
                     // Refresh UI immediately after quick scan so images appear right away
-                    ServiceLocator.SearchService.RefreshResults();
+                    ServiceLocator.SearchService?.RefreshResults();
                 }
                 else
                 {
                     Logger.Log("Quick scan complete: No new files found.");
-                    ServiceLocator.ToastService.Toast("No new images found", "Quick Scan Complete");
+                    ServiceLocator.ToastService?.Toast("No new images found", "Quick Scan Complete");
                 }
             }
             else

@@ -82,14 +82,21 @@ public class SettingsModel : BaseNotify
     private bool _writeCaptionsToMetadata;
     private bool _writeGenerationParamsToMetadata;
     
-    // Tagging processing settings
-    private int _taggingConcurrentWorkers = 4;
+    // Global GPU Settings
+    private string _gpuDevices = "0";
+    private string _gpuVramCapacity = "32";
+    private int _maxVramUsagePercent = 85;
+    
+    // Processing skip settings
     private bool _skipAlreadyTaggedImages;
+    private bool _skipAlreadyCaptionedImages;
+    private bool _skipAlreadyEmbeddedImages = true;
+    private bool _skipAlreadyProcessedFaces = true;
+    
+    // Legacy settings (kept for UI binding compatibility during transition)
+    private int _taggingConcurrentWorkers = 4;
     private string _taggingGpuDevices = "0";
     private string _taggingGpuVramRatios = "32";
-    
-    // Captioning processing settings
-    private bool _skipAlreadyCaptionedImages;
     private string _captioningGpuDevices = "0";
     private string _captioningModelsPerDevice = "3";
     private int _captioningModelTTLMinutes = 2;
@@ -600,44 +607,80 @@ public class SettingsModel : BaseNotify
         set => SetField(ref _externalCaptionApiKey, value);
     }
 
-    // Tagging processing settings
-    public int TaggingConcurrentWorkers
+    // Global GPU Settings
+    public string GpuDevices
     {
-        get => _taggingConcurrentWorkers;
-        set => SetField(ref _taggingConcurrentWorkers, Math.Max(1, Math.Min(30, value))); // 1-30 workers
+        get => _gpuDevices;
+        set => SetField(ref _gpuDevices, value);
     }
 
+    public string GpuVramCapacity
+    {
+        get => _gpuVramCapacity;
+        set => SetField(ref _gpuVramCapacity, value);
+    }
+
+    public int MaxVramUsagePercent
+    {
+        get => _maxVramUsagePercent;
+        set => SetField(ref _maxVramUsagePercent, Math.Max(50, Math.Min(95, value)));
+    }
+
+    // Processing skip settings
     public bool SkipAlreadyTaggedImages
     {
         get => _skipAlreadyTaggedImages;
         set => SetField(ref _skipAlreadyTaggedImages, value);
     }
 
-    public string TaggingGpuDevices
-    {
-        get => _taggingGpuDevices;
-        set => SetField(ref _taggingGpuDevices, value);
-    }
-
-    public string TaggingGpuVramRatios
-    {
-        get => _taggingGpuVramRatios;
-        set => SetField(ref _taggingGpuVramRatios, value);
-    }
-
-    // Captioning processing settings
     public bool SkipAlreadyCaptionedImages
     {
         get => _skipAlreadyCaptionedImages;
         set => SetField(ref _skipAlreadyCaptionedImages, value);
     }
 
+    public bool SkipAlreadyEmbeddedImages
+    {
+        get => _skipAlreadyEmbeddedImages;
+        set => SetField(ref _skipAlreadyEmbeddedImages, value);
+    }
+
+    public bool SkipAlreadyProcessedFaces
+    {
+        get => _skipAlreadyProcessedFaces;
+        set => SetField(ref _skipAlreadyProcessedFaces, value);
+    }
+
+    // Legacy settings (kept for backward compatibility)
+    [Obsolete("Use global GPU settings instead")]
+    public int TaggingConcurrentWorkers
+    {
+        get => _taggingConcurrentWorkers;
+        set => SetField(ref _taggingConcurrentWorkers, Math.Max(1, Math.Min(30, value)));
+    }
+
+    [Obsolete("Use GpuDevices instead")]
+    public string TaggingGpuDevices
+    {
+        get => _taggingGpuDevices;
+        set => SetField(ref _taggingGpuDevices, value);
+    }
+
+    [Obsolete("Use GpuVramCapacity instead")]
+    public string TaggingGpuVramRatios
+    {
+        get => _taggingGpuVramRatios;
+        set => SetField(ref _taggingGpuVramRatios, value);
+    }
+
+    [Obsolete("Use GpuDevices instead")]
     public string CaptioningGpuDevices
     {
         get => _captioningGpuDevices;
         set => SetField(ref _captioningGpuDevices, value);
     }
 
+    [Obsolete("Handled by GPU orchestrator")]
     public string CaptioningModelsPerDevice
     {
         get => _captioningModelsPerDevice;

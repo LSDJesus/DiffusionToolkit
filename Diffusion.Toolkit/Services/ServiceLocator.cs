@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Threading.Tasks;
 using System.Windows.Controls.Primitives;
 using System.Windows.Forms;
 using System.Windows;
@@ -57,6 +58,7 @@ public class ServiceLocator
     private static ModelResourceService? _modelResourceService;
     private static BackgroundTaggingService? _backgroundTaggingService;
     private static BackgroundFaceDetectionService? _backgroundFaceDetectionService;
+    private static GpuResourceOrchestrator? _gpuResourceOrchestrator;
 
     public static PostgreSQLDataStore? DataStore => _dataStore; // Primary PostgreSQL database
     public static Settings? Settings => _settings;
@@ -64,6 +66,7 @@ public class ServiceLocator
     public static Dispatcher? Dispatcher { get; set; }
     public static BackgroundTaggingService? BackgroundTaggingService => _backgroundTaggingService;
     public static BackgroundFaceDetectionService? BackgroundFaceDetectionService => _backgroundFaceDetectionService;
+    public static GpuResourceOrchestrator? GpuOrchestrator => _gpuResourceOrchestrator;
 
     public static void SetDataStore(PostgreSQLDataStore dataStore)
     {
@@ -71,6 +74,38 @@ public class ServiceLocator
         // Initialize BackgroundTaggingService when DataStore is set
         _backgroundTaggingService = new BackgroundTaggingService(dataStore);
         _backgroundFaceDetectionService = new BackgroundFaceDetectionService(dataStore);
+        
+        // Refresh queue counts from database on startup
+        Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(500); // Brief delay to let UI initialize
+                if (_backgroundTaggingService != null)
+                    await _backgroundTaggingService.RefreshQueueCountsAsync();
+                if (_backgroundFaceDetectionService != null)
+                    await _backgroundFaceDetectionService.RefreshQueueCountAsync();
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"Error refreshing queue counts on startup: {ex.Message}");
+            }
+        });
+    }
+
+    public static void InitializeGpuOrchestrator()
+    {
+        if (_gpuResourceOrchestrator != null) return;
+        
+        _gpuResourceOrchestrator = new GpuResourceOrchestrator();
+        
+        var gpuDevices = _settings?.GpuDevices ?? "0";
+        var gpuVram = _settings?.GpuVramCapacity ?? "32";
+        var maxUsage = (_settings?.MaxVramUsagePercent ?? 85) / 100.0;
+        
+        _gpuResourceOrchestrator.Initialize(gpuDevices, gpuVram, maxUsage);
+        
+        Logger.Log($"GPU Orchestrator initialized: devices={gpuDevices}, vram={gpuVram}, maxUsage={maxUsage:P0}");
     }
 
     public static void SetSettings(Settings? settings)

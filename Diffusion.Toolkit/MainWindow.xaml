@@ -175,20 +175,18 @@
                             
                             <!-- Database Profile Switcher -->
                             <ComboBox x:Name="DatabaseProfileSwitcher"
-                                      Width="150" Height="22" Margin="10,0,0,0"
-                                      ToolTip="Switch database profile (Ctrl+Shift+D)"
+                                      Width="150" Height="22" Margin="10,0,10,0"
+                                      ToolTip="Switch database profile"
                                       SelectionChanged="DatabaseProfile_SelectionChanged"
+                                      SelectedValuePath="Name"
                                       Background="{DynamicResource BackgroundBrushSecondary}"
                                       Foreground="{DynamicResource ForegroundBrush}"
                                       BorderBrush="{DynamicResource BorderBrush}">
                                 <ComboBox.ItemTemplate>
                                     <DataTemplate>
                                         <StackPanel Orientation="Horizontal">
-                                            <Ellipse Width="8" Height="8" Margin="0,0,6,0" VerticalAlignment="Center">
-                                                <Ellipse.Fill>
-                                                    <SolidColorBrush Color="{Binding Color, FallbackValue=#808080}"/>
-                                                </Ellipse.Fill>
-                                            </Ellipse>
+                                            <Ellipse Width="8" Height="8" Margin="0,0,6,0" VerticalAlignment="Center" 
+                                                     Fill="{Binding Color, FallbackValue=#808080}"/>
                                             <TextBlock Text="{Binding Name}"/>
                                         </StackPanel>
                                     </DataTemplate>

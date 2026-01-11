@@ -172,6 +172,7 @@ namespace Diffusion.Toolkit
                     ServiceLocator.BackgroundFaceDetectionService.FaceDetectionProgressChanged += OnFaceDetectionProgressChanged;
                     ServiceLocator.BackgroundFaceDetectionService.FaceDetectionCompleted += OnFaceDetectionCompleted;
                     ServiceLocator.BackgroundFaceDetectionService.StatusChanged += OnFaceDetectionStatusChanged;
+                    ServiceLocator.BackgroundFaceDetectionService.QueueCountChanged += OnFaceDetectionQueueCountChanged;
                 }
 
                 InitEvents();
@@ -991,6 +992,9 @@ namespace Diffusion.Toolkit
 
             Logger.Log($"Starting Services...");
 
+            // Initialize GPU Resource Orchestrator with settings
+            ServiceLocator.InitializeGpuOrchestrator();
+
             ServiceLocator.ThumbnailService.Size = _settings.ThumbnailSize;
 
             _ = ServiceLocator.ThumbnailService.StartAsync();
@@ -1062,16 +1066,24 @@ namespace Diffusion.Toolkit
 
                         _ = Task.Run(async () =>
                         {
-                            if (await ServiceLocator.ProgressService.TryStartTask())
+                            try
                             {
-                                try
+                                if (await ServiceLocator.ProgressService.TryStartTask())
                                 {
-                                    await ServiceLocator.ScanningService.ScanWatchedFolders(false, false, ServiceLocator.ProgressService.CancellationToken);
+                                    try
+                                    {
+                                        await ServiceLocator.ScanningService.ScanWatchedFolders(false, false, ServiceLocator.ProgressService.CancellationToken);
+                                    }
+                                    finally
+                                    {
+                                        ServiceLocator.ProgressService.CompleteTask();
+                                    }
                                 }
-                                finally
-                                {
-                                    ServiceLocator.ProgressService.CompleteTask();
-                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                Logger.Log($"Error in startup scan: {ex.Message}");
+                                Logger.Log($"  Stack: {ex.StackTrace}");
                             }
                         });
                     }
@@ -1885,6 +1897,17 @@ namespace Diffusion.Toolkit
             });
         }
 
+        private void OnFaceDetectionQueueCountChanged(object? sender, EventArgs e)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                if (ServiceLocator.BackgroundFaceDetectionService != null)
+                {
+                    _model.FaceDetectionQueueCount = ServiceLocator.BackgroundFaceDetectionService.FaceDetectionQueueRemaining;
+                }
+            });
+        }
+
         private async void DatabaseProfile_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (DatabaseProfileSwitcher?.SelectedItem is DatabaseProfile profile)
@@ -1903,7 +1926,7 @@ namespace Diffusion.Toolkit
                 if (result == MessageBoxResult.Yes)
                 {
                     _settings.ActiveDatabaseProfile = profile.Name;
-                    _settings.Save();
+                    _configuration.Save(_settings);
 
                     // Restart application
                     System.Diagnostics.Process.Start(Environment.ProcessPath ?? System.Diagnostics.Process.GetCurrentProcess().MainModule!.FileName);
@@ -1916,6 +1939,22 @@ namespace Diffusion.Toolkit
                     DatabaseProfileSwitcher.SelectedValue = _settings.ActiveDatabaseProfile;
                     DatabaseProfileSwitcher.SelectionChanged += DatabaseProfile_SelectionChanged;
                 }
+            }
+        }
+
+        /// <summary>
+        /// Refresh the database profile switcher dropdown (call after profiles are added/edited/deleted)
+        /// </summary>
+        public void RefreshDatabaseProfileSwitcher()
+        {
+            if (DatabaseProfileSwitcher != null && _settings != null)
+            {
+                var profiles = _settings.DatabaseProfiles ?? new List<DatabaseProfile>();
+                DatabaseProfileSwitcher.SelectionChanged -= DatabaseProfile_SelectionChanged;
+                DatabaseProfileSwitcher.ItemsSource = null; // Clear first to force refresh
+                DatabaseProfileSwitcher.ItemsSource = profiles;
+                DatabaseProfileSwitcher.SelectedValue = _settings.ActiveDatabaseProfile;
+                DatabaseProfileSwitcher.SelectionChanged += DatabaseProfile_SelectionChanged;
             }
         }
 

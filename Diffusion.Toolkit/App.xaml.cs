@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Windows;
 
 namespace Diffusion.Toolkit
@@ -42,7 +43,16 @@ namespace Diffusion.Toolkit
 
         private void OnUnobservedTaskException(object sender, System.Threading.Tasks.UnobservedTaskExceptionEventArgs e)
         {
-            Diffusion.Common.Logger.Log($"UNOBSERVED TASK EXCEPTION: {e.Exception.Message}\n{e.Exception.StackTrace}");
+            var ex = e.Exception.Flatten();
+            var innerEx = ex.InnerExceptions.FirstOrDefault() ?? ex;
+            Diffusion.Common.Logger.Log($"UNOBSERVED TASK EXCEPTION: {innerEx.Message}");
+            Diffusion.Common.Logger.Log($"  Type: {innerEx.GetType().FullName}");
+            Diffusion.Common.Logger.Log($"  Stack: {innerEx.StackTrace}");
+            if (innerEx.InnerException != null)
+            {
+                Diffusion.Common.Logger.Log($"  Inner: {innerEx.InnerException.Message}");
+                Diffusion.Common.Logger.Log($"  Inner Stack: {innerEx.InnerException.StackTrace}");
+            }
             e.SetObserved(); // Prevent crash
         }
 

@@ -823,7 +823,7 @@ namespace Diffusion.Toolkit.Controls
             UnrateSelected();
         }
 
-        private void TagCaption_OnClick(object sender, RoutedEventArgs e)
+        private async void TagCaption_OnClick(object sender, RoutedEventArgs e)
         {
             var selectedImages = ThumbnailListView.SelectedItems.Cast<ImageEntry>()
                 .Where(img => img.Id > 0)
@@ -844,12 +844,16 @@ namespace Diffusion.Toolkit.Controls
             
             if (window.ShowDialog() == true)
             {
-                // Refresh the current view
-                if (ServiceLocator.ToastService != null)
+                // Check which button was clicked and queue for processing
+                if (window.SelectedProcessMode == Diffusion.Toolkit.Windows.TaggingWindow.ProcessMode.AddToQueue)
                 {
-                    ServiceLocator.ToastService.Toast(
-                        $"Successfully processed {selectedImages.Count} image(s)", 
-                        "Complete");
+                    // Queue for background processing
+                    await QueueImagesToBackground(selectedImages, window);
+                }
+                else if (window.SelectedProcessMode == Diffusion.Toolkit.Windows.TaggingWindow.ProcessMode.ProcessNow)
+                {
+                    // Queue with high priority (front of queue)
+                    await QueueImagesToBackground(selectedImages, window, highPriority: true);
                 }
             }
         }
@@ -1109,6 +1113,164 @@ namespace Diffusion.Toolkit.Controls
                 }
             }
 
+        }
+
+        /// <summary>
+        /// Queue images to background processing based on tagging window selections
+        /// </summary>
+        private async Task QueueImagesToBackground(List<int> imageIds, Diffusion.Toolkit.Windows.TaggingWindow window, bool highPriority = false)
+        {
+            var dataStore = ServiceLocator.DataStore;
+            var bgService = ServiceLocator.BackgroundTaggingService;
+            var settings = ServiceLocator.Settings;
+            
+            if (dataStore == null || bgService == null)
+            {
+                MessageBox.Show("Background service not available.", 
+                    "Error", 
+                    MessageBoxButton.OK, 
+                    MessageBoxImage.Error);
+                return;
+            }
+
+            // Get checkbox states
+            var autoTagCheckBox = window.FindName("AutoTagCheckBox") as CheckBox;
+            var joyCaptionCheckBox = window.FindName("JoyCaptionCheckBox") as CheckBox;
+            var embeddingCheckBox = window.FindName("EmbeddingCheckBox") as CheckBox;
+            var faceDetectionCheckBox = window.FindName("FaceDetectionCheckBox") as CheckBox;
+
+            bool doTagging = autoTagCheckBox?.IsChecked == true;
+            bool doCaptioning = joyCaptionCheckBox?.IsChecked == true;
+            bool doEmbedding = embeddingCheckBox?.IsChecked == true;
+            bool doFaceDetection = faceDetectionCheckBox?.IsChecked == true;
+
+            int taggedQueued = 0;
+            int captionQueued = 0;
+            int embeddingQueued = 0;
+            int faceDetectionQueued = 0;
+
+            // Queue for tagging (filter based on skip settings)
+            if (doTagging)
+            {
+                var imagesToTag = imageIds;
+                
+                // Check skip already tagged setting
+                if (settings?.SkipAlreadyTaggedImages == true)
+                {
+                    // Filter out images that already have tags
+                    var imagesWithTags = new List<int>();
+                    foreach (var imageId in imageIds)
+                    {
+                        var tags = await dataStore.GetImageTagsAsync(imageId);
+                        if (tags != null && tags.Any())
+                        {
+                            imagesWithTags.Add(imageId);
+                        }
+                    }
+                    imagesToTag = imageIds.Except(imagesWithTags).ToList();
+                    
+                    if (imagesWithTags.Count > 0)
+                    {
+                        Logger.Log($"Skipped {imagesWithTags.Count} images that already have tags");
+                    }
+                }
+                
+                if (imagesToTag.Count > 0)
+                {
+                    await dataStore.SetNeedsTagging(imagesToTag, true);
+                    taggedQueued = imagesToTag.Count;
+                }
+            }
+
+            // Queue for captioning (filter based on skip settings)
+            if (doCaptioning)
+            {
+                var imagesToCaption = imageIds;
+                
+                // Check skip already captioned setting
+                if (settings?.SkipAlreadyCaptionedImages == true)
+                {
+                    // Filter out images that already have captions
+                    var imagesWithCaptions = new List<int>();
+                    foreach (var imageId in imageIds)
+                    {
+                        var caption = await dataStore.GetLatestCaptionAsync(imageId);
+                        if (caption != null && !string.IsNullOrWhiteSpace(caption.Caption))
+                        {
+                            imagesWithCaptions.Add(imageId);
+                        }
+                    }
+                    imagesToCaption = imageIds.Except(imagesWithCaptions).ToList();
+                    
+                    if (imagesWithCaptions.Count > 0)
+                    {
+                        Logger.Log($"Skipped {imagesWithCaptions.Count} images that already have captions");
+                    }
+                }
+                
+                if (imagesToCaption.Count > 0)
+                {
+                    await dataStore.SetNeedsCaptioning(imagesToCaption, true);
+                    captionQueued = imagesToCaption.Count;
+                }
+            }
+
+            // Queue for embedding
+            if (doEmbedding)
+            {
+                await dataStore.SetNeedsEmbedding(imageIds, true);
+                embeddingQueued = imageIds.Count;
+            }
+
+            // Queue for face detection
+            if (doFaceDetection)
+            {
+                await dataStore.SetNeedsFaceDetection(imageIds, true);
+                faceDetectionQueued = imageIds.Count;
+            }
+
+            var priorityText = highPriority ? " (high priority)" : "";
+            var parts = new List<string>();
+            if (taggedQueued > 0) parts.Add($"{taggedQueued} for tagging");
+            if (captionQueued > 0) parts.Add($"{captionQueued} for captioning");
+            if (embeddingQueued > 0) parts.Add($"{embeddingQueued} for embedding");
+            if (faceDetectionQueued > 0) parts.Add($"{faceDetectionQueued} for face detection");
+            var message = parts.Count > 0 ? $"Queued {string.Join(", ", parts)}{priorityText}" : "No images queued";
+            ServiceLocator.ToastService?.Toast(message, "Background Processing");
+            Logger.Log(message);
+
+            // Ask user if they want to start processing now
+            var result = MessageBox.Show(
+                $"{message}\n\nDo you want to start background processing now?\n\n" +
+                "You can also start/stop processing using the buttons in the status bar.",
+                "Start Processing?",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+
+            if (result == MessageBoxResult.Yes)
+            {
+                // Start the workers
+                if (doTagging && !bgService.IsTaggingRunning)
+                {
+                    bgService.StartTagging();
+                }
+                if (doCaptioning && !bgService.IsCaptioningRunning)
+                {
+                    bgService.StartCaptioning();
+                }
+                if (doEmbedding && !bgService.IsEmbeddingRunning)
+                {
+                    bgService.StartEmbedding();
+                }
+                if (doFaceDetection)
+                {
+                    var faceService = ServiceLocator.BackgroundFaceDetectionService;
+                    if (faceService != null && !faceService.IsFaceDetectionRunning)
+                    {
+                        faceService.StartFaceDetection();
+                    }
+                }
+            }
         }
 
         public void ScrollToBottom()

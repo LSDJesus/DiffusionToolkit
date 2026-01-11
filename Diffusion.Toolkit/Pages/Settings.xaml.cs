@@ -151,17 +151,16 @@ namespace Diffusion.Toolkit.Pages
             _model.WriteCaptionsToMetadata = _settings.WriteCaptionsToMetadata;
             _model.WriteGenerationParamsToMetadata = _settings.WriteGenerationParamsToMetadata;
             
-            // Tagging processing settings
-            _model.TaggingConcurrentWorkers = _settings.TaggingConcurrentWorkers;
-            _model.SkipAlreadyTaggedImages = _settings.SkipAlreadyTaggedImages;
-            _model.TaggingGpuDevices = _settings.TaggingGpuDevices;
-            _model.TaggingGpuVramRatios = _settings.TaggingGpuVramRatios;
+            // Global GPU settings
+            _model.GpuDevices = _settings.GpuDevices;
+            _model.GpuVramCapacity = _settings.GpuVramCapacity;
+            _model.MaxVramUsagePercent = _settings.MaxVramUsagePercent;
             
-            // Captioning processing settings
+            // Processing skip settings
+            _model.SkipAlreadyTaggedImages = _settings.SkipAlreadyTaggedImages;
             _model.SkipAlreadyCaptionedImages = _settings.SkipAlreadyCaptionedImages;
-            _model.CaptioningGpuDevices = _settings.CaptioningGpuDevices;
-            _model.CaptioningModelsPerDevice = _settings.CaptioningModelsPerDevice;
-            _model.CaptioningModelTTLMinutes = _settings.CaptioningModelTTLMinutes;
+            _model.SkipAlreadyEmbeddedImages = _settings.SkipAlreadyEmbeddedImages;
+            _model.SkipAlreadyProcessedFaces = _settings.SkipAlreadyProcessedFaces;
             
             // Initialize schema selector
             InitializeSchemaSelector();
@@ -587,17 +586,22 @@ namespace Diffusion.Toolkit.Pages
                 _settings.WriteCaptionsToMetadata = _model.WriteCaptionsToMetadata;
                 _settings.WriteGenerationParamsToMetadata = _model.WriteGenerationParamsToMetadata;
                 
-                // Tagging processing settings
-                _settings.TaggingConcurrentWorkers = _model.TaggingConcurrentWorkers;
-                _settings.SkipAlreadyTaggedImages = _model.SkipAlreadyTaggedImages;
-                _settings.TaggingGpuDevices = _model.TaggingGpuDevices;
-                _settings.TaggingGpuVramRatios = _model.TaggingGpuVramRatios;
+                // Global GPU settings
+                _settings.GpuDevices = _model.GpuDevices;
+                _settings.GpuVramCapacity = _model.GpuVramCapacity;
+                _settings.MaxVramUsagePercent = _model.MaxVramUsagePercent;
                 
-                // Captioning processing settings
+                // Processing skip settings
+                _settings.SkipAlreadyTaggedImages = _model.SkipAlreadyTaggedImages;
                 _settings.SkipAlreadyCaptionedImages = _model.SkipAlreadyCaptionedImages;
-                _settings.CaptioningGpuDevices = _model.CaptioningGpuDevices;
-                _settings.CaptioningModelsPerDevice = _model.CaptioningModelsPerDevice;
-                _settings.CaptioningModelTTLMinutes = _model.CaptioningModelTTLMinutes;
+                _settings.SkipAlreadyEmbeddedImages = _model.SkipAlreadyEmbeddedImages;
+                _settings.SkipAlreadyProcessedFaces = _model.SkipAlreadyProcessedFaces;
+                
+                // Re-initialize GPU orchestrator with new settings
+                ServiceLocator.GpuOrchestrator?.Initialize(
+                    _model.GpuDevices,
+                    _model.GpuVramCapacity,
+                    _model.MaxVramUsagePercent / 100.0);
 
                 var connection = _dataStore.GetConnection();
                 _model.Host = connection.Host ?? "";
@@ -882,7 +886,13 @@ namespace Diffusion.Toolkit.Pages
                 _settings.DatabaseProfiles = profiles;
                 _model.DatabaseProfiles = new ObservableCollection<DatabaseProfile>(profiles);
                 _settings.ActiveDatabaseProfile = dialog.Profile.Name;
-                _model.IsDirty = true;
+                _model.SetDirty();
+                
+                // Refresh the main window's profile switcher dropdown
+                if (_window is MainWindow mainWindow)
+                {
+                    mainWindow.RefreshDatabaseProfileSwitcher();
+                }
             }
         }
 
@@ -900,7 +910,13 @@ namespace Diffusion.Toolkit.Pages
                         profiles[index] = dialog.Profile;
                         _settings.DatabaseProfiles = profiles;
                         _model.DatabaseProfiles = new ObservableCollection<DatabaseProfile>(profiles);
-                        _model.IsDirty = true;
+                        _model.SetDirty();
+                        
+                        // Refresh the main window's profile switcher dropdown
+                        if (_window is MainWindow mainWindow)
+                        {
+                            mainWindow.RefreshDatabaseProfileSwitcher();
+                        }
                     }
                 }
             }
@@ -931,8 +947,15 @@ namespace Diffusion.Toolkit.Pages
                         _settings.ActiveDatabaseProfile = profiles[0].Name;
                     }
                     
-                    _model.IsDirty = true;
+                    _model.SetDirty();
+                    
+                    // Refresh the main window's profile switcher dropdown
+                    if (_window is MainWindow mainWindow)
+                    {
+                        mainWindow.RefreshDatabaseProfileSwitcher();
+                    }
                 }
             }
         }
-
+    }
+}

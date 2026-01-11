@@ -379,6 +379,54 @@
             </TabItem>
             <TabItem Header="Tagging &amp; Captioning">
                 <StackPanel Width="800" HorizontalAlignment="Left" Margin="10">
+                    
+                    <!-- Global GPU Settings -->
+                    <GroupBox Header="GPU Settings" Margin="0,0,0,15" Padding="10" Foreground="{DynamicResource ForegroundBrush}">
+                        <StackPanel>
+                            <TextBlock TextWrapping="Wrap" Margin="0,0,0,10" Opacity="0.8" FontSize="11"
+                                       Foreground="{DynamicResource ForegroundBrush}">
+                                Configure GPU resources shared by all processing pipelines (tagging, captioning, embedding, face detection).
+                                The system automatically distributes work across GPUs and manages VRAM efficiently.
+                            </TextBlock>
+                            
+                            <Grid Margin="0,0,0,10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="180"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                
+                                <Label Grid.Row="0" Grid.Column="0" Content="GPU Devices:" 
+                                       ToolTip="CUDA device IDs (e.g., '0' for single GPU, '0,1' for dual GPU)"
+                                       Foreground="{DynamicResource ForegroundBrush}"/>
+                                <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding GpuDevices, UpdateSourceTrigger=PropertyChanged}" 
+                                         Width="120" Height="26" VerticalContentAlignment="Center" HorizontalAlignment="Left"
+                                         ToolTip="Enter device IDs: 0, or 0,1"/>
+                                
+                                <Label Grid.Row="1" Grid.Column="0" Content="VRAM Capacity (GB):" 
+                                       ToolTip="Available VRAM per GPU (e.g., '32' or '32,10' for 32GB + 10GB)"
+                                       Foreground="{DynamicResource ForegroundBrush}"/>
+                                <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding GpuVramCapacity, UpdateSourceTrigger=PropertyChanged}" 
+                                         Width="120" Height="26" VerticalContentAlignment="Center" HorizontalAlignment="Left"
+                                         ToolTip="Enter VRAM in GB: 32, or 32,10"/>
+                                
+                                <Label Grid.Row="2" Grid.Column="0" Content="Max VRAM Usage:" 
+                                       ToolTip="Maximum percentage of VRAM to use (50-95%). Leave headroom for stability."
+                                       Foreground="{DynamicResource ForegroundBrush}"/>
+                                <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal">
+                                    <Slider Width="150" Minimum="50" Maximum="95" Value="{Binding MaxVramUsagePercent}" 
+                                            TickFrequency="5" IsSnapToTickEnabled="True" VerticalAlignment="Center"/>
+                                    <Label Content="{Binding MaxVramUsagePercent, StringFormat={}{0}%}" Margin="10,0,0,0" 
+                                           VerticalAlignment="Center" Foreground="{DynamicResource ForegroundBrush}"/>
+                                </StackPanel>
+                            </Grid>
+                        </StackPanel>
+                    </GroupBox>
+                    
                     <GroupBox Header="Auto-Tagging Settings" Margin="0,0,0,15" Padding="10" Foreground="{DynamicResource ForegroundBrush}">
                         <StackPanel>
                             <!-- JoyTag Settings -->
@@ -442,43 +490,13 @@
                             
                             <!-- Performance Settings -->
                             <Separator Margin="0,15,0,15"/>
-                            <TextBlock Text="Performance Settings" FontWeight="Bold" Margin="0,0,0,10" Foreground="{DynamicResource ForegroundBrush}"/>
+                            <TextBlock Text="Processing Options" FontWeight="Bold" Margin="0,0,0,10" Foreground="{DynamicResource ForegroundBrush}"/>
                             
                             <CheckBox IsChecked="{Binding SkipAlreadyTaggedImages}" 
                                       Content="Skip images that already have tags" 
-                                      Margin="0,0,0,15"
+                                      Margin="0,0,0,10"
                                       ToolTip="When enabled, images with existing tags will be skipped during bulk tagging operations"
                                       Foreground="{DynamicResource ForegroundBrush}"/>
-                            
-                            <Grid Margin="0,0,0,10">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="200"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                </Grid.RowDefinitions>
-                                
-                                <Label Grid.Row="0" Grid.Column="0" Content="Concurrent Workers:" 
-                                       ToolTip="Number of images processed in parallel (1-20). Higher values use more VRAM but are faster."
-                                       Foreground="{DynamicResource ForegroundBrush}"/>
-                                <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding TaggingConcurrentWorkers, UpdateSourceTrigger=PropertyChanged}" 
-                                         Width="60" Height="26" VerticalContentAlignment="Center" HorizontalAlignment="Left"/>
-                                
-                                <Label Grid.Row="1" Grid.Column="0" Content="GPU Devices:" 
-                                       ToolTip="CUDA device IDs to use (e.g., '0' or '0,1' for multi-GPU)"
-                                       Foreground="{DynamicResource ForegroundBrush}"/>
-                                <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding TaggingGpuDevices, UpdateSourceTrigger=PropertyChanged}" 
-                                         Height="26" VerticalContentAlignment="Center" ToolTip="Enter device IDs: 0, 1, or 0,1"/>
-                                
-                                <Label Grid.Row="2" Grid.Column="0" Content="GPU VRAM (GB):" 
-                                       ToolTip="VRAM per GPU for worker distribution (e.g., '32,12' means GPU0=32GB, GPU1=12GB)"
-                                       Foreground="{DynamicResource ForegroundBrush}"/>
-                                <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding TaggingGpuVramRatios, UpdateSourceTrigger=PropertyChanged}" 
-                                         Height="26" VerticalContentAlignment="Center" ToolTip="Enter VRAM: 32, 32,12, etc."/>
-                            </Grid>
                             
                         </StackPanel>
                     </GroupBox>
@@ -606,55 +624,20 @@
                                             </Style.Triggers>
                                         </Style>
                                     </TextBlock.Style>
-                                    Note: JoyCaption requires significant VRAM (8GB+ recommended). Caption generation may take several seconds per image.
+                                    Note: JoyCaption requires significant VRAM (~8GB per model). The GPU orchestrator will automatically manage model loading.
                                 </TextBlock>
                             </Grid>
                             
                             <!-- Captioning Processing Settings -->
-                            <TextBlock Text="Processing Settings" FontWeight="SemiBold" Margin="0,20,0,10" FontSize="12"
+                            <TextBlock Text="Processing Options" FontWeight="SemiBold" Margin="0,20,0,10" FontSize="12"
                                       Foreground="{DynamicResource ForegroundBrush}"/>
                             
-                            <Grid Margin="0,0,0,10">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="200"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                </Grid.RowDefinitions>
-                                
-                                <Label Grid.Row="0" Grid.Column="0" Content="Skip Already Captioned:" 
-                                       ToolTip="Skip images that already have captions in the database"
-                                       Foreground="{DynamicResource ForegroundBrush}"/>
-                                <CheckBox Grid.Row="0" Grid.Column="1" IsChecked="{Binding SkipAlreadyCaptionedImages}" 
-                                          VerticalAlignment="Center"/>
-                                
-                                <Label Grid.Row="1" Grid.Column="0" Content="GPU Devices:" 
-                                       ToolTip="CUDA device IDs to use (e.g., '0' or '0,1' for multi-GPU)"
-                                       Foreground="{DynamicResource ForegroundBrush}"/>
-                                <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding CaptioningGpuDevices, UpdateSourceTrigger=PropertyChanged}" 
-                                         Height="26" VerticalContentAlignment="Center" ToolTip="Enter device IDs: 0, 1, or 0,1"/>
-                                
-                                <Label Grid.Row="2" Grid.Column="0" Content="Models Per Device:" 
-                                       ToolTip="Number of caption models to load per GPU (e.g., '3,2' means 3 on GPU0, 2 on GPU1)"
-                                       Foreground="{DynamicResource ForegroundBrush}"/>
-                                <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding CaptioningModelsPerDevice, UpdateSourceTrigger=PropertyChanged}" 
-                                         Height="26" VerticalContentAlignment="Center" ToolTip="Enter model counts: 3, 3,2, etc."/>
-                                
-                                <Label Grid.Row="3" Grid.Column="0" Content="Model TTL (minutes):" 
-                                       ToolTip="Auto-release models after inactivity: -1=Keep loaded, 0=Release immediately, 1-60=Minutes"
-                                       Foreground="{DynamicResource ForegroundBrush}"/>
-                                <StackPanel Grid.Row="3" Grid.Column="1" Orientation="Horizontal">
-                                    <TextBox Text="{Binding CaptioningModelTTLMinutes, UpdateSourceTrigger=PropertyChanged}" 
-                                             Width="60" Height="26" VerticalContentAlignment="Center"/>
-                                    <TextBlock Margin="10,0,0,0" VerticalAlignment="Center" Foreground="{DynamicResource ForegroundBrush}" FontSize="11">
-                                        <Run Text="(-1=keep, 0=instant)" />
-                                    </TextBlock>
-                                </StackPanel>
-                            </Grid>
+                            <CheckBox IsChecked="{Binding SkipAlreadyCaptionedImages}" 
+                                      Content="Skip images that already have captions" 
+                                      Margin="0,0,0,10"
+                                      ToolTip="Skip images that already have captions in the database"
+                                      Foreground="{DynamicResource ForegroundBrush}"/>
+                            
                         </StackPanel>
                     </GroupBox>
 
@@ -756,17 +739,12 @@
                                 <ComboBox x:Name="ProfileComboBox" Width="250" 
                                           ItemsSource="{Binding DatabaseProfiles}"
                                           SelectedValue="{Binding ActiveDatabaseProfile}"
-                                          DisplayMemberPath="Name"
                                           SelectedValuePath="Name"
                                           SelectionChanged="ProfileComboBox_SelectionChanged">
                                     <ComboBox.ItemTemplate>
                                         <DataTemplate>
                                             <StackPanel Orientation="Horizontal">
-                                                <Ellipse Width="10" Height="10" Margin="0,0,8,0" VerticalAlignment="Center">
-                                                    <Ellipse.Fill>
-                                                        <SolidColorBrush Color="{Binding Color, FallbackValue=#808080}"/>
-                                                    </Ellipse.Fill>
-                                                </Ellipse>
+                                                <Ellipse Width="10" Height="10" Margin="0,0,8,0" VerticalAlignment="Center" Fill="#808080"/>
                                                 <TextBlock Text="{Binding Name}"/>
                                                 <TextBlock Text="{Binding Description, StringFormat=' - {0}'}" Opacity="0.6" Margin="5,0,0,0"/>
                                             </StackPanel>

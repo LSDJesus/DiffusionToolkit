@@ -12,10 +12,14 @@ namespace Diffusion.Toolkit.Services;
 
 /// <summary>
 /// Background service for tagging and captioning images using persistent worker pools
+/// Integrates with GpuResourceOrchestrator for dynamic resource allocation
 /// </summary>
 public class BackgroundTaggingService : IDisposable
 {
     private readonly PostgreSQLDataStore _dataStore;
+    
+    // Model allocations from GPU orchestrator
+    private readonly List<ModelAllocation> _activeAllocations = new();
     
     // Tagging orchestrator
     private Channel<int>? _taggingQueue;
@@ -31,6 +35,7 @@ public class BackgroundTaggingService : IDisposable
     private Channel<int>? _embeddingQueue;
     private CancellationTokenSource? _embeddingCts;
     private List<Task>? _embeddingOrchestrators;
+    private List<EmbeddingPooledOrchestrator>? _embeddingPooledOrchestrators;  // Pooled orchestrators per GPU
     
     private int _taggingProgress;
     private int _taggingTotal;
@@ -71,6 +76,28 @@ public class BackgroundTaggingService : IDisposable
     public event EventHandler? CaptioningCompleted;
     public event EventHandler? EmbeddingCompleted;
     public event EventHandler<string>? StatusChanged;
+
+    private void RaiseQueueCountsChanged()
+    {
+        try
+        {
+            Application.Current?.Dispatcher?.InvokeAsync(() =>
+            {
+                try
+                {
+                    QueueCountsChanged?.Invoke(this, EventArgs.Empty);
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log($"Error in QueueCountsChanged event: {ex.Message}");
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"Error raising QueueCountsChanged: {ex.Message}");
+        }
+    }
 
     private void RaiseTaggingProgress(int current, int total)
     {
@@ -151,6 +178,74 @@ public class BackgroundTaggingService : IDisposable
         
         // Register cleanup on app exit
         Application.Current.Exit += OnApplicationExit;
+        
+        // Subscribe to orchestrator events for dynamic reallocation
+        if (ServiceLocator.GpuOrchestrator != null)
+        {
+            ServiceLocator.GpuOrchestrator.ReallocationOpportunity += OnReallocationOpportunity;
+        }
+    }
+    
+    /// <summary>
+    /// Called when the GPU orchestrator detects an opportunity to load more models
+    /// </summary>
+    private void OnReallocationOpportunity(ProcessPriority priority)
+    {
+        Logger.Log($"Reallocation opportunity for {priority}");
+        
+        // If captioning-only mode and captioning is running, try to load more models
+        if (priority == ProcessPriority.Captioning && _isCaptioningRunning)
+        {
+            // TODO: Dynamically add more captioning workers
+            Logger.Log("TODO: Dynamic captioning worker addition");
+        }
+    }
+    
+    /// <summary>
+    /// Get allocation plan from GPU orchestrator
+    /// </summary>
+    private List<(int GpuId, int WorkerCount)> GetAllocationPlan(ProcessPriority processType)
+    {
+        var orchestrator = ServiceLocator.GpuOrchestrator;
+        if (orchestrator == null)
+        {
+            // Fallback to default single GPU
+            Logger.Log($"GPU Orchestrator not available, using fallback allocation for {processType}");
+            var workersPerModel = ModelVramRequirements.GetWorkersPerModel(processType);
+            return new List<(int, int)> { (0, workersPerModel) };
+        }
+        
+        // Get optimal plan from orchestrator
+        var fullPlan = orchestrator.GetOptimalAllocationPlan();
+        
+        // Filter to this process type and aggregate workers per GPU
+        var filteredPlan = fullPlan
+            .Where(p => p.Priority == processType)
+            .GroupBy(p => p.GpuId)
+            .Select(g => (GpuId: g.Key, WorkerCount: g.Sum(x => x.WorkerCount)))
+            .ToList();
+        
+        if (filteredPlan.Count == 0)
+        {
+            // No allocation available - try to get at least one
+            var workersPerModel = ModelVramRequirements.GetWorkersPerModel(processType);
+            return new List<(int, int)> { (0, workersPerModel) };
+        }
+        
+        return filteredPlan;
+    }
+    
+    /// <summary>
+    /// Update orchestrator with queue status
+    /// </summary>
+    private void UpdateOrchestratorStatus(ProcessPriority processType, int total, int processed, int activeWorkers, bool isRunning)
+    {
+        ServiceLocator.GpuOrchestrator?.UpdateQueueStatus(
+            processType, 
+            total: total, 
+            processed: processed, 
+            activeWorkers: activeWorkers, 
+            isRunning: isRunning);
     }
 
     private void OnApplicationExit(object sender, ExitEventArgs e)
@@ -169,6 +264,26 @@ public class BackgroundTaggingService : IDisposable
         _captioningCts?.Dispose();
         
         Logger.Log("BackgroundTaggingService disposed");
+    }
+
+    /// <summary>
+    /// Refresh all queue counts from the database and notify UI
+    /// </summary>
+    public async Task RefreshQueueCountsAsync()
+    {
+        try
+        {
+            var (tagging, captioning, embedding, _) = await _dataStore.GetPendingCountsAsync();
+            _taggingQueueRemaining = tagging;
+            _captioningQueueRemaining = captioning;
+            _embeddingQueueRemaining = embedding;
+            RaiseQueueCountsChanged();
+            Logger.Log($"Queue counts refreshed: T={tagging}, C={captioning}, E={embedding}");
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"Error refreshing queue counts: {ex.Message}");
+        }
     }
 
     /// <summary>
@@ -243,6 +358,7 @@ public class BackgroundTaggingService : IDisposable
 
     /// <summary>
     /// Start background tagging with persistent worker pool and multi-GPU support
+    /// Uses GPU orchestrator for resource allocation
     /// </summary>
     public void StartTagging()
     {
@@ -261,48 +377,19 @@ public class BackgroundTaggingService : IDisposable
             _taggingStartTime = DateTime.Now;
             _taggingQueueRemaining = 0;
             
-            var maxWorkers = ServiceLocator.Settings?.TaggingConcurrentWorkers ?? 4;
-            var gpuDevices = ServiceLocator.Settings?.TaggingGpuDevices ?? "0";
-            var gpuVramRatios = ServiceLocator.Settings?.TaggingGpuVramRatios ?? "32";
+            // Get allocation plan from GPU orchestrator
+            var allocationPlan = GetAllocationPlan(ProcessPriority.Tagging);
             
-            // Parse GPU device IDs
-            var deviceIds = gpuDevices.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                                       .Select(d => int.TryParse(d, out var id) ? id : 0)
-                                       .Distinct()
-                                       .ToList();
-            
-            // Parse VRAM ratios (in GB)
-            var vramRatios = gpuVramRatios.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                                          .Select(v => int.TryParse(v, out var gb) ? gb : 32)
-                                          .ToList();
-            
-            // Pad VRAM ratios if needed (use last value for additional GPUs)
-            while (vramRatios.Count < deviceIds.Count)
+            if (allocationPlan.Count == 0)
             {
-                vramRatios.Add(vramRatios.Last());
+                Logger.Log("No GPU allocation available for tagging");
+                _isTaggingRunning = false;
+                return;
             }
             
-            // Calculate worker distribution based on VRAM proportions
-            var totalVram = vramRatios.Take(deviceIds.Count).Sum();
-            var workerDistribution = new List<int>();
-            int workersAssigned = 0;
+            var totalWorkers = allocationPlan.Sum(a => a.WorkerCount);
             
-            for (int i = 0; i < deviceIds.Count; i++)
-            {
-                if (i == deviceIds.Count - 1)
-                {
-                    // Last GPU gets all remaining workers
-                    workerDistribution.Add(maxWorkers - workersAssigned);
-                }
-                else
-                {
-                    // Proportional allocation based on VRAM
-                    var proportion = (double)vramRatios[i] / totalVram;
-                    var workers = (int)Math.Max(1, Math.Round(maxWorkers * proportion));
-                    workerDistribution.Add(workers);
-                    workersAssigned += workers;
-                }
-            }
+            Logger.Log($"Tagging allocation plan: {string.Join(", ", allocationPlan.Select(a => $"GPU{a.GpuId}={a.WorkerCount} workers"))}");
             
             // Create unbounded channel for shared work queue
             _taggingQueue = Channel.CreateUnbounded<int>(new UnboundedChannelOptions
@@ -318,6 +405,7 @@ public class BackgroundTaggingService : IDisposable
                 {
                     _taggingTotal = await _dataStore.CountImagesNeedingTagging();
                     _taggingQueueRemaining = _taggingTotal;
+                    RaiseQueueCountsChanged();
                     Logger.Log($"Found {_taggingTotal} images to tag");
                     
                     const int batchSize = 1000;
@@ -338,6 +426,9 @@ public class BackgroundTaggingService : IDisposable
                     
                     _taggingQueue.Writer.Complete();
                     Logger.Log($"Tagging queue populated with {totalQueued} images (expected {_taggingTotal})");
+                    
+                    // Update orchestrator with queue status
+                    UpdateOrchestratorStatus(ProcessPriority.Tagging, _taggingTotal, 0, totalWorkers, true);
                 }
                 catch (Exception ex)
                 {
@@ -345,42 +436,40 @@ public class BackgroundTaggingService : IDisposable
                 }
             });
             
-            // Start one orchestrator per GPU device
+            // Start one orchestrator per GPU based on allocation plan
             _taggingOrchestrators = new List<Task>();
             
-            for (int i = 0; i < deviceIds.Count; i++)
+            foreach (var (gpuId, workerCount) in allocationPlan)
             {
-                int gpuId = deviceIds[i];
-                int orchestratorWorkers = workerDistribution[i];
-                
-                Logger.Log($"GPU {gpuId}: Assigned {orchestratorWorkers} workers ({vramRatios[i]}GB VRAM)");
+                Logger.Log($"GPU {gpuId}: Starting {workerCount} tagging workers");
                 
                 var orchestratorTask = Task.Run(async () =>
                 {
                     try
                     {
-                        await RunTaggingGpuOrchestrator(gpuId, orchestratorWorkers, _taggingCts.Token);
+                        await RunTaggingGpuOrchestrator(gpuId, workerCount, _taggingCts.Token);
                     }
                     catch (Exception ex)
                     {
-                        Logger.Log($"GPU {gpuId} orchestrator error: {ex.Message}\n{ex.StackTrace}");
+                        Logger.Log($"GPU {gpuId} tagging orchestrator error: {ex.Message}\n{ex.StackTrace}");
                     }
                 });
                 
                 _taggingOrchestrators.Add(orchestratorTask);
             }
             
-            Logger.Log($"Started {deviceIds.Count} GPU orchestrators with {maxWorkers} total workers distributed by VRAM: {string.Join(", ", deviceIds.Zip(workerDistribution, (gpu, workers) => $"GPU{gpu}={workers}"))}");
+            Logger.Log($"Started tagging with {allocationPlan.Count} GPUs, {totalWorkers} total workers");
         }
         catch (Exception ex)
         {
             Logger.Log($"Failed to start tagging: {ex.Message}\n{ex.StackTrace}");
             _isTaggingRunning = false;
+            UpdateOrchestratorStatus(ProcessPriority.Tagging, 0, 0, 0, false);
         }
     }
 
     /// <summary>
-    /// Start background captioning with worker pool - each worker gets exclusive JoyCaptionService
+    /// Start background captioning with worker pool - uses GPU orchestrator for allocation
     /// </summary>
     public void StartCaptioning()
     {
@@ -399,28 +488,20 @@ public class BackgroundTaggingService : IDisposable
             _captioningStartTime = DateTime.Now;
             _captioningQueueRemaining = 0;
             
-            var gpuDevices = ServiceLocator.Settings?.CaptioningGpuDevices ?? "0";
-            var modelsPerDevice = ServiceLocator.Settings?.CaptioningModelsPerDevice ?? "3";
+            // Get allocation plan from GPU orchestrator
+            var allocationPlan = GetAllocationPlan(ProcessPriority.Captioning);
             
-            // Parse GPU device IDs
-            var deviceIds = gpuDevices.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                                       .Select(d => int.TryParse(d, out var id) ? id : 0)
-                                       .Distinct()
-                                       .ToList();
-            
-            // Parse models per device counts
-            var modelCounts = modelsPerDevice.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                                             .Select(m => int.TryParse(m, out var count) ? count : 3)
-                                             .ToList();
-            
-            // Pad model counts if needed (use last value for additional GPUs)
-            while (modelCounts.Count < deviceIds.Count)
+            if (allocationPlan.Count == 0)
             {
-                modelCounts.Add(modelCounts.Last());
+                Logger.Log("No GPU allocation available for captioning");
+                _isCaptioningRunning = false;
+                return;
             }
             
-            // Calculate total workers based on models per device
-            var totalWorkers = modelCounts.Take(deviceIds.Count).Sum();
+            // For captioning, worker count = model count (each model is 1 worker)
+            var totalWorkers = allocationPlan.Sum(a => a.WorkerCount);
+            
+            Logger.Log($"Captioning allocation plan: {string.Join(", ", allocationPlan.Select(a => $"GPU{a.GpuId}={a.WorkerCount} models"))}");
             
             // Create unbounded channel for shared work queue
             _captioningQueue = Channel.CreateUnbounded<int>(new UnboundedChannelOptions
@@ -436,7 +517,11 @@ public class BackgroundTaggingService : IDisposable
                 {
                     _captioningTotal = await _dataStore.CountImagesNeedingCaptioning();
                     _captioningQueueRemaining = _captioningTotal;
+                    RaiseQueueCountsChanged();
                     Logger.Log($"Found {_captioningTotal} images to caption");
+                    
+                    // Update orchestrator with queue status
+                    UpdateOrchestratorStatus(ProcessPriority.Captioning, _captioningTotal, 0, totalWorkers, true);
                     
                     const int batchSize = 500;
                     while (!_captioningCts.Token.IsCancellationRequested)
@@ -461,19 +546,16 @@ public class BackgroundTaggingService : IDisposable
                 }
             });
             
-            // Create workers, each with its own JoyCaptionService on its assigned GPU
+            // Create workers based on allocation plan
             _captioningOrchestrators = new List<Task>();
             int workerIndex = 0;
             
-            for (int i = 0; i < deviceIds.Count; i++)
+            foreach (var (gpuId, modelCount) in allocationPlan)
             {
-                int gpuId = deviceIds[i];
-                int modelsOnGpu = modelCounts[i];
-                
-                Logger.Log($"GPU {gpuId}: Creating {modelsOnGpu} caption workers");
+                Logger.Log($"GPU {gpuId}: Creating {modelCount} caption workers");
                 
                 // Create workers for this GPU
-                for (int w = 0; w < modelsOnGpu; w++)
+                for (int w = 0; w < modelCount; w++)
                 {
                     int currentWorkerIndex = workerIndex++;
                     var workerTask = Task.Run(async () =>
@@ -492,17 +574,19 @@ public class BackgroundTaggingService : IDisposable
                 }
             }
             
-            Logger.Log($"Started {totalWorkers} caption workers: {string.Join(", ", deviceIds.Zip(modelCounts, (gpu, models) => $"GPU{gpu}={models}"))}");
+            Logger.Log($"Started {totalWorkers} caption workers via GPU orchestrator");
         }
         catch (Exception ex)
         {
             Logger.Log($"Failed to start captioning: {ex.Message}\n{ex.StackTrace}");
             _isCaptioningRunning = false;
+            UpdateOrchestratorStatus(ProcessPriority.Captioning, 0, 0, 0, false);
         }
     }
 
     /// <summary>
-    /// Start background embedding with multi-GPU worker pool
+    /// Start background embedding with pooled GPU orchestrators - one orchestrator per GPU,
+    /// each orchestrator loads 4 models once and spawns sub-workers per model
     /// </summary>
     public void StartEmbedding()
     {
@@ -522,46 +606,22 @@ public class BackgroundTaggingService : IDisposable
             _embeddingStartTime = DateTime.Now;
             _embeddingQueueRemaining = 0;
             
-            var gpuDevices = ServiceLocator.Settings?.EmbeddingGpuDevices ?? "0,1";
-            var vramRatios = ServiceLocator.Settings?.EmbeddingGpuVramRatios ?? "32,12";
-            var totalWorkers = ServiceLocator.Settings?.EmbeddingConcurrentWorkers ?? 9;
+            // Get allocation plan from GPU orchestrator
+            // For embedding, workerCount = sub-workers per model (not total workers)
+            var allocationPlan = GetAllocationPlan(ProcessPriority.Embedding);
             
-            // Parse GPU device IDs
-            var deviceIds = gpuDevices.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                                       .Select(d => int.TryParse(d, out var id) ? id : 0)
-                                       .Distinct()
-                                       .ToList();
-            
-            // Parse VRAM ratios (in GB)
-            var vramList = vramRatios.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                                      .Select(v => int.TryParse(v, out var gb) ? gb : 32)
-                                      .ToList();
-            
-            // Pad VRAM list if needed
-            while (vramList.Count < deviceIds.Count)
+            if (allocationPlan.Count == 0)
             {
-                vramList.Add(vramList.LastOrDefault());
+                Logger.Log("No GPU allocation available for embedding");
+                _isEmbeddingRunning = false;
+                return;
             }
             
-            // Calculate worker distribution based on VRAM proportions
-            var totalVram = vramList.Take(deviceIds.Count).Sum();
-            var workerDistribution = new List<int>();
-            int workersAssigned = 0;
+            // workerCount per GPU = sub-workers per model (each GPU has 4 models × N sub-workers)
+            var totalSubWorkersPerModel = allocationPlan.Sum(a => a.WorkerCount);
+            var totalWorkers = totalSubWorkersPerModel * 4; // 4 models per GPU
             
-            for (int i = 0; i < deviceIds.Count; i++)
-            {
-                if (i == deviceIds.Count - 1)
-                {
-                    workerDistribution.Add(totalWorkers - workersAssigned);
-                }
-                else
-                {
-                    var proportion = (double)vramList[i] / totalVram;
-                    var workers = (int)Math.Max(1, Math.Round(totalWorkers * proportion));
-                    workerDistribution.Add(workers);
-                    workersAssigned += workers;
-                }
-            }
+            Logger.Log($"Embedding allocation plan: {string.Join(", ", allocationPlan.Select(a => $"GPU{a.GpuId}={a.WorkerCount} sub-workers/model ({a.WorkerCount * 4} total)"))}");
             
             // Create unbounded channel for shared work queue
             _embeddingQueue = Channel.CreateUnbounded<int>(new UnboundedChannelOptions
@@ -577,7 +637,11 @@ public class BackgroundTaggingService : IDisposable
                 {
                     _embeddingTotal = await _dataStore.CountImagesNeedingEmbedding();
                     _embeddingQueueRemaining = _embeddingTotal;
+                    RaiseQueueCountsChanged();
                     Logger.Log($"Found {_embeddingTotal} images to embed");
+                    
+                    // Update orchestrator with queue status
+                    UpdateOrchestratorStatus(ProcessPriority.Embedding, _embeddingTotal, 0, totalWorkers, true);
                     
                     const int batchSize = 1000;
                     while (!_embeddingCts.Token.IsCancellationRequested)
@@ -602,42 +666,37 @@ public class BackgroundTaggingService : IDisposable
                 }
             });
             
-            // Create workers
+            // Create one pooled orchestrator per GPU
             _embeddingOrchestrators = new List<Task>();
-            int workerIndex = 0;
+            _embeddingPooledOrchestrators = new List<EmbeddingPooledOrchestrator>();
             
-            for (int i = 0; i < deviceIds.Count; i++)
+            foreach (var (gpuId, workersPerModel) in allocationPlan)
             {
-                int gpuId = deviceIds[i];
-                int workersOnGpu = workerDistribution[i];
+                int capturedGpuId = gpuId;
+                int capturedWorkersPerModel = workersPerModel;
                 
-                Logger.Log($"GPU {gpuId}: Creating {workersOnGpu} embedding workers");
-                
-                for (int w = 0; w < workersOnGpu; w++)
+                var orchestratorTask = Task.Run(async () =>
                 {
-                    int currentWorkerIndex = workerIndex++;
-                    var workerTask = Task.Run(async () =>
+                    try
                     {
-                        try
-                        {
-                            await RunEmbeddingWorker(gpuId, currentWorkerIndex, _embeddingCts.Token);
-                        }
-                        catch (Exception ex)
-                        {
-                            Logger.Log($"GPU {gpuId} embedding worker {currentWorkerIndex} error: {ex.Message}\n{ex.StackTrace}");
-                        }
-                    });
-                    
-                    _embeddingOrchestrators.Add(workerTask);
-                }
+                        await RunEmbeddingPooledOrchestrator(capturedGpuId, capturedWorkersPerModel, _embeddingCts.Token);
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Log($"GPU {capturedGpuId} embedding orchestrator error: {ex.Message}\n{ex.StackTrace}");
+                    }
+                });
+                
+                _embeddingOrchestrators.Add(orchestratorTask);
             }
             
-            Logger.Log($"Started {totalWorkers} embedding workers: {string.Join(", ", deviceIds.Zip(workerDistribution, (gpu, workers) => $"GPU{gpu}={workers}"))}");
+            Logger.Log($"Started {allocationPlan.Count} embedding orchestrators with {totalWorkers} total sub-workers");
         }
         catch (Exception ex)
         {
             Logger.Log($"Failed to start embedding: {ex.Message}\n{ex.StackTrace}");
             _isEmbeddingRunning = false;
+            UpdateOrchestratorStatus(ProcessPriority.Embedding, 0, 0, 0, false);
         }
     }
 
@@ -719,6 +778,10 @@ public class BackgroundTaggingService : IDisposable
         {
             Logger.Log($"Error releasing tagging models: {ex.Message}");
         }
+        
+        // Notify orchestrator that tagging is stopped
+        UpdateOrchestratorStatus(ProcessPriority.Tagging, _taggingTotal, _taggingProgress, 0, false);
+        ServiceLocator.GpuOrchestrator?.MarkQueueCompleted(ProcessPriority.Tagging);
         
         Logger.Log("Tagging stopped");
     }
@@ -1105,6 +1168,10 @@ public class BackgroundTaggingService : IDisposable
             Logger.Log($"Error releasing captioning models: {ex.Message}");
         }
         
+        // Notify orchestrator that captioning is stopped
+        UpdateOrchestratorStatus(ProcessPriority.Captioning, _captioningTotal, _captioningProgress, 0, false);
+        ServiceLocator.GpuOrchestrator?.MarkQueueCompleted(ProcessPriority.Captioning);
+        
         Logger.Log("Captioning stopped");
     }
 
@@ -1124,12 +1191,12 @@ public class BackgroundTaggingService : IDisposable
             // Already closed, ignore
         }
         
-        // Wait for orchestrators to finish (with timeout)
+        // Wait for orchestrator tasks to finish (with timeout)
         try
         {
             if (_embeddingOrchestrators != null)
             {
-                Task.WaitAll(_embeddingOrchestrators.ToArray(), TimeSpan.FromSeconds(5));
+                Task.WaitAll(_embeddingOrchestrators.ToArray(), TimeSpan.FromSeconds(10));
             }
         }
         catch (Exception ex)
@@ -1139,7 +1206,27 @@ public class BackgroundTaggingService : IDisposable
         
         _embeddingOrchestrators?.Clear();
         
-        // Release GPU resources - embedding models are disposed in workers
+        // Dispose pooled orchestrators (releases all ONNX models)
+        if (_embeddingPooledOrchestrators != null)
+        {
+            foreach (var orchestrator in _embeddingPooledOrchestrators)
+            {
+                try
+                {
+                    orchestrator.Dispose();
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log($"Error disposing embedding orchestrator: {ex.Message}");
+                }
+            }
+            _embeddingPooledOrchestrators.Clear();
+        }
+        
+        // Notify orchestrator that embedding is stopped
+        UpdateOrchestratorStatus(ProcessPriority.Embedding, _embeddingTotal, _embeddingProgress, 0, false);
+        ServiceLocator.GpuOrchestrator?.MarkQueueCompleted(ProcessPriority.Embedding);
+        
         Logger.Log("Embedding stopped");
     }
 
@@ -1398,28 +1485,27 @@ public class BackgroundTaggingService : IDisposable
     }
 
     /// <summary>
-    /// Embedding worker: Creates its own EmbeddingService for exclusive use
+    /// Embedding orchestrator: Loads all 4 models once per GPU, spawns sub-workers per model,
+    /// and coordinates all 4 embeddings per image before writing to database.
     /// </summary>
-    private async Task RunEmbeddingWorker(int gpuId, int workerId, CancellationToken ct)
+    private async Task RunEmbeddingPooledOrchestrator(int gpuId, int workersPerModel, CancellationToken ct)
     {
-        Logger.Log($"Embedding worker {workerId} started on GPU {gpuId}");
+        Logger.Log($"Embedding orchestrator starting on GPU {gpuId} with {workersPerModel} sub-workers per model");
         
-        Embeddings.EmbeddingService? embeddingService = null;
+        EmbeddingPooledOrchestrator? orchestrator = null;
         
         try
         {
-            // Create embedding service for this worker
+            // Create configuration
             var baseDir = AppDomain.CurrentDomain.BaseDirectory;
             var config = Embeddings.EmbeddingConfig.CreateDefault(baseDir);
             
-            // Override GPU assignment - all models on this worker's GPU
-            config.BgeGpuDevice = gpuId;
-            config.ClipVisionGpuDevice = gpuId;
-            config.ClipLGpuDevice = gpuId;
-            config.ClipGGpuDevice = gpuId;
+            // Create and initialize the pooled orchestrator
+            orchestrator = new EmbeddingPooledOrchestrator(gpuId, workersPerModel);
+            _embeddingPooledOrchestrators?.Add(orchestrator);
             
-            embeddingService = Embeddings.EmbeddingService.FromConfig(config);
-            Logger.Log($"GPU {gpuId} embedding worker {workerId}: Service initialized");
+            await orchestrator.InitializeAsync(config, ct);
+            Logger.Log($"GPU {gpuId} embedding orchestrator initialized with {workersPerModel * 4} total sub-workers");
             
             // Process images from queue
             await foreach (var imageId in _embeddingQueue!.Reader.ReadAllAsync(ct))
@@ -1435,7 +1521,7 @@ public class BackgroundTaggingService : IDisposable
                 
                 try
                 {
-                    await ProcessImageEmbedding(imageId, embeddingService);
+                    await ProcessImageEmbeddingPooled(imageId, orchestrator, ct);
                     
                     var progress = Interlocked.Increment(ref _embeddingProgress);
                     var remaining = Interlocked.Decrement(ref _embeddingQueueRemaining);
@@ -1463,27 +1549,27 @@ public class BackgroundTaggingService : IDisposable
                 }
                 catch (Exception ex)
                 {
-                    Logger.Log($"GPU {gpuId} embedding worker {workerId} error processing image {imageId}: {ex.Message}");
+                    Logger.Log($"GPU {gpuId} embedding orchestrator error processing image {imageId}: {ex.Message}");
                 }
             }
         }
         catch (OperationCanceledException)
         {
-            Logger.Log($"GPU {gpuId} embedding worker {workerId} cancelled");
+            Logger.Log($"GPU {gpuId} embedding orchestrator cancelled");
         }
         catch (Exception ex)
         {
-            Logger.Log($"GPU {gpuId} embedding worker {workerId} fatal error: {ex.Message}\n{ex.StackTrace}");
+            Logger.Log($"GPU {gpuId} embedding orchestrator fatal error: {ex.Message}\n{ex.StackTrace}");
         }
         finally
         {
-            embeddingService?.Dispose();
-            Logger.Log($"GPU {gpuId} embedding worker {workerId} exiting");
+            orchestrator?.Dispose();
+            Logger.Log($"GPU {gpuId} embedding orchestrator exiting");
             RaiseEmbeddingCompleted();
         }
     }
 
-    private async Task ProcessImageEmbedding(int imageId, Embeddings.EmbeddingService embeddingService)
+    private async Task ProcessImageEmbeddingPooled(int imageId, EmbeddingPooledOrchestrator orchestrator, CancellationToken ct)
     {
         try
         {
@@ -1504,27 +1590,43 @@ public class BackgroundTaggingService : IDisposable
                 return;
             }
 
-            // Generate embeddings
-            float[]? promptEmb = null;
-            float[]? imageEmb = null;
-            
-            // Generate prompt embedding (BGE)
-            if (!string.IsNullOrEmpty(image.Prompt))
+            // Skip if no prompt (need text for text embeddings)
+            if (string.IsNullOrWhiteSpace(image.Prompt))
             {
-                var (bge, _, _) = await embeddingService.GenerateTextEmbeddingsAsync(image.Prompt);
-                promptEmb = bge;
+                Logger.Log($"Image {imageId} has no prompt, skipping");
+                Interlocked.Increment(ref _embeddingSkipped);
+                await _dataStore.SetNeedsEmbedding(new List<int> { imageId }, false);
+                return;
+            }
+
+            // Generate all 4 embeddings in parallel using the pooled orchestrator
+            var result = await orchestrator.GenerateEmbeddingsAsync(
+                imageId,
+                image.Prompt,
+                image.NegativePrompt,
+                image.Path,
+                ct);
+            
+            if (result == null)
+            {
+                Logger.Log($"Embedding failed for image {imageId}");
+                Interlocked.Increment(ref _embeddingSkipped);
+                return;
             }
             
-            // Generate image embedding (CLIP-ViT-H)
-            imageEmb = await embeddingService.GenerateImageEmbeddingAsync(image.Path);
-            
-            // Store embeddings in database
-            await _dataStore.StoreImageEmbeddingsAsync(imageId, promptEmb, imageEmb);
+            // Store all embeddings in database
+            await _dataStore.StoreImageEmbeddingsAsync(
+                imageId, 
+                result.BgeEmbedding,       // Prompt/semantic embedding
+                result.ClipLEmbedding,     // CLIP-L text
+                result.ClipGEmbedding,     // CLIP-G text
+                result.ImageEmbedding,     // Vision embedding
+                isRepresentative: true);   // Mark as representative (has unique embeddings)
             
             // Mark as processed
             await _dataStore.SetNeedsEmbedding(new List<int> { imageId }, false);
             
-            Logger.Log($"Embedded image {imageId}: prompt={promptEmb != null}, image={imageEmb != null}");
+            Logger.Log($"Embedded image {imageId}: BGE={result.BgeEmbedding.Length}D, CLIP-L={result.ClipLEmbedding.Length}D, CLIP-G={result.ClipGEmbedding.Length}D, Vision={result.ImageEmbedding.Length}D");
         }
         catch (Exception ex)
         {
