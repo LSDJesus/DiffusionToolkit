@@ -178,21 +178,21 @@ public partial class PostgreSQLDataStore
     }
 
     /// <summary>
-    /// Clear all tagging/captioning queue
+    /// Clear all tagging queue - sets to null (not queued, not processed) rather than false (processed)
     /// </summary>
     public async Task ClearTaggingQueue()
     {
         await using var connection = await _dataSource.OpenConnectionAsync();
-        await connection.ExecuteAsync($"UPDATE {Table("image")} SET needs_tagging = false WHERE needs_tagging = true");
+        await connection.ExecuteAsync($"UPDATE {Table("image")} SET needs_tagging = null WHERE needs_tagging = true");
     }
 
     /// <summary>
-    /// Clear all captioning queue
+    /// Clear all captioning queue - sets to null (not queued, not processed) rather than false (processed)
     /// </summary>
     public async Task ClearCaptioningQueue()
     {
         await using var connection = await _dataSource.OpenConnectionAsync();
-        await connection.ExecuteAsync($"UPDATE {Table("image")} SET needs_captioning = false WHERE needs_captioning = true");
+        await connection.ExecuteAsync($"UPDATE {Table("image")} SET needs_captioning = null WHERE needs_captioning = true");
     }
 
     /// <summary>
@@ -278,12 +278,12 @@ public partial class PostgreSQLDataStore
     }
 
     /// <summary>
-    /// Clear all embedding queue
+    /// Clear all embedding queue - sets to null (not queued, not processed) rather than false (processed)
     /// </summary>
     public async Task ClearEmbeddingQueue()
     {
         await using var connection = await _dataSource.OpenConnectionAsync();
-        await connection.ExecuteAsync($"UPDATE {Table("image")} SET needs_embedding = false WHERE needs_embedding = true");
+        await connection.ExecuteAsync($"UPDATE {Table("image")} SET needs_embedding = null WHERE needs_embedding = true");
     }
 
     /// <summary>

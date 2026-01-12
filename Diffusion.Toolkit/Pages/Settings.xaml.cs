@@ -155,6 +155,7 @@ namespace Diffusion.Toolkit.Pages
             _model.GpuDevices = _settings.GpuDevices;
             _model.GpuVramCapacity = _settings.GpuVramCapacity;
             _model.MaxVramUsagePercent = _settings.MaxVramUsagePercent;
+            _model.UseNewProcessingArchitecture = _settings.UseNewProcessingArchitecture;
             
             // GPU Model Allocation - Concurrent mode
             _model.ConcurrentCaptioningAllocation = _settings.ConcurrentCaptioningAllocation;
@@ -602,6 +603,7 @@ namespace Diffusion.Toolkit.Pages
                 _settings.GpuDevices = _model.GpuDevices;
                 _settings.GpuVramCapacity = _model.GpuVramCapacity;
                 _settings.MaxVramUsagePercent = _model.MaxVramUsagePercent;
+                _settings.UseNewProcessingArchitecture = _model.UseNewProcessingArchitecture;
                 
                 // GPU Model Allocation - Concurrent mode
                 _settings.ConcurrentCaptioningAllocation = _model.ConcurrentCaptioningAllocation;
@@ -983,15 +985,21 @@ namespace Diffusion.Toolkit.Pages
         }
         
         /// <summary>
-        /// Calculate VRAM usage for the current allocation settings
+        /// Calculate VRAM usage for the current allocation settings.
+        /// 
+        /// Architecture:
+        /// - ONNX services (Tagging, Embedding, FaceDetection): 1 model per GPU, N workers share it.
+        ///   Allocation value = worker count (VRAM is fixed per GPU regardless of worker count).
+        /// - LLM services (Captioning): N models per GPU (VRAM permitting), 1 worker per model.
+        ///   Allocation value = model count (VRAM scales linearly with count).
         /// </summary>
         private void CalculateVram_Click(object sender, RoutedEventArgs e)
         {
-            // Measured VRAM values (in GB)
-            const double CaptioningVram = 5.8;
-            const double TaggingVram = 3.1;
-            const double EmbeddingVram = 7.5;
-            const double FaceDetectionVram = 0.8;
+            // Measured VRAM values (in GB) - per model instance
+            const double CaptioningVramPerModel = 5.6;  // JoyCaption Q4 GGUF - scales with count
+            const double TaggingVramFixed = 2.6;         // JoyTag + WD - fixed per GPU
+            const double EmbeddingVramFixed = 7.6;       // BGE + CLIP (all 4) - fixed per GPU
+            const double FaceDetectionVramFixed = 0.8;   // YOLO + ArcFace - fixed per GPU
             
             // Parse GPU capacities and max usage
             var vramCapacities = _model.GpuVramCapacity
@@ -1003,12 +1011,12 @@ namespace Diffusion.Toolkit.Pages
             var maxUsableVram = vramCapacities.Select(v => v * maxUsage).ToArray();
             
             // Calculate concurrent mode
-            var concurrentResult = CalculateAllocationVram(
+            var concurrentResult = CalculateConcurrentVram(
                 _model.ConcurrentCaptioningAllocation,
                 _model.ConcurrentTaggingAllocation,
                 _model.ConcurrentEmbeddingAllocation,
                 _model.ConcurrentFaceDetectionAllocation,
-                CaptioningVram, TaggingVram, EmbeddingVram, FaceDetectionVram,
+                CaptioningVramPerModel, TaggingVramFixed, EmbeddingVramFixed, FaceDetectionVramFixed,
                 maxUsableVram);
             
             _model.ConcurrentVramResult = concurrentResult;
@@ -1016,38 +1024,45 @@ namespace Diffusion.Toolkit.Pages
             // Calculate solo modes
             var soloResults = new System.Text.StringBuilder();
             
-            var soloCaptioning = CalculateSingleAllocationVram(
-                _model.SoloCaptioningAllocation, CaptioningVram, maxUsableVram);
+            // Captioning: scales with model count
+            var soloCaptioning = CalculateSoloVram(
+                _model.SoloCaptioningAllocation, CaptioningVramPerModel, isOnnxFixed: false, maxUsableVram);
             soloResults.AppendLine($"Captioning: {soloCaptioning}");
             
-            var soloTagging = CalculateSingleAllocationVram(
-                _model.SoloTaggingAllocation, TaggingVram, maxUsableVram);
+            // ONNX services: fixed VRAM regardless of worker count
+            var soloTagging = CalculateSoloVram(
+                _model.SoloTaggingAllocation, TaggingVramFixed, isOnnxFixed: true, maxUsableVram);
             soloResults.AppendLine($"Tagging: {soloTagging}");
             
-            var soloEmbedding = CalculateSingleAllocationVram(
-                _model.SoloEmbeddingAllocation, EmbeddingVram, maxUsableVram);
+            var soloEmbedding = CalculateSoloVram(
+                _model.SoloEmbeddingAllocation, EmbeddingVramFixed, isOnnxFixed: true, maxUsableVram);
             soloResults.AppendLine($"Embedding: {soloEmbedding}");
             
-            var soloFaceDetection = CalculateSingleAllocationVram(
-                _model.SoloFaceDetectionAllocation, FaceDetectionVram, maxUsableVram);
+            var soloFaceDetection = CalculateSoloVram(
+                _model.SoloFaceDetectionAllocation, FaceDetectionVramFixed, isOnnxFixed: true, maxUsableVram);
             soloResults.AppendLine($"Face Detection: {soloFaceDetection}");
             
             _model.SoloVramResults = soloResults.ToString().TrimEnd();
         }
         
-        private string CalculateAllocationVram(
+        /// <summary>
+        /// Calculate VRAM for concurrent mode (all services running together).
+        /// </summary>
+        private string CalculateConcurrentVram(
             string captioningAlloc, string taggingAlloc, string embeddingAlloc, string faceDetectionAlloc,
-            double captioningVram, double taggingVram, double embeddingVram, double faceDetectionVram,
+            double captioningVramPerModel, double taggingVramFixed, double embeddingVramFixed, double faceDetectionVramFixed,
             double[] maxUsableVram)
         {
             var gpuCount = maxUsableVram.Length;
             var gpuUsage = new double[gpuCount];
             
-            // Parse allocations and sum VRAM per GPU
-            AddAllocationVram(captioningAlloc, captioningVram, gpuUsage);
-            AddAllocationVram(taggingAlloc, taggingVram, gpuUsage);
-            AddAllocationVram(embeddingAlloc, embeddingVram, gpuUsage);
-            AddAllocationVram(faceDetectionAlloc, faceDetectionVram, gpuUsage);
+            // Captioning: VRAM scales with model count
+            AddScalingVram(captioningAlloc, captioningVramPerModel, gpuUsage);
+            
+            // ONNX services: fixed VRAM per GPU (regardless of worker count)
+            AddFixedVram(taggingAlloc, taggingVramFixed, gpuUsage);
+            AddFixedVram(embeddingAlloc, embeddingVramFixed, gpuUsage);
+            AddFixedVram(faceDetectionAlloc, faceDetectionVramFixed, gpuUsage);
             
             // Check each GPU
             var results = new System.Text.StringBuilder();
@@ -1067,12 +1082,22 @@ namespace Diffusion.Toolkit.Pages
             return (allOk ? "✓ All GPUs OK\n" : "✗ VRAM EXCEEDED!\n") + results.ToString().TrimEnd();
         }
         
-        private string CalculateSingleAllocationVram(string allocation, double vramPerModel, double[] maxUsableVram)
+        /// <summary>
+        /// Calculate VRAM for a single service in solo mode.
+        /// </summary>
+        private string CalculateSoloVram(string allocation, double vramAmount, bool isOnnxFixed, double[] maxUsableVram)
         {
             var gpuCount = maxUsableVram.Length;
             var gpuUsage = new double[gpuCount];
             
-            AddAllocationVram(allocation, vramPerModel, gpuUsage);
+            if (isOnnxFixed)
+            {
+                AddFixedVram(allocation, vramAmount, gpuUsage);
+            }
+            else
+            {
+                AddScalingVram(allocation, vramAmount, gpuUsage);
+            }
             
             bool allOk = true;
             var parts = new List<string>();
@@ -1091,7 +1116,11 @@ namespace Diffusion.Toolkit.Pages
             return (allOk ? "✓ " : "✗ ") + string.Join(" ", parts);
         }
         
-        private void AddAllocationVram(string allocation, double vramPerModel, double[] gpuUsage)
+        /// <summary>
+        /// Add VRAM for LLM services where VRAM scales with model count.
+        /// allocation = "2,1" means 2 models on GPU0 (2×VRAM), 1 model on GPU1 (1×VRAM)
+        /// </summary>
+        private void AddScalingVram(string allocation, double vramPerModel, double[] gpuUsage)
         {
             var counts = allocation
                 .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
@@ -1101,6 +1130,27 @@ namespace Diffusion.Toolkit.Pages
             for (int i = 0; i < Math.Min(counts.Length, gpuUsage.Length); i++)
             {
                 gpuUsage[i] += counts[i] * vramPerModel;
+            }
+        }
+        
+        /// <summary>
+        /// Add VRAM for ONNX services where VRAM is fixed per GPU (1 model shared by N workers).
+        /// allocation = "10,5" means 10 workers on GPU0, 5 workers on GPU1 - but both use same VRAM.
+        /// </summary>
+        private void AddFixedVram(string allocation, double fixedVram, double[] gpuUsage)
+        {
+            var counts = allocation
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(s => int.TryParse(s, out var v) ? v : 0)
+                .ToArray();
+            
+            for (int i = 0; i < Math.Min(counts.Length, gpuUsage.Length); i++)
+            {
+                // Any workers > 0 means 1 model loaded
+                if (counts[i] > 0)
+                {
+                    gpuUsage[i] += fixedVram;
+                }
             }
         }
     }

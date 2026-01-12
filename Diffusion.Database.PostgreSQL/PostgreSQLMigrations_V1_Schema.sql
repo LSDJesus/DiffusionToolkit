@@ -105,18 +105,42 @@ CREATE TABLE IF NOT EXISTS image (
     comfyui_workflow VARCHAR(100),
     error_message TEXT,
     
-    -- Vector embeddings for similarity search
-    prompt_embedding vector(1024),              -- BGE-large-en-v1.5
-    negative_prompt_embedding vector(1024),     -- BGE-large-en-v1.5
-    image_embedding vector(1280),               -- CLIP-ViT-H/14 (corrected from 1024)
-    clip_l_embedding vector(768),               -- SDXL CLIP-L
-    clip_g_embedding vector(1280),              -- SDXL CLIP-G
+    -- Vector embeddings for similarity search (legacy columns - kept for compatibility)
+    prompt_embedding vector(1024),              -- BGE-large-en-v1.5 (legacy - use bge_prompt_embedding)
+    negative_prompt_embedding vector(1024),     -- BGE-large-en-v1.5 (legacy - not used for embeddings)
+    image_embedding vector(1280),               -- CLIP-ViT-H/14 (legacy - use clip_vision_embedding)
+    clip_l_embedding vector(768),               -- SDXL CLIP-L (legacy - use clip_l_prompt_embedding)
+    clip_g_embedding vector(1280),              -- SDXL CLIP-G (legacy - use clip_g_prompt_embedding)
+    
+    -- V10: Granular BGE embeddings for semantic search (separate for prompt, caption, tags)
+    bge_prompt_embedding vector(1024),          -- BGE embedding of original prompt
+    bge_caption_embedding vector(1024),         -- BGE embedding of AI-generated caption
+    bge_tags_embedding vector(1024),            -- BGE embedding of tags (comma-joined)
+    
+    -- V10: CLIP embeddings for SDXL regeneration (prompt only)
+    clip_l_prompt_embedding vector(768),        -- CLIP-L embedding of prompt for SDXL
+    clip_g_prompt_embedding vector(1280),       -- CLIP-G embedding of prompt for SDXL
+    clip_vision_embedding vector(1280),         -- CLIP-ViT-H/14 embedding of image pixels
+    
+    -- V10: T5-XXL stubs for future Flux support
+    t5xxl_prompt_embedding vector(4096),        -- T5-XXL embedding of prompt (stub)
+    t5xxl_caption_embedding vector(4096),       -- T5-XXL embedding of caption (stub)
+    
+    -- V10: Granular embedding status flags (true=pending, false=done, null=not queued)
+    needs_bge_prompt_embedding BOOLEAN,
+    needs_bge_caption_embedding BOOLEAN,
+    needs_bge_tags_embedding BOOLEAN,
+    needs_clip_l_prompt_embedding BOOLEAN,
+    needs_clip_g_prompt_embedding BOOLEAN,
+    needs_clip_vision_embedding BOOLEAN,
+    needs_t5xxl_prompt_embedding BOOLEAN,
+    needs_t5xxl_caption_embedding BOOLEAN,
     
     created_at TIMESTAMP DEFAULT NOW()
 );
 
 -- =============================================================================
--- EMBEDDING CACHE TABLE (V3)
+-- EMBEDDING CACHE TABLE (V3, updated V10)
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS embedding_cache (
     id SERIAL PRIMARY KEY,
@@ -124,10 +148,21 @@ CREATE TABLE IF NOT EXISTS embedding_cache (
     content_type TEXT NOT NULL,
     content_text TEXT,
     
+    -- Legacy columns (kept for compatibility)
     bge_embedding vector(1024),
     clip_l_embedding vector(768),
     clip_g_embedding vector(1280),
     clip_h_embedding vector(1024),
+    
+    -- V10: Granular embedding columns
+    bge_prompt_embedding vector(1024),
+    bge_caption_embedding vector(1024),
+    bge_tags_embedding vector(1024),
+    clip_l_prompt_embedding vector(768),
+    clip_g_prompt_embedding vector(1280),
+    clip_vision_embedding vector(1280),
+    t5xxl_prompt_embedding vector(4096),
+    t5xxl_caption_embedding vector(4096),
     
     reference_count INTEGER DEFAULT 0,
     created_at TIMESTAMP DEFAULT NOW(),

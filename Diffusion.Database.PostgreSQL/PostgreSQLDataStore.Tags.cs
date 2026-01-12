@@ -75,6 +75,11 @@ public partial class PostgreSQLDataStore
 
         // Deduplicate tags for this image after insert
         await DeduplicateImageTagsAsync(imageId, connection).ConfigureAwait(false);
+        
+        // Flag BGE tags embedding for regeneration (tags changed)
+        await connection.ExecuteAsync(
+            $"UPDATE {Table("image")} SET needs_bge_tags_embedding = true WHERE id = @imageId",
+            new { imageId }).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -111,6 +116,12 @@ public partial class PostgreSQLDataStore
             {
                 await DeduplicateImageTagsAsync(imageId, connection).ConfigureAwait(false);
             }
+            
+            // Flag BGE tags embedding for regeneration for all images in batch
+            var imageIds = imageTags.Keys.ToArray();
+            await connection.ExecuteAsync(
+                $"UPDATE {Table("image")} SET needs_bge_tags_embedding = true WHERE id = ANY(@ids)",
+                new { ids = imageIds }).ConfigureAwait(false);
         }
     }
 

@@ -6,7 +6,8 @@ namespace Diffusion.Toolkit.Services.Processing;
 
 /// <summary>
 /// Interface for processing workers.
-/// Workers are responsible for loading a model on a specific GPU and processing individual images.
+/// Workers are LIGHTWEIGHT - they receive a model reference from the orchestrator
+/// and process individual images. They do NOT own or manage model lifecycle.
 /// Workers do NOT access the database - they only receive jobs and return results.
 /// </summary>
 public interface IProcessingWorker : IDisposable
@@ -22,48 +23,51 @@ public interface IProcessingWorker : IDisposable
     int WorkerId { get; }
     
     /// <summary>
-    /// Whether the worker has its model loaded and is ready to process
-    /// </summary>
-    bool IsReady { get; }
-    
-    /// <summary>
     /// Whether the worker is currently processing a job
     /// </summary>
     bool IsBusy { get; }
     
     /// <summary>
-    /// Initialize the worker - load model onto GPU
-    /// </summary>
-    /// <param name="cancellationToken">Cancellation token</param>
-    Task InitializeAsync(CancellationToken cancellationToken = default);
-    
-    /// <summary>
     /// Process a single image and return the result.
     /// This is the core work method - receives a job, processes it, returns result.
+    /// Uses model reference provided by orchestrator.
     /// NO DATABASE ACCESS should happen here.
+    /// NO MODEL LOADING should happen here.
     /// </summary>
     /// <param name="job">The job to process</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Processing result with success/failure and data</returns>
     Task<ProcessingResult> ProcessAsync(ProcessingJob job, CancellationToken cancellationToken = default);
-    
-    /// <summary>
-    /// Shutdown the worker - unload model from GPU
-    /// </summary>
-    Task ShutdownAsync();
 }
 
 /// <summary>
-/// Factory interface for creating workers
-/// Each service orchestrator will have its own factory implementation
+/// Interface for model pools managed by orchestrators.
+/// Each service type will have its own model pool implementation.
 /// </summary>
-public interface IProcessingWorkerFactory
+public interface IModelPool : IDisposable
 {
     /// <summary>
-    /// Create a worker for the specified GPU
+    /// GPU ID this pool is assigned to
     /// </summary>
-    /// <param name="gpuId">GPU to assign the worker to</param>
-    /// <param name="workerId">Unique worker ID</param>
-    /// <returns>A new worker instance</returns>
-    IProcessingWorker CreateWorker(int gpuId, int workerId);
+    int GpuId { get; }
+    
+    /// <summary>
+    /// Whether the models are loaded and ready
+    /// </summary>
+    bool IsReady { get; }
+    
+    /// <summary>
+    /// Estimated VRAM usage in GB
+    /// </summary>
+    double VramUsageGb { get; }
+    
+    /// <summary>
+    /// Initialize and load models onto GPU
+    /// </summary>
+    Task InitializeAsync(CancellationToken cancellationToken = default);
+    
+    /// <summary>
+    /// Shutdown and unload models from GPU
+    /// </summary>
+    Task ShutdownAsync();
 }

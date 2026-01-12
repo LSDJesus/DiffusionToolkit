@@ -134,6 +134,8 @@ public class Settings : SettingsContainer, IScanOptions
     
     // New processing architecture feature flag
     private bool _useNewProcessingArchitecture = false;  // Set to true to enable new orchestrator-based processing
+    private bool _enableDynamicVramAllocation = true;    // Priority-based loading + dynamic reallocation
+    private int _defaultOnnxWorkersPerGpu = 8;           // Workers per GPU for ONNX services
     
     // Processing skip settings
     private bool _skipAlreadyTaggedImages = false;
@@ -882,6 +884,28 @@ public class Settings : SettingsContainer, IScanOptions
     {
         get => _useNewProcessingArchitecture;
         set => UpdateValue(ref _useNewProcessingArchitecture, value);
+    }
+
+    /// <summary>
+    /// Enable priority-based model loading and dynamic VRAM reallocation.
+    /// When enabled:
+    /// - Services load by priority (Tagging/FaceDetection → Embedding → Captioning)
+    /// - When a queue completes, its VRAM is freed and captioning can expand
+    /// </summary>
+    public bool EnableDynamicVramAllocation
+    {
+        get => _enableDynamicVramAllocation;
+        set => UpdateValue(ref _enableDynamicVramAllocation, value);
+    }
+
+    /// <summary>
+    /// Default number of workers per GPU for ONNX services (Tagging, Embedding, FaceDetection).
+    /// More workers = better GPU utilization, but diminishing returns past ~8-12.
+    /// </summary>
+    public int DefaultOnnxWorkersPerGpu
+    {
+        get => _defaultOnnxWorkersPerGpu;
+        set => UpdateValue(ref _defaultOnnxWorkersPerGpu, Math.Max(1, Math.Min(32, value)));
     }
 
     // Legacy properties - delegate to global settings for backward compatibility

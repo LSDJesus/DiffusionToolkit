@@ -11,11 +11,118 @@ using Diffusion.Toolkit.Configuration;
 namespace Diffusion.Toolkit.Services.Processing;
 
 /// <summary>
-/// Tagging service orchestrator - handles JoyTag and WD tagging
+/// Tagging model pool - holds JoyTag and WD models for a specific GPU.
+/// Thread-safe: ONNX Runtime with CUDA EP supports concurrent Run() calls.
+/// Multiple workers can share one pool.
+/// </summary>
+public class TaggingModelPool : IModelPool
+{
+    private readonly Settings _settings;
+    private JoyTagService? _joyTagService;
+    private WDTagService? _wdTagService;
+    private bool _isReady;
+    
+    public int GpuId { get; }
+    public bool IsReady => _isReady;
+    public double VramUsageGb => 2.6; // JoyTag (~1.5GB) + WD (~1.1GB)
+    
+    public JoyTagService? JoyTagService => _joyTagService;
+    public WDTagService? WDTagService => _wdTagService;
+    
+    public TaggingModelPool(int gpuId, Settings settings)
+    {
+        GpuId = gpuId;
+        _settings = settings;
+    }
+    
+    public async Task InitializeAsync(CancellationToken cancellationToken = default)
+    {
+        if (_isReady) return;
+        
+        Logger.Log($"TaggingModelPool GPU{GpuId}: Initializing models...");
+        
+        // Initialize JoyTag if enabled
+        if (_settings.EnableJoyTag && !string.IsNullOrEmpty(_settings.JoyTagModelPath))
+        {
+            var modelPath = _settings.JoyTagModelPath;
+            var tagsPath = _settings.JoyTagTagsPath;
+            
+            if (System.IO.File.Exists(modelPath) && System.IO.File.Exists(tagsPath))
+            {
+                _joyTagService = new JoyTagService(
+                    modelPath, 
+                    tagsPath, 
+                    _settings.JoyTagThreshold, 
+                    GpuId);
+                await _joyTagService.InitializeAsync();
+                Logger.Log($"TaggingModelPool GPU{GpuId}: JoyTag loaded (threshold: {_settings.JoyTagThreshold})");
+            }
+            else
+            {
+                Logger.Log($"TaggingModelPool GPU{GpuId}: JoyTag model files not found");
+            }
+        }
+        
+        // Initialize WD if enabled
+        if (_settings.EnableWDTag && !string.IsNullOrEmpty(_settings.WDTagModelPath))
+        {
+            var modelPath = _settings.WDTagModelPath;
+            var tagsPath = _settings.WDTagTagsPath;
+            
+            if (System.IO.File.Exists(modelPath) && System.IO.File.Exists(tagsPath))
+            {
+                _wdTagService = new WDTagService(
+                    modelPath, 
+                    tagsPath, 
+                    _settings.WDTagThreshold, 
+                    GpuId);
+                await _wdTagService.InitializeAsync();
+                Logger.Log($"TaggingModelPool GPU{GpuId}: WDTag loaded (threshold: {_settings.WDTagThreshold})");
+            }
+            else
+            {
+                Logger.Log($"TaggingModelPool GPU{GpuId}: WDTag model files not found");
+            }
+        }
+        
+        _isReady = _joyTagService != null || _wdTagService != null;
+        
+        if (_isReady)
+        {
+            Logger.Log($"TaggingModelPool GPU{GpuId}: Ready (VRAM: ~{VramUsageGb:F1}GB)");
+        }
+        else
+        {
+            Logger.Log($"TaggingModelPool GPU{GpuId}: No tagging models available!");
+        }
+    }
+    
+    public Task ShutdownAsync()
+    {
+        Logger.Log($"TaggingModelPool GPU{GpuId}: Shutting down...");
+        _joyTagService?.Dispose();
+        _wdTagService?.Dispose();
+        _joyTagService = null;
+        _wdTagService = null;
+        _isReady = false;
+        Logger.Log($"TaggingModelPool GPU{GpuId}: Shutdown complete, VRAM freed");
+        return Task.CompletedTask;
+    }
+    
+    public void Dispose()
+    {
+        ShutdownAsync().Wait();
+    }
+}
+
+/// <summary>
+/// Tagging service orchestrator - handles JoyTag and WD tagging.
+/// Owns model pools (one per GPU), spawns lightweight workers that share the pools.
 /// </summary>
 public class TaggingOrchestrator : BaseServiceOrchestrator
 {
     private readonly Settings _settings;
+    private readonly Dictionary<int, TaggingModelPool> _modelPools = new();
     
     public override ProcessingType ProcessingType => ProcessingType.Tagging;
     public override string Name => "Tagging";
@@ -69,89 +176,82 @@ public class TaggingOrchestrator : BaseServiceOrchestrator
         await DataStore.SetNeedsTagging(new List<int> { result.ImageId }, false);
     }
     
+    /// <summary>
+    /// Initialize model pools for all GPUs in the allocation.
+    /// Called before workers are created.
+    /// </summary>
+    protected override async Task InitializeModelsAsync(ServiceAllocation allocation, CancellationToken ct)
+    {
+        foreach (var gpuAlloc in allocation.GpuAllocations)
+        {
+            if (gpuAlloc.ModelCount > 0 && !_modelPools.ContainsKey(gpuAlloc.GpuId))
+            {
+                var pool = new TaggingModelPool(gpuAlloc.GpuId, _settings);
+                await pool.InitializeAsync(ct);
+                _modelPools[gpuAlloc.GpuId] = pool;
+            }
+        }
+    }
+    
+    /// <summary>
+    /// Shutdown all model pools and free VRAM.
+    /// </summary>
+    protected override async Task ShutdownModelsAsync()
+    {
+        foreach (var pool in _modelPools.Values)
+        {
+            await pool.ShutdownAsync();
+        }
+        _modelPools.Clear();
+    }
+    
+    /// <summary>
+    /// Get the model pool for a specific GPU.
+    /// </summary>
+    protected TaggingModelPool? GetModelPool(int gpuId)
+    {
+        return _modelPools.TryGetValue(gpuId, out var pool) ? pool : null;
+    }
+    
     protected override IProcessingWorker CreateWorker(int gpuId, int workerId)
     {
-        return new TaggingWorker(gpuId, workerId, _settings);
+        var pool = GetModelPool(gpuId);
+        if (pool == null)
+        {
+            throw new InvalidOperationException($"No model pool for GPU {gpuId}. Call InitializeModelsAsync first.");
+        }
+        return new TaggingWorker(gpuId, workerId, pool);
+    }
+    
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            ShutdownModelsAsync().Wait();
+        }
+        base.Dispose(disposing);
     }
 }
 
 /// <summary>
-/// Tagging worker - loads JoyTag/WD models and processes images
+/// Lightweight tagging worker - uses shared model pool from orchestrator.
+/// Does NOT own models - just processes images using provided pool.
+/// Thread-safe: ONNX CUDA EP allows concurrent Run() calls.
 /// </summary>
 public class TaggingWorker : IProcessingWorker
 {
-    private readonly Settings _settings;
-    private JoyTagService? _joyTagService;
-    private WDTagService? _wdTagService;
-    private bool _isReady;
+    private readonly TaggingModelPool _modelPool;
     private bool _isBusy;
     
     public int GpuId { get; }
     public int WorkerId { get; }
-    public bool IsReady => _isReady;
     public bool IsBusy => _isBusy;
     
-    public TaggingWorker(int gpuId, int workerId, Settings settings)
+    public TaggingWorker(int gpuId, int workerId, TaggingModelPool modelPool)
     {
         GpuId = gpuId;
         WorkerId = workerId;
-        _settings = settings;
-    }
-    
-    public async Task InitializeAsync(CancellationToken cancellationToken = default)
-    {
-        Logger.Log($"TaggingWorker {WorkerId}: Initializing on GPU {GpuId}");
-        
-        // Initialize JoyTag if enabled
-        if (_settings.EnableJoyTag && !string.IsNullOrEmpty(_settings.JoyTagModelPath))
-        {
-            var modelPath = _settings.JoyTagModelPath;
-            var tagsPath = _settings.JoyTagTagsPath;
-            
-            if (System.IO.File.Exists(modelPath) && System.IO.File.Exists(tagsPath))
-            {
-                _joyTagService = new JoyTagService(
-                    modelPath, 
-                    tagsPath, 
-                    _settings.JoyTagThreshold, 
-                    GpuId);
-                await _joyTagService.InitializeAsync();
-                Logger.Log($"TaggingWorker {WorkerId}: JoyTag initialized (threshold: {_settings.JoyTagThreshold})");
-            }
-            else
-            {
-                Logger.Log($"TaggingWorker {WorkerId}: JoyTag model files not found");
-            }
-        }
-        
-        // Initialize WD if enabled
-        if (_settings.EnableWDTag && !string.IsNullOrEmpty(_settings.WDTagModelPath))
-        {
-            var modelPath = _settings.WDTagModelPath;
-            var tagsPath = _settings.WDTagTagsPath;
-            
-            if (System.IO.File.Exists(modelPath) && System.IO.File.Exists(tagsPath))
-            {
-                _wdTagService = new WDTagService(
-                    modelPath, 
-                    tagsPath, 
-                    _settings.WDTagThreshold, 
-                    GpuId);
-                await _wdTagService.InitializeAsync();
-                Logger.Log($"TaggingWorker {WorkerId}: WDTag initialized (threshold: {_settings.WDTagThreshold})");
-            }
-            else
-            {
-                Logger.Log($"TaggingWorker {WorkerId}: WDTag model files not found");
-            }
-        }
-        
-        _isReady = _joyTagService != null || _wdTagService != null;
-        
-        if (!_isReady)
-        {
-            Logger.Log($"TaggingWorker {WorkerId}: No tagging services available!");
-        }
+        _modelPool = modelPool;
     }
     
     public async Task<ProcessingResult> ProcessAsync(ProcessingJob job, CancellationToken cancellationToken = default)
@@ -160,23 +260,24 @@ public class TaggingWorker : IProcessingWorker
         
         try
         {
-            if (!_isReady)
+            if (!_modelPool.IsReady)
             {
                 return new ProcessingResult
                 {
                     ImageId = job.ImageId,
                     Success = false,
-                    ErrorMessage = "Tagging services not initialized"
+                    ErrorMessage = "Tagging model pool not ready"
                 };
             }
             
             var allTags = new List<(string Tag, float Confidence)>();
             
             // Run both taggers in parallel if both are available
-            if (_joyTagService != null && _wdTagService != null)
+            // Thread-safe: ONNX CUDA EP supports concurrent calls
+            if (_modelPool.JoyTagService != null && _modelPool.WDTagService != null)
             {
-                var joyTask = _joyTagService.TagImageAsync(job.ImagePath);
-                var wdTask = _wdTagService.TagImageAsync(job.ImagePath);
+                var joyTask = _modelPool.JoyTagService.TagImageAsync(job.ImagePath);
+                var wdTask = _modelPool.WDTagService.TagImageAsync(job.ImagePath);
                 await Task.WhenAll(joyTask, wdTask);
                 
                 var joyTags = await joyTask;
@@ -187,15 +288,15 @@ public class TaggingWorker : IProcessingWorker
                 if (wdTags != null)
                     allTags.AddRange(wdTags.Select(t => (t.Tag, t.Confidence)));
             }
-            else if (_joyTagService != null)
+            else if (_modelPool.JoyTagService != null)
             {
-                var tags = await _joyTagService.TagImageAsync(job.ImagePath);
+                var tags = await _modelPool.JoyTagService.TagImageAsync(job.ImagePath);
                 if (tags != null)
                     allTags.AddRange(tags.Select(t => (t.Tag, t.Confidence)));
             }
-            else if (_wdTagService != null)
+            else if (_modelPool.WDTagService != null)
             {
-                var tags = await _wdTagService.TagImageAsync(job.ImagePath);
+                var tags = await _modelPool.WDTagService.TagImageAsync(job.ImagePath);
                 if (tags != null)
                     allTags.AddRange(tags.Select(t => (t.Tag, t.Confidence)));
             }
@@ -223,19 +324,8 @@ public class TaggingWorker : IProcessingWorker
         }
     }
     
-    public Task ShutdownAsync()
-    {
-        Logger.Log($"TaggingWorker {WorkerId}: Shutting down");
-        _joyTagService?.Dispose();
-        _wdTagService?.Dispose();
-        _joyTagService = null;
-        _wdTagService = null;
-        _isReady = false;
-        return Task.CompletedTask;
-    }
-    
     public void Dispose()
     {
-        ShutdownAsync().Wait();
+        // Worker doesn't own the model pool - nothing to dispose
     }
 }

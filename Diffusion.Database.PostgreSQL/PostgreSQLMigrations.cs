@@ -10,7 +10,7 @@ public class PostgreSQLMigrations
 {
     private readonly NpgsqlConnection _connection;
     private readonly string _schema;
-    private const int CurrentVersion = 9;
+    private const int CurrentVersion = 10;
 
     public PostgreSQLMigrations(NpgsqlConnection connection, string schema = "public")
     {
@@ -44,6 +44,7 @@ public class PostgreSQLMigrations
             if (currentVersion < 7) await ApplyV7Async();
             if (currentVersion < 8) await ApplyV8Async();
             if (currentVersion < 9) await ApplyV9Async();
+            if (currentVersion < 10) await ApplyV10Async();
 
             // Only insert version if migrations were applied
             if (currentVersion < CurrentVersion)
@@ -904,6 +905,134 @@ CREATE INDEX IF NOT EXISTS idx_image_face_cluster_status ON image (face_clusteri
         catch (Exception ex)
         {
             Diffusion.Common.Logger.Log($"Migration V9 failed: {ex.Message}");
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// V10: Granular embedding schema - separate BGE for prompt/caption/tags, CLIP for prompt only, T5-XXL stubs
+    /// </summary>
+    private async Task ApplyV10Async()
+    {
+        try
+        {
+            Diffusion.Common.Logger.Log("Applying V10 migration: Granular embedding schema...");
+            
+            var sql = @"
+-- =============================================================================
+-- V10: GRANULAR EMBEDDING SCHEMA
+-- =============================================================================
+-- Purpose: Separate embeddings for different use cases:
+--   - BGE embeddings: Semantic search (prompt, caption, tags separately)
+--   - CLIP embeddings: SDXL regeneration (prompt only)
+--   - CLIP Vision: Visual similarity (image pixels)
+--   - T5-XXL: Flux regeneration (stubs for future implementation)
+-- =============================================================================
+
+-- STEP 1: Add new granular BGE embedding columns
+-- BGE-large-en-v1.5 produces 1024-dim embeddings
+ALTER TABLE image ADD COLUMN IF NOT EXISTS bge_prompt_embedding vector(1024);
+ALTER TABLE image ADD COLUMN IF NOT EXISTS bge_caption_embedding vector(1024);
+ALTER TABLE image ADD COLUMN IF NOT EXISTS bge_tags_embedding vector(1024);
+
+-- STEP 2: Rename existing prompt_embedding to bge_prompt_embedding (migrate data)
+-- Only if we have data in the old column and new column is empty
+UPDATE image 
+SET bge_prompt_embedding = prompt_embedding 
+WHERE prompt_embedding IS NOT NULL AND bge_prompt_embedding IS NULL;
+
+-- STEP 3: Rename existing CLIP columns to be prompt-specific
+-- clip_l_embedding -> clip_l_prompt_embedding (SDXL regeneration)
+-- clip_g_embedding -> clip_g_prompt_embedding (SDXL regeneration)
+ALTER TABLE image ADD COLUMN IF NOT EXISTS clip_l_prompt_embedding vector(768);
+ALTER TABLE image ADD COLUMN IF NOT EXISTS clip_g_prompt_embedding vector(1280);
+
+-- Migrate existing data
+UPDATE image 
+SET clip_l_prompt_embedding = clip_l_embedding 
+WHERE clip_l_embedding IS NOT NULL AND clip_l_prompt_embedding IS NULL;
+
+UPDATE image 
+SET clip_g_prompt_embedding = clip_g_embedding 
+WHERE clip_g_embedding IS NOT NULL AND clip_g_prompt_embedding IS NULL;
+
+-- STEP 4: Rename image_embedding to clip_vision_embedding for clarity
+ALTER TABLE image ADD COLUMN IF NOT EXISTS clip_vision_embedding vector(1280);
+
+UPDATE image 
+SET clip_vision_embedding = image_embedding 
+WHERE image_embedding IS NOT NULL AND clip_vision_embedding IS NULL;
+
+-- STEP 5: Add T5-XXL stubs for future Flux support
+-- T5-XXL produces 4096-dim embeddings
+ALTER TABLE image ADD COLUMN IF NOT EXISTS t5xxl_prompt_embedding vector(4096);
+ALTER TABLE image ADD COLUMN IF NOT EXISTS t5xxl_caption_embedding vector(4096);
+
+-- STEP 6: Add granular status flags for each embedding type
+-- true = needs processing, false = processed, null = not queued
+ALTER TABLE image ADD COLUMN IF NOT EXISTS needs_bge_prompt_embedding BOOLEAN;
+ALTER TABLE image ADD COLUMN IF NOT EXISTS needs_bge_caption_embedding BOOLEAN;
+ALTER TABLE image ADD COLUMN IF NOT EXISTS needs_bge_tags_embedding BOOLEAN;
+ALTER TABLE image ADD COLUMN IF NOT EXISTS needs_clip_l_prompt_embedding BOOLEAN;
+ALTER TABLE image ADD COLUMN IF NOT EXISTS needs_clip_g_prompt_embedding BOOLEAN;
+ALTER TABLE image ADD COLUMN IF NOT EXISTS needs_clip_vision_embedding BOOLEAN;
+ALTER TABLE image ADD COLUMN IF NOT EXISTS needs_t5xxl_prompt_embedding BOOLEAN;
+ALTER TABLE image ADD COLUMN IF NOT EXISTS needs_t5xxl_caption_embedding BOOLEAN;
+
+-- STEP 7: Create partial indexes for queue processing (only index pending items)
+CREATE INDEX IF NOT EXISTS idx_bge_prompt_pending ON image (needs_bge_prompt_embedding) WHERE needs_bge_prompt_embedding = true;
+CREATE INDEX IF NOT EXISTS idx_bge_caption_pending ON image (needs_bge_caption_embedding) WHERE needs_bge_caption_embedding = true;
+CREATE INDEX IF NOT EXISTS idx_bge_tags_pending ON image (needs_bge_tags_embedding) WHERE needs_bge_tags_embedding = true;
+CREATE INDEX IF NOT EXISTS idx_clip_l_prompt_pending ON image (needs_clip_l_prompt_embedding) WHERE needs_clip_l_prompt_embedding = true;
+CREATE INDEX IF NOT EXISTS idx_clip_g_prompt_pending ON image (needs_clip_g_prompt_embedding) WHERE needs_clip_g_prompt_embedding = true;
+CREATE INDEX IF NOT EXISTS idx_clip_vision_pending ON image (needs_clip_vision_embedding) WHERE needs_clip_vision_embedding = true;
+CREATE INDEX IF NOT EXISTS idx_t5xxl_prompt_pending ON image (needs_t5xxl_prompt_embedding) WHERE needs_t5xxl_prompt_embedding = true;
+CREATE INDEX IF NOT EXISTS idx_t5xxl_caption_pending ON image (needs_t5xxl_caption_embedding) WHERE needs_t5xxl_caption_embedding = true;
+
+-- STEP 8: Create vector similarity indexes for new columns (IVFFlat)
+-- Only create for columns likely to have data - skip stubs
+CREATE INDEX IF NOT EXISTS idx_bge_prompt_sim ON image USING ivfflat (bge_prompt_embedding vector_cosine_ops) WITH (lists = 100);
+CREATE INDEX IF NOT EXISTS idx_bge_caption_sim ON image USING ivfflat (bge_caption_embedding vector_cosine_ops) WITH (lists = 100);
+CREATE INDEX IF NOT EXISTS idx_bge_tags_sim ON image USING ivfflat (bge_tags_embedding vector_cosine_ops) WITH (lists = 100);
+CREATE INDEX IF NOT EXISTS idx_clip_l_prompt_sim ON image USING ivfflat (clip_l_prompt_embedding vector_cosine_ops) WITH (lists = 100);
+CREATE INDEX IF NOT EXISTS idx_clip_g_prompt_sim ON image USING ivfflat (clip_g_prompt_embedding vector_cosine_ops) WITH (lists = 100);
+CREATE INDEX IF NOT EXISTS idx_clip_vision_sim ON image USING ivfflat (clip_vision_embedding vector_cosine_ops) WITH (lists = 100);
+
+-- STEP 9: Update embedding_cache table to support new embedding types
+ALTER TABLE embedding_cache ADD COLUMN IF NOT EXISTS bge_prompt_embedding vector(1024);
+ALTER TABLE embedding_cache ADD COLUMN IF NOT EXISTS bge_caption_embedding vector(1024);
+ALTER TABLE embedding_cache ADD COLUMN IF NOT EXISTS bge_tags_embedding vector(1024);
+ALTER TABLE embedding_cache ADD COLUMN IF NOT EXISTS clip_l_prompt_embedding vector(768);
+ALTER TABLE embedding_cache ADD COLUMN IF NOT EXISTS clip_g_prompt_embedding vector(1280);
+ALTER TABLE embedding_cache ADD COLUMN IF NOT EXISTS clip_vision_embedding vector(1280);
+ALTER TABLE embedding_cache ADD COLUMN IF NOT EXISTS t5xxl_prompt_embedding vector(4096);
+ALTER TABLE embedding_cache ADD COLUMN IF NOT EXISTS t5xxl_caption_embedding vector(4096);
+
+-- STEP 10: Drop old status columns from V9 (replaced by granular ones)
+-- Keep old columns for now to avoid breaking existing code
+-- ALTER TABLE image DROP COLUMN IF EXISTS bge_embedding_status;
+-- ALTER TABLE image DROP COLUMN IF EXISTS clip_l_embedding_status;
+-- ALTER TABLE image DROP COLUMN IF EXISTS clip_g_embedding_status;
+-- ALTER TABLE image DROP COLUMN IF EXISTS clip_vision_embedding_status;
+
+-- Add comment documenting the schema
+COMMENT ON COLUMN image.bge_prompt_embedding IS 'BGE-large-en-v1.5 embedding of original prompt for semantic search';
+COMMENT ON COLUMN image.bge_caption_embedding IS 'BGE-large-en-v1.5 embedding of AI-generated caption for semantic search';
+COMMENT ON COLUMN image.bge_tags_embedding IS 'BGE-large-en-v1.5 embedding of tags (comma-joined) for semantic search';
+COMMENT ON COLUMN image.clip_l_prompt_embedding IS 'CLIP-L (768d) embedding of prompt for SDXL regeneration';
+COMMENT ON COLUMN image.clip_g_prompt_embedding IS 'CLIP-G (1280d) embedding of prompt for SDXL regeneration';
+COMMENT ON COLUMN image.clip_vision_embedding IS 'CLIP-ViT-H/14 (1280d) embedding of image pixels for visual similarity';
+COMMENT ON COLUMN image.t5xxl_prompt_embedding IS 'T5-XXL (4096d) embedding of prompt for Flux regeneration (stub)';
+COMMENT ON COLUMN image.t5xxl_caption_embedding IS 'T5-XXL (4096d) embedding of caption for Flux regeneration (stub)';
+            ";
+            
+            await _connection.ExecuteAsync(sql);
+            
+            Diffusion.Common.Logger.Log("V10 migration completed successfully - granular embedding schema");
+        }
+        catch (Exception ex)
+        {
+            Diffusion.Common.Logger.Log($"Migration V10 failed: {ex.Message}");
             throw;
         }
     }

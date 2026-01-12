@@ -37,6 +37,12 @@ public partial class PostgreSQLDataStore
         
         Logger.Log($"StoreCaptionAsync: {rowsAffected} rows inserted");
         
+        // Flag BGE caption embedding for regeneration (caption changed)
+        // Also flag T5-XXL caption embedding (stub for future Flux support)
+        await connection.ExecuteAsync(
+            $"UPDATE {Table("image")} SET needs_bge_caption_embedding = true, needs_t5xxl_caption_embedding = true WHERE id = @imageId",
+            new { imageId }).ConfigureAwait(false);
+        
         // Verify it was saved
         var verify = await GetLatestCaptionAsync(imageId, source).ConfigureAwait(false);
         Logger.Log($"StoreCaptionAsync verification: caption found={verify != null}, len={verify?.Caption?.Length ?? 0}");
@@ -70,6 +76,16 @@ public partial class PostgreSQLDataStore
         }).ToList();
 
         await connection.ExecuteAsync(sql, batchData).ConfigureAwait(false);
+        
+        // Flag BGE caption embedding for regeneration for all images in batch
+        // Also flag T5-XXL caption embedding (stub for future Flux support)
+        if (imageCaptions.Count > 0)
+        {
+            var imageIds = imageCaptions.Keys.ToArray();
+            await connection.ExecuteAsync(
+                $"UPDATE {Table("image")} SET needs_bge_caption_embedding = true, needs_t5xxl_caption_embedding = true WHERE id = ANY(@ids)",
+                new { ids = imageIds }).ConfigureAwait(false);
+        }
     }
 
     /// <summary>
@@ -79,7 +95,10 @@ public partial class PostgreSQLDataStore
     {
         ArgumentNullException.ThrowIfNull(newCaption);
         
-        const string sql = @"
+        // First get the image_id for this caption so we can flag it for re-embedding
+        const string getImageIdSql = "SELECT image_id FROM image_captions WHERE id = @captionId";
+        
+        const string updateSql = @"
             UPDATE image_captions
             SET caption = @newCaption, 
                 is_user_edited = TRUE
@@ -88,7 +107,18 @@ public partial class PostgreSQLDataStore
 
         await using var connection = await OpenConnectionAsync().ConfigureAwait(false);
 
-        await connection.ExecuteAsync(sql, new { captionId, newCaption }).ConfigureAwait(false);
+        var imageId = await connection.ExecuteScalarAsync<int?>(getImageIdSql, new { captionId }).ConfigureAwait(false);
+        
+        await connection.ExecuteAsync(updateSql, new { captionId, newCaption }).ConfigureAwait(false);
+        
+        // Flag BGE caption embedding for regeneration (caption changed)
+        // Also flag T5-XXL caption embedding (stub for future Flux support)
+        if (imageId.HasValue)
+        {
+            await connection.ExecuteAsync(
+                $"UPDATE {Table("image")} SET needs_bge_caption_embedding = true, needs_t5xxl_caption_embedding = true WHERE id = @imageId",
+                new { imageId = imageId.Value }).ConfigureAwait(false);
+        }
     }
 
     // ==================== Caption Retrieval Operations ====================

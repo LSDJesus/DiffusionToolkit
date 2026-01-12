@@ -11,12 +11,101 @@ using Diffusion.Toolkit.Configuration;
 namespace Diffusion.Toolkit.Services.Processing;
 
 /// <summary>
-/// Embedding service orchestrator - handles BGE text and CLIP image embeddings
-/// Uses EmbeddingPooledOrchestrator for efficient model sharing
+/// Embedding model pool - holds BGE, CLIP-L, CLIP-G, and CLIP-Vision models for a specific GPU.
+/// Thread-safe: ONNX Runtime with CUDA EP supports concurrent Run() calls.
+/// Multiple workers can share one pool.
+/// </summary>
+public class EmbeddingModelPool : IModelPool
+{
+    private readonly Settings _settings;
+    private EmbeddingPooledOrchestrator? _pooledOrchestrator;
+    private EmbeddingConfig? _config;
+    private bool _isReady;
+    
+    public int GpuId { get; }
+    public bool IsReady => _isReady;
+    public double VramUsageGb => 7.6; // BGE (~0.5GB) + CLIP-L (~1.5GB) + CLIP-G (~3GB) + CLIP-Vision (~2.6GB)
+    
+    public EmbeddingPooledOrchestrator? PooledOrchestrator => _pooledOrchestrator;
+    
+    public EmbeddingModelPool(int gpuId, Settings settings)
+    {
+        GpuId = gpuId;
+        _settings = settings;
+    }
+    
+    public async Task InitializeAsync(CancellationToken cancellationToken = default)
+    {
+        if (_isReady) return;
+        
+        Logger.Log($"EmbeddingModelPool GPU{GpuId}: Initializing models...");
+        
+        try
+        {
+            // Get base directory for model paths
+            var baseDir = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location) ?? "";
+            
+            // Create config with default model paths
+            _config = EmbeddingConfig.CreateDefault(baseDir);
+            
+            // Validate that model files exist
+            try
+            {
+                _config.Validate();
+            }
+            catch (FileNotFoundException ex)
+            {
+                Logger.Log($"EmbeddingModelPool GPU{GpuId}: {ex.Message}");
+                return;
+            }
+            
+            // Create pooled orchestrator (manages all 4 models on this GPU)
+            // Using 1 worker per model internally - our architecture handles parallelism
+            _pooledOrchestrator = new EmbeddingPooledOrchestrator(GpuId, workersPerModel: 1);
+            await _pooledOrchestrator.InitializeAsync(_config, cancellationToken);
+            
+            _isReady = _pooledOrchestrator.IsInitialized;
+            
+            if (_isReady)
+            {
+                Logger.Log($"EmbeddingModelPool GPU{GpuId}: Ready (VRAM: ~{VramUsageGb:F1}GB)");
+            }
+            else
+            {
+                Logger.Log($"EmbeddingModelPool GPU{GpuId}: Initialization failed");
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"EmbeddingModelPool GPU{GpuId}: Initialization failed - {ex.Message}");
+            _isReady = false;
+        }
+    }
+    
+    public Task ShutdownAsync()
+    {
+        Logger.Log($"EmbeddingModelPool GPU{GpuId}: Shutting down...");
+        _pooledOrchestrator?.Dispose();
+        _pooledOrchestrator = null;
+        _isReady = false;
+        Logger.Log($"EmbeddingModelPool GPU{GpuId}: Shutdown complete, VRAM freed");
+        return Task.CompletedTask;
+    }
+    
+    public void Dispose()
+    {
+        ShutdownAsync().Wait();
+    }
+}
+
+/// <summary>
+/// Embedding service orchestrator - handles BGE text and CLIP image embeddings.
+/// Owns model pools (one per GPU), spawns lightweight workers that share the pools.
 /// </summary>
 public class EmbeddingOrchestrator : BaseServiceOrchestrator
 {
     private readonly Settings _settings;
+    private readonly Dictionary<int, EmbeddingModelPool> _modelPools = new();
     
     public override ProcessingType ProcessingType => ProcessingType.Embedding;
     public override string Name => "Embedding";
@@ -81,9 +170,56 @@ public class EmbeddingOrchestrator : BaseServiceOrchestrator
         await DataStore.SetNeedsEmbedding(new List<int> { result.ImageId }, false);
     }
     
+    /// <summary>
+    /// Initialize model pools for all GPUs in the allocation.
+    /// </summary>
+    protected override async Task InitializeModelsAsync(ServiceAllocation allocation, CancellationToken ct)
+    {
+        foreach (var gpuAlloc in allocation.GpuAllocations)
+        {
+            if (gpuAlloc.ModelCount > 0 && !_modelPools.ContainsKey(gpuAlloc.GpuId))
+            {
+                var pool = new EmbeddingModelPool(gpuAlloc.GpuId, _settings);
+                await pool.InitializeAsync(ct);
+                _modelPools[gpuAlloc.GpuId] = pool;
+            }
+        }
+    }
+    
+    /// <summary>
+    /// Shutdown all model pools and free VRAM.
+    /// </summary>
+    protected override async Task ShutdownModelsAsync()
+    {
+        foreach (var pool in _modelPools.Values)
+        {
+            await pool.ShutdownAsync();
+        }
+        _modelPools.Clear();
+    }
+    
+    protected EmbeddingModelPool? GetModelPool(int gpuId)
+    {
+        return _modelPools.TryGetValue(gpuId, out var pool) ? pool : null;
+    }
+    
     protected override IProcessingWorker CreateWorker(int gpuId, int workerId)
     {
-        return new EmbeddingWorker(gpuId, workerId, _settings);
+        var pool = GetModelPool(gpuId);
+        if (pool == null)
+        {
+            throw new InvalidOperationException($"No model pool for GPU {gpuId}. Call InitializeModelsAsync first.");
+        }
+        return new EmbeddingWorker(gpuId, workerId, pool);
+    }
+    
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            ShutdownModelsAsync().Wait();
+        }
+        base.Dispose(disposing);
     }
 }
 
@@ -108,65 +244,23 @@ public class EmbeddingResultData
 }
 
 /// <summary>
-/// Embedding worker - uses EmbeddingPooledOrchestrator for model management
-/// Each worker has its own orchestrator that manages all 4 embedding models on its GPU
+/// Lightweight embedding worker - uses shared model pool from orchestrator.
+/// Thread-safe: ONNX CUDA EP allows concurrent Run() calls.
 /// </summary>
 public class EmbeddingWorker : IProcessingWorker
 {
-    private readonly Settings _settings;
-    private EmbeddingPooledOrchestrator? _orchestrator;
-    private EmbeddingConfig? _config;
-    private bool _isReady;
+    private readonly EmbeddingModelPool _modelPool;
     private bool _isBusy;
     
     public int GpuId { get; }
     public int WorkerId { get; }
-    public bool IsReady => _isReady;
     public bool IsBusy => _isBusy;
     
-    public EmbeddingWorker(int gpuId, int workerId, Settings settings)
+    public EmbeddingWorker(int gpuId, int workerId, EmbeddingModelPool modelPool)
     {
         GpuId = gpuId;
         WorkerId = workerId;
-        _settings = settings;
-    }
-    
-    public async Task InitializeAsync(CancellationToken cancellationToken = default)
-    {
-        Logger.Log($"EmbeddingWorker {WorkerId}: Initializing on GPU {GpuId}");
-        
-        try
-        {
-            // Get base directory for model paths
-            var baseDir = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location) ?? "";
-            
-            // Create config with default model paths
-            _config = EmbeddingConfig.CreateDefault(baseDir);
-            
-            // Validate that model files exist
-            try
-            {
-                _config.Validate();
-            }
-            catch (FileNotFoundException ex)
-            {
-                Logger.Log($"EmbeddingWorker {WorkerId}: {ex.Message}");
-                return;
-            }
-            
-            // Create pooled orchestrator (manages all 4 models on this GPU)
-            // Note: Using 1 worker per model since the new architecture handles parallelism at the job level
-            _orchestrator = new EmbeddingPooledOrchestrator(GpuId, workersPerModel: 1);
-            await _orchestrator.InitializeAsync(_config, cancellationToken);
-            
-            _isReady = _orchestrator.IsInitialized;
-            Logger.Log($"EmbeddingWorker {WorkerId}: Initialized = {_isReady}");
-        }
-        catch (Exception ex)
-        {
-            Logger.Log($"EmbeddingWorker {WorkerId}: Initialization failed - {ex.Message}");
-            _isReady = false;
-        }
+        _modelPool = modelPool;
     }
     
     public async Task<ProcessingResult> ProcessAsync(ProcessingJob job, CancellationToken cancellationToken = default)
@@ -175,13 +269,13 @@ public class EmbeddingWorker : IProcessingWorker
         
         try
         {
-            if (!_isReady || _orchestrator == null)
+            if (!_modelPool.IsReady || _modelPool.PooledOrchestrator == null)
             {
                 return new ProcessingResult
                 {
                     ImageId = job.ImageId,
                     Success = false,
-                    ErrorMessage = "Embedding orchestrator not initialized"
+                    ErrorMessage = "Embedding model pool not ready"
                 };
             }
             
@@ -190,7 +284,7 @@ public class EmbeddingWorker : IProcessingWorker
             var negativePrompt = jobData?.NegativePrompt;
             
             // Use the pooled orchestrator to generate all 4 embeddings
-            var result = await _orchestrator.GenerateEmbeddingsAsync(
+            var result = await _modelPool.PooledOrchestrator.GenerateEmbeddingsAsync(
                 job.ImageId,
                 prompt,
                 negativePrompt,
@@ -236,17 +330,8 @@ public class EmbeddingWorker : IProcessingWorker
         }
     }
     
-    public Task ShutdownAsync()
-    {
-        Logger.Log($"EmbeddingWorker {WorkerId}: Shutting down");
-        _orchestrator?.Dispose();
-        _orchestrator = null;
-        _isReady = false;
-        return Task.CompletedTask;
-    }
-    
     public void Dispose()
     {
-        ShutdownAsync().Wait();
+        // Worker doesn't own the model pool - nothing to dispose
     }
 }

@@ -2060,22 +2060,22 @@ namespace Diffusion.Toolkit
                 
                 try
                 {
-                    // Build GPU allocation from concurrent settings (all services share)
-                    var gpuAllocation = new Dictionary<int, int>();
+                    // Build per-service GPU allocations
                     var settings = ServiceLocator.Settings;
+                    var serviceAllocations = new Dictionary<Services.Processing.ProcessingType, Dictionary<int, int>>();
                     
                     // For concurrent mode, use the concurrent allocations
                     if (_model.EnableTagging)
-                        MergeGpuAllocation(gpuAllocation, ParseGpuAllocation(settings.ConcurrentTaggingAllocation));
+                        serviceAllocations[Services.Processing.ProcessingType.Tagging] = ParseGpuAllocation(settings.ConcurrentTaggingAllocation);
                     if (_model.EnableCaptioning)
-                        MergeGpuAllocation(gpuAllocation, ParseGpuAllocation(settings.ConcurrentCaptioningAllocation));
+                        serviceAllocations[Services.Processing.ProcessingType.Captioning] = ParseGpuAllocation(settings.ConcurrentCaptioningAllocation);
                     if (_model.EnableEmbedding)
-                        MergeGpuAllocation(gpuAllocation, ParseGpuAllocation(settings.ConcurrentEmbeddingAllocation));
+                        serviceAllocations[Services.Processing.ProcessingType.Embedding] = ParseGpuAllocation(settings.ConcurrentEmbeddingAllocation);
                     if (_model.EnableFaceDetection)
-                        MergeGpuAllocation(gpuAllocation, ParseGpuAllocation(settings.ConcurrentFaceDetectionAllocation));
+                        serviceAllocations[Services.Processing.ProcessingType.FaceDetection] = ParseGpuAllocation(settings.ConcurrentFaceDetectionAllocation);
                     
-                    // Start all enabled services
-                    await orchestrator.StartAllAsync(gpuAllocation, Services.Processing.ProcessingMode.Concurrent);
+                    // Start only enabled services with their specific allocations
+                    await orchestrator.StartServicesAsync(serviceAllocations, Services.Processing.ProcessingMode.Concurrent);
                     
                     // Update individual active states
                     _model.IsTaggingActive = _model.EnableTagging;
@@ -2083,7 +2083,7 @@ namespace Diffusion.Toolkit
                     _model.IsEmbeddingActive = _model.EnableEmbedding;
                     _model.IsFaceDetectionActive = _model.EnableFaceDetection;
                     
-                    var enabledCount = new[] { _model.EnableTagging, _model.EnableCaptioning, _model.EnableEmbedding, _model.EnableFaceDetection }.Count(x => x);
+                    var enabledCount = serviceAllocations.Count;
                     ServiceLocator.ToastService?.Toast($"Started {enabledCount} processor(s) (new architecture)", "Background Processing");
                     Logger.Log($"Started unified processing with {enabledCount} processors (new architecture)");
                 }
@@ -2237,8 +2237,11 @@ namespace Diffusion.Toolkit
                 await dataStore.ClearFaceDetectionQueue();
             }
             
-            // Refresh queue counts
-            await service?.RefreshQueueCountsAsync()!;
+            // Refresh queue counts for all services
+            if (service != null)
+                await service.RefreshQueueCountsAsync();
+            if (ServiceLocator.BackgroundFaceDetectionService != null)
+                await ServiceLocator.BackgroundFaceDetectionService.RefreshQueueCountAsync();
             
             Logger.Log("Cleared all processing queues from UI");
             ServiceLocator.ToastService?.Toast("Cleared all queues", "Background Processing");
@@ -2291,10 +2294,12 @@ namespace Diffusion.Toolkit
                     var t = ServiceLocator.BackgroundTaggingService.TaggingQueueRemaining;
                     var c = ServiceLocator.BackgroundTaggingService.CaptioningQueueRemaining;
                     var em = ServiceLocator.BackgroundTaggingService.EmbeddingQueueRemaining;
-                    Logger.Log($"OnQueueCountsChanged: Setting model T={t}, C={c}, E={em}");
+                    var f = ServiceLocator.BackgroundFaceDetectionService?.FaceDetectionQueueRemaining ?? 0;
+                    Logger.Log($"OnQueueCountsChanged: Setting model T={t}, C={c}, E={em}, F={f}");
                     _model.TaggingQueueCount = t;
                     _model.CaptioningQueueCount = c;
                     _model.EmbeddingQueueCount = em;
+                    _model.FaceDetectionQueueCount = f;
                 }
             });
         }

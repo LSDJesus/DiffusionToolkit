@@ -30,12 +30,27 @@ public enum ProcessingMode
 }
 
 /// <summary>
-/// VRAM allocation for a single GPU
+/// VRAM allocation for a single GPU.
+/// For ONNX services (Tagging, Embedding, FaceDetection): WorkerCount = number of parallel workers sharing 1 model.
+/// For LLM services (Captioning): WorkerCount = number of model instances (1 worker per model).
 /// </summary>
 public class GpuAllocation
 {
     public int GpuId { get; init; }
+    
+    /// <summary>
+    /// For ONNX: Number of workers sharing one model on this GPU.
+    /// For Captioning: Number of model instances (each gets 1 worker).
+    /// </summary>
+    public int WorkerCount { get; init; }
+    
+    /// <summary>
+    /// Number of model instances on this GPU.
+    /// For ONNX services: Always 1 (workers share).
+    /// For Captioning: Same as WorkerCount (1:1 ratio).
+    /// </summary>
     public int ModelCount { get; init; }
+    
     public double VramCapacityGb { get; init; }
     public double MaxUsagePercent { get; init; }
     
@@ -52,6 +67,10 @@ public class ServiceAllocation
     public GpuAllocation[] GpuAllocations { get; init; } = Array.Empty<GpuAllocation>();
     
     public int TotalWorkers => GpuAllocations.Length > 0 
+        ? System.Linq.Enumerable.Sum(GpuAllocations, g => g.WorkerCount) 
+        : 0;
+    
+    public int TotalModels => GpuAllocations.Length > 0 
         ? System.Linq.Enumerable.Sum(GpuAllocations, g => g.ModelCount) 
         : 0;
 }

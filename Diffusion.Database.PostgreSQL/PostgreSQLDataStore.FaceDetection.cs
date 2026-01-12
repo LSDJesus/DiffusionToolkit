@@ -90,12 +90,12 @@ public partial class PostgreSQLDataStore
     }
 
     /// <summary>
-    /// Clear face detection queue
+    /// Clear face detection queue - sets to null (not queued, not processed) rather than false (processed)
     /// </summary>
     public async Task ClearFaceDetectionQueue()
     {
         await using var connection = await _dataSource.OpenConnectionAsync();
-        await connection.ExecuteAsync($"UPDATE {Table("image")} SET needs_face_detection = false WHERE needs_face_detection = true");
+        await connection.ExecuteAsync($"UPDATE {Table("image")} SET needs_face_detection = null WHERE needs_face_detection = true");
     }
 
     #endregion

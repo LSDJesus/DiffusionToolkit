@@ -83,9 +83,29 @@ public abstract class BaseServiceOrchestrator : IServiceOrchestrator
     protected abstract Task WriteResultAsync(ProcessingResult result);
     
     /// <summary>
-    /// Create a worker for the specified GPU
+    /// Create a worker for the specified GPU.
+    /// Workers receive model references from pools - they don't own models.
     /// </summary>
     protected abstract IProcessingWorker CreateWorker(int gpuId, int workerId);
+    
+    /// <summary>
+    /// Initialize model pools for all GPUs in the allocation.
+    /// Orchestrator owns model lifecycle - workers just use them.
+    /// Default implementation does nothing (for services that don't need shared pools).
+    /// </summary>
+    protected virtual Task InitializeModelsAsync(ServiceAllocation allocation, CancellationToken ct)
+    {
+        return Task.CompletedTask;
+    }
+    
+    /// <summary>
+    /// Shutdown all model pools and free VRAM.
+    /// Called when processing completes or is cancelled.
+    /// </summary>
+    protected virtual Task ShutdownModelsAsync()
+    {
+        return Task.CompletedTask;
+    }
     
     #endregion
     
@@ -124,6 +144,11 @@ public abstract class BaseServiceOrchestrator : IServiceOrchestrator
             Logger.Log($"{Name}: Found {_total} items to process");
             RaiseStatusChanged($"{Name}: Starting with {_total} items");
             
+            // Initialize model pools BEFORE creating workers
+            // Orchestrator owns model lifecycle - workers receive references
+            Logger.Log($"{Name}: Initializing model pools...");
+            await InitializeModelsAsync(allocation, Cts.Token);
+            
             // Create job queue
             JobQueue = Channel.CreateBounded<ProcessingJob>(new BoundedChannelOptions(1000)
             {
@@ -135,6 +160,9 @@ public abstract class BaseServiceOrchestrator : IServiceOrchestrator
             // Start queue population task
             var populateTask = Task.Run(() => PopulateQueueAsync(Cts.Token), Cts.Token);
             
+            // Calculate total worker count
+            int workerCount = allocation.TotalWorkers;
+            
             // Start workers based on allocation
             Workers = new List<IProcessingWorker>();
             WorkerTasks = new List<Task>();
@@ -142,7 +170,8 @@ public abstract class BaseServiceOrchestrator : IServiceOrchestrator
             int workerId = 0;
             foreach (var gpuAlloc in allocation.GpuAllocations)
             {
-                for (int i = 0; i < gpuAlloc.ModelCount; i++)
+                // WorkerCount = number of workers for this GPU
+                for (int i = 0; i < gpuAlloc.WorkerCount; i++)
                 {
                     var worker = CreateWorker(gpuAlloc.GpuId, workerId++);
                     Workers.Add(worker);
@@ -156,7 +185,7 @@ public abstract class BaseServiceOrchestrator : IServiceOrchestrator
                 }
             }
             
-            Logger.Log($"{Name}: Started {Workers.Count} workers across {allocation.GpuAllocations.Length} GPUs");
+            Logger.Log($"{Name}: Started {Workers.Count} workers across {allocation.GpuAllocations.Length} GPUs (models: {allocation.TotalModels})");
             
             // Wait for all workers to complete
             await Task.WhenAll(WorkerTasks);
@@ -165,17 +194,23 @@ public abstract class BaseServiceOrchestrator : IServiceOrchestrator
             await populateTask;
             
             Logger.Log($"{Name}: All workers completed. Processed {_progress}, Skipped {_skipped}");
+            
+            // Shutdown model pools and free VRAM
+            await ShutdownModelsAsync();
+            
             _isRunning = false;
             RaiseCompleted();
         }
         catch (OperationCanceledException)
         {
             Logger.Log($"{Name}: Cancelled");
+            await ShutdownModelsAsync();
             _isRunning = false;
         }
         catch (Exception ex)
         {
             Logger.Log($"{Name}: Error - {ex.Message}\n{ex.StackTrace}");
+            await ShutdownModelsAsync();
             _isRunning = false;
             throw;
         }
@@ -207,22 +242,25 @@ public abstract class BaseServiceOrchestrator : IServiceOrchestrator
             );
         }
         
-        // Shutdown workers
+        // Dispose workers (lightweight - they don't own models)
         if (Workers != null)
         {
             foreach (var worker in Workers)
             {
                 try
                 {
-                    await worker.ShutdownAsync();
                     worker.Dispose();
                 }
                 catch (Exception ex)
                 {
-                    Logger.Log($"{Name}: Error shutting down worker {worker.WorkerId}: {ex.Message}");
+                    Logger.Log($"{Name}: Error disposing worker {worker.WorkerId}: {ex.Message}");
                 }
             }
         }
+        
+        // Shutdown model pools and free VRAM
+        Logger.Log($"{Name}: Shutting down model pools...");
+        await ShutdownModelsAsync();
         
         Cts?.Dispose();
         Cts = null;
@@ -315,15 +353,15 @@ public abstract class BaseServiceOrchestrator : IServiceOrchestrator
     #region Worker Loop
     
     /// <summary>
-    /// Main worker loop - initialize, process jobs, shutdown
+    /// Main worker loop - process jobs from queue.
+    /// Workers are lightweight - they use shared model pools from orchestrator.
+    /// No model loading/unloading here.
     /// </summary>
     protected virtual async Task RunWorkerLoopAsync(IProcessingWorker worker, CancellationToken ct)
     {
         try
         {
-            // Initialize worker (load model)
-            await worker.InitializeAsync(ct);
-            Logger.Log($"{Name}: Worker {worker.WorkerId} initialized on GPU {worker.GpuId}");
+            Logger.Log($"{Name}: Worker {worker.WorkerId} started on GPU {worker.GpuId}");
             
             // Process jobs from queue
             await foreach (var job in JobQueue!.Reader.ReadAllAsync(ct))
@@ -378,14 +416,6 @@ public abstract class BaseServiceOrchestrator : IServiceOrchestrator
         }
         finally
         {
-            try
-            {
-                await worker.ShutdownAsync();
-            }
-            catch (Exception ex)
-            {
-                Logger.Log($"{Name}: Worker {worker.WorkerId} shutdown error: {ex.Message}");
-            }
             Logger.Log($"{Name}: Worker {worker.WorkerId} exited");
         }
     }

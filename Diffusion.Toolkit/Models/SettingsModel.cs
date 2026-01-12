@@ -86,6 +86,9 @@ public class SettingsModel : BaseNotify
     private string _gpuDevices = "0";
     private string _gpuVramCapacity = "32";
     private int _maxVramUsagePercent = 85;
+    private bool _useNewProcessingArchitecture = false;
+    private bool _enableDynamicVramAllocation = true;
+    private int _defaultOnnxWorkersPerGpu = 8;
     
     // GPU Model Allocation - Concurrent mode (all processes running together)
     private string _concurrentCaptioningAllocation = "1,0";
@@ -640,6 +643,34 @@ public class SettingsModel : BaseNotify
     {
         get => _maxVramUsagePercent;
         set => SetField(ref _maxVramUsagePercent, Math.Max(50, Math.Min(95, value)));
+    }
+
+    public bool UseNewProcessingArchitecture
+    {
+        get => _useNewProcessingArchitecture;
+        set => SetField(ref _useNewProcessingArchitecture, value);
+    }
+
+    /// <summary>
+    /// Enable priority-based model loading and dynamic VRAM reallocation.
+    /// When enabled:
+    /// - Services load by priority (Tagging/FaceDetection → Embedding → Captioning)
+    /// - When a queue completes, its VRAM is freed and captioning can expand
+    /// </summary>
+    public bool EnableDynamicVramAllocation
+    {
+        get => _enableDynamicVramAllocation;
+        set => SetField(ref _enableDynamicVramAllocation, value);
+    }
+
+    /// <summary>
+    /// Default number of workers per GPU for ONNX services (Tagging, Embedding, FaceDetection).
+    /// More workers = better GPU utilization, but diminishing returns past ~8-12.
+    /// </summary>
+    public int DefaultOnnxWorkersPerGpu
+    {
+        get => _defaultOnnxWorkersPerGpu;
+        set => SetField(ref _defaultOnnxWorkersPerGpu, Math.Max(1, Math.Min(32, value)));
     }
 
     // GPU Model Allocation - Concurrent mode (all processes running together)
