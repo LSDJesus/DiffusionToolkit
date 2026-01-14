@@ -306,84 +306,28 @@ namespace Diffusion.Toolkit
             int embeddingQueued = 0;
             int faceDetectionQueued = 0;
 
-            // Queue for tagging (filter based on skip settings)
+            // Queue for tagging using smart queue (respects needs_tagging flag state)
             if (doTagging)
             {
-                var imagesToTag = imageIds;
-                
-                // Check skip already tagged setting
-                if (settings?.SkipAlreadyTaggedImages == true)
-                {
-                    // Filter out images that already have tags
-                    var imagesWithTags = new List<int>();
-                    foreach (var imageId in imageIds)
-                    {
-                        var tags = await dataStore.GetImageTagsAsync(imageId);
-                        if (tags != null && tags.Any())
-                        {
-                            imagesWithTags.Add(imageId);
-                        }
-                    }
-                    imagesToTag = imageIds.Except(imagesWithTags).ToList();
-                    
-                    if (imagesWithTags.Count > 0)
-                    {
-                        Logger.Log($"Skipped {imagesWithTags.Count} images that already have tags");
-                    }
-                }
-                
-                if (imagesToTag.Count > 0)
-                {
-                    await dataStore.SetNeedsTagging(imagesToTag, true);
-                    taggedQueued = imagesToTag.Count;
-                }
+                taggedQueued = await dataStore.SmartQueueForTagging(imageIds, settings?.SkipAlreadyTaggedImages ?? true);
             }
 
-            // Queue for captioning (filter based on skip settings)
+            // Queue for captioning using smart queue (respects needs_captioning flag state)
             if (doCaptioning)
             {
-                var imagesToCaption = imageIds;
-                
-                // Check skip already captioned setting
-                if (settings?.SkipAlreadyCaptionedImages == true)
-                {
-                    // Filter out images that already have captions
-                    var imagesWithCaptions = new List<int>();
-                    foreach (var imageId in imageIds)
-                    {
-                        var caption = await dataStore.GetLatestCaptionAsync(imageId);
-                        if (caption != null && !string.IsNullOrWhiteSpace(caption.Caption))
-                        {
-                            imagesWithCaptions.Add(imageId);
-                        }
-                    }
-                    imagesToCaption = imageIds.Except(imagesWithCaptions).ToList();
-                    
-                    if (imagesWithCaptions.Count > 0)
-                    {
-                        Logger.Log($"Skipped {imagesWithCaptions.Count} images that already have captions");
-                    }
-                }
-                
-                if (imagesToCaption.Count > 0)
-                {
-                    await dataStore.SetNeedsCaptioning(imagesToCaption, true);
-                    captionQueued = imagesToCaption.Count;
-                }
+                captionQueued = await dataStore.SmartQueueForCaptioning(imageIds, settings?.SkipAlreadyCaptionedImages ?? true);
             }
 
-            // Queue for embedding
+            // Queue for embedding using smart queue (ALWAYS skips already-processed)
             if (doEmbedding)
             {
-                await dataStore.SetNeedsEmbedding(imageIds, true);
-                embeddingQueued = imageIds.Count;
+                embeddingQueued = await dataStore.SmartQueueForEmbedding(imageIds);
             }
 
-            // Queue for face detection
+            // Queue for face detection using smart queue (ALWAYS skips already-processed)
             if (doFaceDetection)
             {
-                await dataStore.SetNeedsFaceDetection(imageIds, true);
-                faceDetectionQueued = imageIds.Count;
+                faceDetectionQueued = await dataStore.SmartQueueForFaceDetection(imageIds);
             }
 
             // Update queue counts in UI directly (faster than re-querying database)

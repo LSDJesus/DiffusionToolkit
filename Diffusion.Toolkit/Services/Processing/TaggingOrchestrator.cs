@@ -170,6 +170,11 @@ public class TaggingOrchestrator : BaseServiceOrchestrator
                 : (_settings.EnableJoyTag ? "joytag" : "wdv3large");
             
             await DataStore.StoreImageTagsAsync(result.ImageId, tags, source);
+            Logger.Log($"Tagging: Saved {tags.Count} tags for image {result.ImageId} (source: {source})");
+        }
+        else if (!result.Success)
+        {
+            Logger.Log($"Tagging: No tags generated for image {result.ImageId}: {result.ErrorMessage ?? "unknown error"}");
         }
         
         // Clear the flag regardless of success

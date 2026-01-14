@@ -20,6 +20,13 @@ public static class ServiceVramUsage
     public const double Embedding = 7.6;      // BGE + CLIP (fixed per GPU)
     public const double Captioning = 5.6;     // JoyCaption Q4 (per model instance)
     
+    // Maximum recommended workers per GPU to avoid memory fragmentation
+    // These are conservative limits - can be increased if stable
+    public const int MaxTaggingWorkers = 20;       // Proven to work
+    public const int MaxEmbeddingWorkers = 16;     // 4 small encoders, similar to tagging
+    public const int MaxFaceDetectionWorkers = 15; // Tiny models (0.8GB), 45 caused OOM
+    public const int MaxCaptioningWorkers = 1;     // 1 worker per model instance (LLM)
+    
     public static double GetVramUsage(ProcessingType type, int modelCount = 1)
     {
         return type switch
@@ -50,6 +57,22 @@ public static class ServiceVramUsage
         return type is ProcessingType.Tagging 
                     or ProcessingType.Embedding 
                     or ProcessingType.FaceDetection;
+    }
+    
+    /// <summary>
+    /// Get recommended maximum workers per GPU for a service type.
+    /// Too many concurrent ONNX sessions cause memory fragmentation.
+    /// </summary>
+    public static int GetMaxWorkersPerGpu(ProcessingType type)
+    {
+        return type switch
+        {
+            ProcessingType.Tagging => MaxTaggingWorkers,
+            ProcessingType.Embedding => MaxEmbeddingWorkers,
+            ProcessingType.FaceDetection => MaxFaceDetectionWorkers,
+            ProcessingType.Captioning => MaxCaptioningWorkers,
+            _ => 4
+        };
     }
 }
 
@@ -640,6 +663,7 @@ public class GlobalProcessingOrchestrator : IDisposable
         var gpuAllocations = new List<GpuAllocation>();
         var isOnnx = ServiceVramUsage.IsOnnxService(type);
         var vramNeeded = ServiceVramUsage.GetVramUsage(type);
+        var maxWorkers = ServiceVramUsage.GetMaxWorkersPerGpu(type);
         
         for (int i = 0; i < gpuIds.Length; i++)
         {
@@ -648,19 +672,27 @@ public class GlobalProcessingOrchestrator : IDisposable
             
             if (isOnnx)
             {
-                // ONNX services: need fixed VRAM, can have multiple workers
+                // ONNX services: need fixed VRAM, can have multiple workers (capped)
                 if (available >= vramNeeded)
                 {
                     if (_vramTracker.TryAllocate(i, vramNeeded))
                     {
+                        // Cap workers to avoid memory fragmentation
+                        var workerCount = Math.Min(defaultWorkers, maxWorkers);
+                        
                         gpuAllocations.Add(new GpuAllocation
                         {
                             GpuId = gpuId,
-                            WorkerCount = defaultWorkers,
+                            WorkerCount = workerCount,
                             ModelCount = 1,
                             VramCapacityGb = available + vramNeeded,
                             MaxUsagePercent = _settings.MaxVramUsagePercent
                         });
+                        
+                        if (defaultWorkers > maxWorkers)
+                        {
+                            Logger.Log($"GlobalOrchestrator: {type} GPU{gpuId} worker count capped from {defaultWorkers} to {maxWorkers}");
+                        }
                     }
                 }
             }
@@ -956,6 +988,7 @@ public class GlobalProcessingOrchestrator : IDisposable
         // For ONNX services (Tagging, Embedding, FaceDetection):
         //   - Allocation value = worker count (all share 1 model)
         //   - ModelCount = 1 per GPU with any workers
+        //   - Cap workers to avoid memory fragmentation
         // For LLM services (Captioning):
         //   - Allocation value = model count (1 worker per model)
         //   - ModelCount = WorkerCount (1:1 ratio)
@@ -964,16 +997,29 @@ public class GlobalProcessingOrchestrator : IDisposable
                                  or ProcessingType.Embedding 
                                  or ProcessingType.FaceDetection;
         
+        var maxWorkers = ServiceVramUsage.GetMaxWorkersPerGpu(type);
+        
         var gpuAllocations = gpuAllocation
             .Where(kvp => kvp.Value > 0)
-            .Select(kvp => new GpuAllocation
+            .Select(kvp => 
             {
-                GpuId = kvp.Key,
-                WorkerCount = kvp.Value,
-                // ONNX: 1 model shared by N workers. Captioning: N models for N workers.
-                ModelCount = isOnnxService ? 1 : kvp.Value,
-                VramCapacityGb = GetVramForGpu(kvp.Key),
-                MaxUsagePercent = _settings.MaxVramUsagePercent
+                var requestedWorkers = kvp.Value;
+                var actualWorkers = isOnnxService ? Math.Min(requestedWorkers, maxWorkers) : requestedWorkers;
+                
+                if (isOnnxService && requestedWorkers > maxWorkers)
+                {
+                    Logger.Log($"BuildServiceAllocation: {type} GPU{kvp.Key} worker count capped from {requestedWorkers} to {maxWorkers} (max recommended)");
+                }
+                
+                return new GpuAllocation
+                {
+                    GpuId = kvp.Key,
+                    WorkerCount = actualWorkers,
+                    // ONNX: 1 model shared by N workers. Captioning: N models for N workers.
+                    ModelCount = isOnnxService ? 1 : actualWorkers,
+                    VramCapacityGb = GetVramForGpu(kvp.Key),
+                    MaxUsagePercent = _settings.MaxVramUsagePercent
+                };
             })
             .ToArray();
         

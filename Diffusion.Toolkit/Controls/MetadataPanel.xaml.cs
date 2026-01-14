@@ -20,6 +20,12 @@ namespace Diffusion.Toolkit.Controls
     /// </summary>
     public partial class MetadataPanel : UserControl
     {
+        /// <summary>
+        /// Event fired when mouse hovers over a face thumbnail to show bounding box overlay.
+        /// Parameters: faceId, x, y, width, height (0,0,0,0 to hide)
+        /// </summary>
+        public event EventHandler<(int faceId, int x, int y, int width, int height)>? FaceBoundingBoxHover;
+        
         public static readonly DependencyProperty CurrentImageProperty = DependencyProperty.Register(
             nameof(CurrentImage),
             typeof(ImageViewModel),
@@ -100,6 +106,21 @@ namespace Diffusion.Toolkit.Controls
                 // Double-click: Find similar faces and navigate to gallery
                 await NavigateToSimilarFacesAsync(face);
             }
+        }
+
+        private void FaceThumbnail_OnMouseEnter(object sender, MouseEventArgs e)
+        {
+            if (sender is Border border && border.Tag is Models.FaceViewModel face)
+            {
+                // Fire event to show bounding box overlay on main preview
+                FaceBoundingBoxHover?.Invoke(this, (face.Id, face.X, face.Y, face.Width, face.Height));
+            }
+        }
+
+        private void FaceThumbnail_OnMouseLeave(object sender, MouseEventArgs e)
+        {
+            // Fire event to hide bounding box overlay
+            FaceBoundingBoxHover?.Invoke(this, (0, 0, 0, 0, 0));
         }
 
         private async void FaceName_OnLostFocus(object sender, RoutedEventArgs e)
@@ -202,6 +223,10 @@ namespace Diffusion.Toolkit.Controls
                     {
                         Id = face.Id,
                         ImageId = face.ImageId,
+                        X = face.X,
+                        Y = face.Y,
+                        Width = face.Width,
+                        Height = face.Height,
                         ClusterId = face.FaceGroupId,
                         Confidence = face.Confidence,
                         QualityScore = face.QualityScore

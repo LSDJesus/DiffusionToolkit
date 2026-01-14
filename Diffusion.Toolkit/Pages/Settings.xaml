@@ -433,15 +433,33 @@
                             </Grid>
                             
                             <!-- GPU Model Allocation Calculator -->
-                            <TextBlock Text="GPU Model Allocation" FontWeight="SemiBold" Margin="0,15,0,5" Foreground="{DynamicResource ForegroundBrush}"/>
+                            <TextBlock Text="GPU Processing Allocation" FontWeight="SemiBold" Margin="0,15,0,5" Foreground="{DynamicResource ForegroundBrush}"/>
                             <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource ForegroundBrush}" Margin="0,0,0,10" FontSize="11">
-                                Configure how many model instances to load per GPU. Use comma-separated values matching your GPU order.
-                                Example: "1,1" means 1 model on GPU0, 1 on GPU1. VRAM per model: Captioning=5.8GB, Tagging=3.1GB, Embedding=7.5GB, FaceDetect=0.8GB
+                                Configure allocation per GPU using comma-separated values (e.g., "8,4" = 8 on GPU0, 4 on GPU1).
+                                • Captioning: model instances (5.6GB each, scales with count)
+                                • Others: worker count (fixed VRAM regardless of workers)
                             </TextBlock>
+                            
+                            <!-- Dynamic Allocation Toggle -->
+                            <CheckBox IsChecked="{Binding EnableDynamicVramAllocation}" Margin="0,0,0,10"
+                                      Content="Enable Dynamic VRAM Allocation (Priority-based loading + auto-reallocation)"
+                                      ToolTip="When enabled: loads services by priority, reallocates VRAM when queues complete"
+                                      Foreground="{DynamicResource ForegroundBrush}"/>
+                            
+                            <!-- Default Workers Setting -->
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,15">
+                                <Label Content="Default ONNX Workers per GPU:" 
+                                       ToolTip="Number of parallel workers for Tagging/Embedding/FaceDetection. Capped: Tagging≤12, Embedding≤8, FaceDetection≤6"
+                                       Foreground="{DynamicResource ForegroundBrush}"/>
+                                <TextBox Text="{Binding DefaultOnnxWorkersPerGpu, UpdateSourceTrigger=PropertyChanged}" 
+                                         Width="50" Height="24" VerticalContentAlignment="Center"/>
+                                <TextBlock Text="(auto-capped per service to avoid OOM)" VerticalAlignment="Center" Margin="10,0,0,0"
+                                           Foreground="{DynamicResource MutedForegroundBrush}" FontSize="11"/>
+                            </StackPanel>
                             
                             <Grid Margin="0,0,0,10">
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="200"/>
+                                    <ColumnDefinition Width="250"/>
                                     <ColumnDefinition Width="100"/>
                                     <ColumnDefinition Width="20"/>
                                     <ColumnDefinition Width="100"/>
@@ -458,14 +476,15 @@
                                 <!-- Headers -->
                                 <Label Grid.Row="0" Grid.Column="0" Content="" Foreground="{DynamicResource ForegroundBrush}"/>
                                 <Label Grid.Row="0" Grid.Column="1" Content="Concurrent" FontWeight="Bold" 
-                                       ToolTip="Models to load when running all processes together"
+                                       ToolTip="Allocation when running multiple services together"
                                        Foreground="{DynamicResource ForegroundBrush}" HorizontalAlignment="Center"/>
                                 <Label Grid.Row="0" Grid.Column="3" Content="Solo" FontWeight="Bold"
-                                       ToolTip="Models to load when running a single process alone"
+                                       ToolTip="Allocation when running a single service alone"
                                        Foreground="{DynamicResource ForegroundBrush}" HorizontalAlignment="Center"/>
                                 
-                                <!-- Captioning Row -->
-                                <Label Grid.Row="1" Grid.Column="0" Content="Captioning (5.8GB each):" 
+                                <!-- Captioning Row (models, scales VRAM) -->
+                                <Label Grid.Row="1" Grid.Column="0" Content="Captioning (5.6GB × count):" 
+                                       ToolTip="Model instances per GPU. Each needs 5.6GB VRAM."
                                        Foreground="{DynamicResource ForegroundBrush}"/>
                                 <TextBox Grid.Row="1" Grid.Column="1" 
                                          Text="{Binding ConcurrentCaptioningAllocation, UpdateSourceTrigger=PropertyChanged}" 
@@ -474,8 +493,9 @@
                                          Text="{Binding SoloCaptioningAllocation, UpdateSourceTrigger=PropertyChanged}" 
                                          Width="80" Height="24" VerticalContentAlignment="Center" HorizontalAlignment="Center"/>
                                 
-                                <!-- Tagging Row -->
-                                <Label Grid.Row="2" Grid.Column="0" Content="Tagging (3.1GB each):" 
+                                <!-- Tagging Row (workers, fixed VRAM) -->
+                                <Label Grid.Row="2" Grid.Column="0" Content="Tagging (2.6GB fixed, max 20 workers):" 
+                                       ToolTip="Workers per GPU sharing 1 model set. Fixed 2.6GB."
                                        Foreground="{DynamicResource ForegroundBrush}"/>
                                 <TextBox Grid.Row="2" Grid.Column="1" 
                                          Text="{Binding ConcurrentTaggingAllocation, UpdateSourceTrigger=PropertyChanged}" 
@@ -484,8 +504,9 @@
                                          Text="{Binding SoloTaggingAllocation, UpdateSourceTrigger=PropertyChanged}" 
                                          Width="80" Height="24" VerticalContentAlignment="Center" HorizontalAlignment="Center"/>
                                 
-                                <!-- Embedding Row -->
-                                <Label Grid.Row="3" Grid.Column="0" Content="Embedding (7.5GB each):" 
+                                <!-- Embedding Row (workers, fixed VRAM) -->
+                                <Label Grid.Row="3" Grid.Column="0" Content="Embedding (7.6GB fixed, max 16 workers):" 
+                                       ToolTip="Workers per GPU sharing 4 encoders. Fixed 7.6GB."
                                        Foreground="{DynamicResource ForegroundBrush}"/>
                                 <TextBox Grid.Row="3" Grid.Column="1" 
                                          Text="{Binding ConcurrentEmbeddingAllocation, UpdateSourceTrigger=PropertyChanged}" 
@@ -494,8 +515,9 @@
                                          Text="{Binding SoloEmbeddingAllocation, UpdateSourceTrigger=PropertyChanged}" 
                                          Width="80" Height="24" VerticalContentAlignment="Center" HorizontalAlignment="Center"/>
                                 
-                                <!-- Face Detection Row -->
-                                <Label Grid.Row="4" Grid.Column="0" Content="Face Detection (0.8GB each):" 
+                                <!-- Face Detection Row (workers, fixed VRAM) -->
+                                <Label Grid.Row="4" Grid.Column="0" Content="Face Detection (0.8GB fixed, max 15 workers):" 
+                                       ToolTip="Workers per GPU sharing YOLO + ArcFace. Fixed 0.8GB."
                                        Foreground="{DynamicResource ForegroundBrush}"/>
                                 <TextBox Grid.Row="4" Grid.Column="1" 
                                          Text="{Binding ConcurrentFaceDetectionAllocation, UpdateSourceTrigger=PropertyChanged}" 

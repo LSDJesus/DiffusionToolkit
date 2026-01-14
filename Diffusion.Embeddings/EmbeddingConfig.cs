@@ -5,24 +5,23 @@ namespace Diffusion.Embeddings
 {
     /// <summary>
     /// Configuration for embedding model paths and GPU device assignments.
+    /// 
+    /// Embedding types:
+    /// - BGE-large-en-v1.5 (1024D) - Semantic text similarity for prompts, tags, captions
+    /// - CLIP-ViT-H (1280D) - Visual image similarity
+    /// 
+    /// Note: CLIP-L/G text encoders removed - for ComfyUI integration,
+    /// conditioning will be generated on-demand from prompts.
     /// </summary>
     public class EmbeddingConfig
     {
         // Model paths
         public string BgeModelPath { get; set; } = string.Empty;
         public string BgeVocabPath { get; set; } = string.Empty;
-        public string ClipLModelPath { get; set; } = string.Empty;
-        public string ClipLVocabPath { get; set; } = string.Empty;
-        public string ClipLMergesPath { get; set; } = string.Empty;
-        public string ClipGModelPath { get; set; } = string.Empty;
-        public string ClipGVocabPath { get; set; } = string.Empty;
-        public string ClipGMergesPath { get; set; } = string.Empty;
         public string ClipVisionModelPath { get; set; } = string.Empty;
 
         // GPU device assignments
         public int BgeGpuDevice { get; set; } = 0;
-        public int ClipLGpuDevice { get; set; } = 1;
-        public int ClipGGpuDevice { get; set; } = 1;
         public int ClipVisionGpuDevice { get; set; } = 0;
 
         // Batch sizes
@@ -42,24 +41,12 @@ namespace Diffusion.Embeddings
                 BgeModelPath = Path.Combine(modelsDir, "bge-large-en-v1.5", "model.onnx"),
                 BgeVocabPath = Path.Combine(modelsDir, "bge-large-en-v1.5", "vocab.txt"),
 
-                // CLIP-L (SDXL text_l encoder)
-                ClipLModelPath = Path.Combine(modelsDir, "clip-l", "model.onnx"),
-                ClipLVocabPath = Path.Combine(modelsDir, "clip-l", "vocab.json"),
-                ClipLMergesPath = Path.Combine(modelsDir, "clip-l", "merges.txt"),
-
-                // CLIP-G (SDXL text_g encoder)
-                ClipGModelPath = Path.Combine(modelsDir, "clip-g", "model.onnx"),
-                ClipGVocabPath = Path.Combine(modelsDir, "clip-g", "vocab.json"),
-                ClipGMergesPath = Path.Combine(modelsDir, "clip-g", "merges.txt"),
-
                 // CLIP-ViT-H (visual similarity)
                 ClipVisionModelPath = Path.Combine(modelsDir, "clip-vit-h", "model.onnx"),
 
-                // GPU assignments - all on GPU 0 (RTX 5090, compute 12.0)
-                BgeGpuDevice = 0,        // RTX 5090
-                ClipVisionGpuDevice = 0, // RTX 5090
-                ClipLGpuDevice = 0,      // RTX 5090 (GPU 1 incompatible - compute 8.6)
-                ClipGGpuDevice = 0,      // RTX 5090 (GPU 1 incompatible - compute 8.6)
+                // GPU assignments
+                BgeGpuDevice = 0,
+                ClipVisionGpuDevice = 0,
 
                 // Batch sizes
                 TextBatchSize = 64,
@@ -74,9 +61,6 @@ namespace Diffusion.Embeddings
         {
             ValidateFile(BgeModelPath, "BGE model");
             ValidateFile(BgeVocabPath, "BGE vocabulary");
-            ValidateFile(ClipLModelPath, "CLIP-L model");
-            // Note: CLIP vocab files might not exist (tokenizer built-in)
-            ValidateFile(ClipGModelPath, "CLIP-G model");
             ValidateFile(ClipVisionModelPath, "CLIP Vision model");
         }
 

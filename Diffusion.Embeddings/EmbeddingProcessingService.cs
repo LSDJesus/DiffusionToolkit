@@ -113,8 +113,8 @@ public class EmbeddingProcessingService : IDisposable
                     return;
                 }
                 
-                // Generate text embeddings (BGE + CLIP-L + CLIP-G)
-                var (bgeEmb, clipLEmb, clipGEmb) = await _embeddingService.GenerateTextEmbeddingsAsync(
+                // Generate BGE text embedding only (CLIP-L/G removed)
+                var bgeEmb = await _embeddingService.GenerateTextEmbeddingAsync(
                     prompt ?? string.Empty);
                 
                 // Cache result
@@ -122,8 +122,6 @@ public class EmbeddingProcessingService : IDisposable
                 {
                     PromptHash = hash,
                     BgeEmbedding = bgeEmb,
-                    ClipLEmbedding = clipLEmb,
-                    ClipGEmbedding = clipGEmb,
                     ReferenceCount = 0,
                     CreatedAt = DateTime.UtcNow
                 };
@@ -247,16 +245,14 @@ public class EmbeddingProcessingService : IDisposable
             
             if (!_promptCache.TryGetValue(promptHash, out promptEmbeddings))
             {
-                // Generate text embeddings (BGE + CLIP-L + CLIP-G)
-                var (bgeEmb, clipLEmb, clipGEmb) = await _embeddingService.GenerateTextEmbeddingsAsync(
+                // Generate BGE text embedding only (CLIP-L/G removed)
+                var bgeEmb = await _embeddingService.GenerateTextEmbeddingAsync(
                     rep.Prompt ?? string.Empty);
                 
                 promptEmbeddings = new CachedPromptEmbeddings
                 {
                     PromptHash = promptHash,
                     BgeEmbedding = bgeEmb,
-                    ClipLEmbedding = clipLEmb,
-                    ClipGEmbedding = clipGEmb,
                     ReferenceCount = 0,
                     CreatedAt = DateTime.UtcNow
                 };
@@ -275,12 +271,10 @@ public class EmbeddingProcessingService : IDisposable
             var imageEmbedding = await _embeddingService.GenerateImageEmbeddingAsync(
                 rep.FilePath);
             
-            // Store embeddings with representative flag
+            // Store embeddings with representative flag (BGE text + CLIP vision)
             await _dataStore.StoreImageEmbeddingsAsync(
                 imageId: rep.ImageId,
                 bgeEmbedding: promptEmbeddings.BgeEmbedding,
-                clipLEmbedding: promptEmbeddings.ClipLEmbedding,
-                clipGEmbedding: promptEmbeddings.ClipGEmbedding,
                 imageEmbedding: imageEmbedding,
                 isRepresentative: true,
                 cancellationToken: cancellationToken);
@@ -341,16 +335,14 @@ public class EmbeddingProcessingService : IDisposable
         
         if (!_promptCache.TryGetValue(promptHash, out promptEmbeddings))
         {
-            // Generate text embeddings
-            var (bgeEmb, clipLEmb, clipGEmb) = await _embeddingService.GenerateTextEmbeddingsAsync(
+            // Generate BGE text embedding only (CLIP-L/G removed)
+            var bgeEmb = await _embeddingService.GenerateTextEmbeddingAsync(
                 request.Prompt ?? string.Empty);
             
             promptEmbeddings = new CachedPromptEmbeddings
             {
                 PromptHash = promptHash,
                 BgeEmbedding = bgeEmb,
-                ClipLEmbedding = clipLEmb,
-                ClipGEmbedding = clipGEmb,
                 ReferenceCount = 0,
                 CreatedAt = DateTime.UtcNow
             };
@@ -369,12 +361,10 @@ public class EmbeddingProcessingService : IDisposable
         var imageEmbedding = await _embeddingService.GenerateImageEmbeddingAsync(
             request.FilePath);
         
-        // Store embeddings
+        // Store embeddings (BGE text + CLIP vision)
         await _dataStore.StoreImageEmbeddingsAsync(
             request.ImageId,
             promptEmbeddings.BgeEmbedding,
-            promptEmbeddings.ClipLEmbedding,
-            promptEmbeddings.ClipGEmbedding,
             imageEmbedding,
             isRepresentative: false,
             cancellationToken);
@@ -431,13 +421,12 @@ internal class EmbeddingWorkItem
 
 /// <summary>
 /// Cached prompt embeddings (in-memory cache for deduplication)
+/// Note: CLIP-L/G removed - only BGE text embedding cached now.
 /// </summary>
 internal class CachedPromptEmbeddings
 {
     public string PromptHash { get; set; } = string.Empty;
-    public float[] BgeEmbedding { get; set; } = Array.Empty<float>();
-    public float[] ClipLEmbedding { get; set; } = Array.Empty<float>();
-    public float[] ClipGEmbedding { get; set; } = Array.Empty<float>();
+    public float[]? BgeEmbedding { get; set; }
     public int ReferenceCount { get; set; }
     public DateTime CreatedAt { get; set; }
 }

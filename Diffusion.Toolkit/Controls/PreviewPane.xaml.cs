@@ -483,5 +483,68 @@ namespace Diffusion.Toolkit.Controls
             ServiceLocator.ThumbnailNavigationService.MoveNext();
             e.Handled = true;
         }
+
+        /// <summary>
+        /// Show or hide a bounding box overlay on the preview image.
+        /// Call with (0,0,0,0) to hide.
+        /// </summary>
+        /// <param name="x">X coordinate in original image pixels</param>
+        /// <param name="y">Y coordinate in original image pixels</param>
+        /// <param name="width">Width in original image pixels</param>
+        /// <param name="height">Height in original image pixels</param>
+        public void ShowFaceBoundingBox(int x, int y, int width, int height)
+        {
+            if (width <= 0 || height <= 0)
+            {
+                // Hide the bounding box
+                FaceBoundingBoxCanvas.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            try
+            {
+                // Get the current scale factor from the Image element
+                var imageSource = Preview.Source as BitmapSource;
+                if (imageSource == null) return;
+
+                var originalWidth = imageSource.PixelWidth;
+                var originalHeight = imageSource.PixelHeight;
+
+                // Get the actual rendered size of the image
+                var actualWidth = Preview.ActualWidth;
+                var actualHeight = Preview.ActualHeight;
+
+                if (actualWidth <= 0 || actualHeight <= 0) return;
+
+                // Calculate scale factors
+                double scaleX = actualWidth / originalWidth;
+                double scaleY = actualHeight / originalHeight;
+
+                // Get the position of the Image relative to the Canvas
+                var imagePosition = Preview.TransformToAncestor(FaceBoundingBoxCanvas)
+                    .Transform(new Point(0, 0));
+
+                // Calculate the bounding box position and size in screen coordinates
+                double screenX = imagePosition.X + (x * scaleX);
+                double screenY = imagePosition.Y + (y * scaleY);
+                double screenWidth = width * scaleX;
+                double screenHeight = height * scaleY;
+
+                // Position the bounding box
+                Canvas.SetLeft(FaceBoundingBox, screenX);
+                Canvas.SetTop(FaceBoundingBox, screenY);
+                FaceBoundingBox.Width = screenWidth;
+                FaceBoundingBox.Height = screenHeight;
+
+                // Show the canvas
+                FaceBoundingBoxCanvas.Visibility = Visibility.Visible;
+            }
+            catch (Exception ex)
+            {
+                // Silently fail if something goes wrong with positioning
+                Diffusion.Common.Logger.Log($"Error showing face bounding box: {ex.Message}");
+                FaceBoundingBoxCanvas.Visibility = Visibility.Collapsed;
+            }
+        }
     }
 }

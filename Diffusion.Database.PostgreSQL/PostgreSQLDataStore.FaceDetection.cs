@@ -57,37 +57,8 @@ public partial class PostgreSQLDataStore
         return await connection.ExecuteScalarAsync<int>(sql);
     }
 
-    /// <summary>
-    /// Queue folder images for face detection
-    /// </summary>
-    public async Task<int> QueueFolderForFaceDetection(int folderId, bool includeSubfolders)
-    {
-        await using var connection = await _dataSource.OpenConnectionAsync();
-        
-        string sql;
-        if (includeSubfolders)
-        {
-            sql = $@"
-                UPDATE {Table("image")} i
-                SET needs_face_detection = true
-                FROM {Table("folder")} f
-                WHERE i.folder_id = f.id
-                  AND f.path LIKE (SELECT path || '%' FROM {Table("folder")} WHERE id = @folderId)
-                  AND i.for_deletion = false
-                  AND i.face_count = 0";
-        }
-        else
-        {
-            sql = $@"
-                UPDATE {Table("image")}
-                SET needs_face_detection = true
-                WHERE folder_id = @folderId
-                  AND for_deletion = false
-                  AND face_count = 0";
-        }
-
-        return await connection.ExecuteAsync(sql, new { folderId });
-    }
+    // NOTE: QueueFolderForFaceDetection is defined in PostgreSQLDataStore.TaggingQueue.cs
+    // with proper smart queue logic that respects needs_face_detection flag state
 
     /// <summary>
     /// Clear face detection queue - sets to null (not queued, not processed) rather than false (processed)
@@ -187,13 +158,15 @@ public partial class PostgreSQLDataStore
     }
 
     /// <summary>
-    /// Store a detected face
+    /// Store a detected face with multi-model embeddings
     /// </summary>
     public async Task<int> StoreFaceDetectionAsync(
         int imageId,
         int bboxX, int bboxY, int bboxWidth, int bboxHeight,
         byte[]? faceCrop, int cropWidth, int cropHeight,
         float[]? arcfaceEmbedding,
+        float[]? clipFaceEmbedding,
+        string styleType,
         string detectionModel,
         float confidence, float qualityScore, float sharpnessScore,
         float poseYaw, float posePitch, float poseRoll,
@@ -205,27 +178,39 @@ public partial class PostgreSQLDataStore
             INSERT INTO {Table("face_detection")} (
                 image_id, bbox_x, bbox_y, bbox_width, bbox_height,
                 face_crop, crop_width, crop_height,
-                arcface_embedding, detection_model,
+                arcface_embedding, clip_face_embedding, style_type, detection_model,
                 confidence, quality_score, sharpness_score,
-                pose_yaw, pose_pitch, pose_roll, landmarks
+                pose_yaw, pose_pitch, pose_roll, landmarks,
+                has_embedding
             ) VALUES (
                 @imageId, @bboxX, @bboxY, @bboxWidth, @bboxHeight,
                 @faceCrop, @cropWidth, @cropHeight,
-                @arcfaceEmbedding::vector, @detectionModel,
+                @arcfaceEmbedding::vector, @clipFaceEmbedding::vector, @styleType, @detectionModel,
                 @confidence, @qualityScore, @sharpnessScore,
-                @poseYaw, @posePitch, @poseRoll, @landmarks::jsonb
+                @poseYaw, @posePitch, @poseRoll, @landmarks::jsonb,
+                @hasEmbedding
             ) RETURNING id";
         
-        var embeddingStr = arcfaceEmbedding != null 
+        var arcfaceEmbeddingStr = arcfaceEmbedding != null 
             ? "[" + string.Join(",", arcfaceEmbedding.Select(f => f.ToString("G9"))) + "]"
             : null;
+        
+        var clipEmbeddingStr = clipFaceEmbedding != null 
+            ? "[" + string.Join(",", clipFaceEmbedding.Select(f => f.ToString("G9"))) + "]"
+            : null;
+        
+        var hasEmbedding = arcfaceEmbedding != null || clipFaceEmbedding != null;
         
         return await connection.ExecuteScalarAsync<int>(sql, new { 
             imageId, bboxX, bboxY, bboxWidth, bboxHeight,
             faceCrop, cropWidth, cropHeight,
-            arcfaceEmbedding = embeddingStr, detectionModel,
+            arcfaceEmbedding = arcfaceEmbeddingStr, 
+            clipFaceEmbedding = clipEmbeddingStr,
+            styleType,
+            detectionModel,
             confidence, qualityScore, sharpnessScore,
-            poseYaw, posePitch, poseRoll, landmarks
+            poseYaw, posePitch, poseRoll, landmarks,
+            hasEmbedding
         });
     }
 
@@ -255,11 +240,17 @@ public partial class PostgreSQLDataStore
         await using var connection = await _dataSource.OpenConnectionAsync();
         
         var sql = $@"
-            SELECT id, image_id, bbox_x, bbox_y, bbox_width, bbox_height,
-                   face_crop, crop_width, crop_height,
-                   detection_model, confidence, quality_score, sharpness_score,
-                   pose_yaw, pose_pitch, pose_roll,
-                   face_cluster_id, character_label, manual_label
+            SELECT id, image_id AS ImageId, 
+                   bbox_x AS X, bbox_y AS Y, bbox_width AS Width, bbox_height AS Height,
+                   face_crop AS FaceCrop, crop_width AS CropWidth, crop_height AS CropHeight,
+                   detection_model AS DetectionModel, confidence, quality_score AS QualityScore, 
+                   sharpness_score AS SharpnessScore,
+                   pose_yaw AS PoseYaw, pose_pitch AS PosePitch, pose_roll AS PoseRoll,
+                   face_cluster_id AS FaceClusterId, face_group_id AS FaceGroupId,
+                   character_label AS CharacterLabel, manual_label AS ManualLabel,
+                   has_embedding AS HasEmbedding, face_index AS FaceIndex,
+                   expression, expression_confidence AS ExpressionConfidence,
+                   detected_date AS DetectedDate, processing_time_ms AS ProcessingTimeMs
             FROM {Table("face_detection")}
             WHERE image_id = @imageId
             ORDER BY confidence DESC";
@@ -313,7 +304,7 @@ public partial class PostgreSQLDataStore
     }
 
     /// <summary>
-    /// Find similar faces using vector search
+    /// Find similar faces using ArcFace vector search (legacy method)
     /// </summary>
     public async Task<List<(int faceId, int imageId, float similarity)>> FindSimilarFaces(
         float[] embedding, 
@@ -337,6 +328,126 @@ public partial class PostgreSQLDataStore
             new { embedding = embeddingStr, threshold, limit });
         
         return result.Select(r => (r.id, r.image_id, r.similarity)).ToList();
+    }
+
+    /// <summary>
+    /// Find similar faces using style-aware embedding selection.
+    /// Uses ArcFace for realistic, CLIP for anime/3D, weighted combination for mixed.
+    /// </summary>
+    public async Task<List<(int faceId, int imageId, float similarity, string styleType)>> FindSimilarFacesStyleAware(
+        float[]? arcfaceEmbedding,
+        float[]? clipEmbedding,
+        string queryStyle,
+        float threshold = 0.6f, 
+        int limit = 100)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync();
+        
+        // Determine search strategy based on style
+        var useArcface = arcfaceEmbedding != null;
+        var useClip = clipEmbedding != null;
+        
+        if (!useArcface && !useClip)
+            return new List<(int, int, float, string)>();
+        
+        var arcfaceStr = arcfaceEmbedding != null 
+            ? "[" + string.Join(",", arcfaceEmbedding.Select(f => f.ToString("G9"))) + "]"
+            : null;
+        var clipStr = clipEmbedding != null 
+            ? "[" + string.Join(",", clipEmbedding.Select(f => f.ToString("G9"))) + "]"
+            : null;
+        
+        // Style-based weighting for combined search
+        float arcWeight, clipWeight;
+        switch (queryStyle.ToLowerInvariant())
+        {
+            case "realistic":
+                arcWeight = 0.8f;
+                clipWeight = 0.2f;
+                break;
+            case "anime":
+            case "3d":
+            case "threed":
+                arcWeight = 0.2f;
+                clipWeight = 0.8f;
+                break;
+            default: // mixed or unknown
+                arcWeight = 0.5f;
+                clipWeight = 0.5f;
+                break;
+        }
+        
+        string sql;
+        object parameters;
+        
+        if (useArcface && useClip)
+        {
+            // Combined weighted search
+            sql = $@"
+                SELECT fd.id, fd.image_id, fd.style_type,
+                       COALESCE(
+                           (1 - (fd.arcface_embedding <=> @arcfaceEmbedding::vector)) * @arcWeight +
+                           (1 - (fd.clip_face_embedding <=> @clipEmbedding::vector)) * @clipWeight,
+                           CASE 
+                               WHEN fd.arcface_embedding IS NOT NULL 
+                               THEN 1 - (fd.arcface_embedding <=> @arcfaceEmbedding::vector)
+                               ELSE 1 - (fd.clip_face_embedding <=> @clipEmbedding::vector)
+                           END
+                       ) as similarity
+                FROM {Table("face_detection")} fd
+                WHERE (fd.arcface_embedding IS NOT NULL OR fd.clip_face_embedding IS NOT NULL)
+                  AND COALESCE(
+                          (1 - (fd.arcface_embedding <=> @arcfaceEmbedding::vector)) * @arcWeight +
+                          (1 - (fd.clip_face_embedding <=> @clipEmbedding::vector)) * @clipWeight,
+                          CASE 
+                              WHEN fd.arcface_embedding IS NOT NULL 
+                              THEN 1 - (fd.arcface_embedding <=> @arcfaceEmbedding::vector)
+                              ELSE 1 - (fd.clip_face_embedding <=> @clipEmbedding::vector)
+                          END
+                      ) >= @threshold
+                ORDER BY similarity DESC
+                LIMIT @limit";
+            
+            parameters = new { 
+                arcfaceEmbedding = arcfaceStr, 
+                clipEmbedding = clipStr, 
+                arcWeight, clipWeight, 
+                threshold, limit 
+            };
+        }
+        else if (useClip)
+        {
+            // CLIP-only search (best for anime/3D)
+            sql = $@"
+                SELECT fd.id, fd.image_id, fd.style_type,
+                       1 - (fd.clip_face_embedding <=> @clipEmbedding::vector) as similarity
+                FROM {Table("face_detection")} fd
+                WHERE fd.clip_face_embedding IS NOT NULL
+                  AND 1 - (fd.clip_face_embedding <=> @clipEmbedding::vector) >= @threshold
+                ORDER BY similarity DESC
+                LIMIT @limit";
+            
+            parameters = new { clipEmbedding = clipStr, threshold, limit };
+        }
+        else
+        {
+            // ArcFace-only search (for realistic)
+            sql = $@"
+                SELECT fd.id, fd.image_id, fd.style_type,
+                       1 - (fd.arcface_embedding <=> @arcfaceEmbedding::vector) as similarity
+                FROM {Table("face_detection")} fd
+                WHERE fd.arcface_embedding IS NOT NULL
+                  AND 1 - (fd.arcface_embedding <=> @arcfaceEmbedding::vector) >= @threshold
+                ORDER BY similarity DESC
+                LIMIT @limit";
+            
+            parameters = new { arcfaceEmbedding = arcfaceStr, threshold, limit };
+        }
+        
+        var result = await connection.QueryAsync<(int id, int image_id, string style_type, float similarity)>(
+            sql, parameters);
+        
+        return result.Select(r => (r.id, r.image_id, r.similarity, r.style_type ?? "unknown")).ToList();
     }
 
     #endregion

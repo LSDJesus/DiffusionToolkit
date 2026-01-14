@@ -11,7 +11,7 @@ using Diffusion.Embeddings;
 namespace Diffusion.Toolkit.Services;
 
 /// <summary>
-/// Request for embedding a single image with all 4 embedding types
+/// Request for embedding a single image with BGE text and CLIP-Vision embeddings
 /// </summary>
 public class EmbeddingRequest
 {
@@ -35,13 +35,20 @@ internal class EncoderWorkItem
 
 /// <summary>
 /// GPU-specific embedding orchestrator that loads models once and shares them across sub-workers.
-/// Similar to RunTaggingGpuOrchestrator pattern.
 /// 
 /// Architecture:
 /// - 1 orchestrator per GPU
-/// - 4 model instances (BGE, CLIP-L, CLIP-G, CLIP-Vision) loaded once
+/// - 2 model instances (BGE text, CLIP-Vision) loaded once
 /// - N sub-workers per model sharing the same ONNX session
-/// - Coordinates all 4 embeddings per image before returning result
+/// - Coordinates both embeddings per image before returning result
+/// 
+/// Embedding types:
+/// - BGE-large-en-v1.5 (1024D) - Semantic text similarity for prompts, tags, captions
+/// - CLIP-ViT-H (1280D) - Visual image similarity
+/// 
+/// Note: CLIP-L/G text encoders removed - their embeddings are effectively just
+/// tokenized prompts that need transformer inference anyway. For ComfyUI integration,
+/// conditioning will be generated on-demand.
 /// </summary>
 public class EmbeddingPooledOrchestrator : IDisposable
 {
@@ -50,27 +57,29 @@ public class EmbeddingPooledOrchestrator : IDisposable
     
     // Shared model instances (loaded once per GPU)
     private BGETextEncoder? _bgeEncoder;
-    private CLIPTextEncoder? _clipLEncoder;
-    private CLIPTextEncoder? _clipGEncoder;
     private CLIPVisionEncoder? _clipVisionEncoder;
     
     // Work queues for each encoder
     private Channel<EncoderWorkItem>? _bgeQueue;
-    private Channel<EncoderWorkItem>? _clipLQueue;
-    private Channel<EncoderWorkItem>? _clipGQueue;
     private Channel<EncoderWorkItem>? _visionQueue;
     
     // Worker tasks
     private readonly List<Task> _workerTasks = new();
     private CancellationTokenSource? _cts;
     
-    // Pending image results (tracks all 4 embeddings per image)
+    // Pending image results (tracks both embeddings per image)
     private readonly ConcurrentDictionary<int, PendingEmbeddingResult> _pendingResults = new();
     
     private bool _isInitialized;
     private bool _disposed;
 
     public bool IsInitialized => _isInitialized;
+    
+    /// <summary>
+    /// VRAM usage: BGE (~0.5GB) + CLIP-Vision (~2.6GB) = ~3.1GB
+    /// (Reduced from 7.6GB after removing CLIP-L and CLIP-G text encoders)
+    /// </summary>
+    public const double VramUsageGb = 3.1;
     
     public EmbeddingPooledOrchestrator(int gpuId, int workersPerModel = 3)
     {
@@ -86,52 +95,36 @@ public class EmbeddingPooledOrchestrator : IDisposable
         if (_isInitialized)
             return;
             
-        Logger.Log($"[EmbeddingOrchestrator GPU {_gpuId}] Initializing 4 embedding models...");
+        Logger.Log($"[EmbeddingOrchestrator GPU {_gpuId}] Initializing 2 embedding models (BGE + CLIP-Vision)...");
         
         _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         
         // Override GPU assignment for all models to this GPU
         config.BgeGpuDevice = _gpuId;
-        config.ClipLGpuDevice = _gpuId;
-        config.ClipGGpuDevice = _gpuId;
         config.ClipVisionGpuDevice = _gpuId;
         
         try
         {
             // Load models sequentially to avoid VRAM contention
-            Logger.Log($"[EmbeddingOrchestrator GPU {_gpuId}] Loading BGE encoder...");
+            Logger.Log($"[EmbeddingOrchestrator GPU {_gpuId}] Loading BGE encoder (~0.5GB)...");
             _bgeEncoder = new BGETextEncoder(config.BgeModelPath, config.BgeVocabPath, _gpuId);
             
-            Logger.Log($"[EmbeddingOrchestrator GPU {_gpuId}] Loading CLIP-L encoder...");
-            _clipLEncoder = new CLIPTextEncoder(
-                config.ClipLModelPath, config.ClipLVocabPath, config.ClipLMergesPath, 
-                768, "CLIP-L", _gpuId);
-            
-            Logger.Log($"[EmbeddingOrchestrator GPU {_gpuId}] Loading CLIP-G encoder...");
-            _clipGEncoder = new CLIPTextEncoder(
-                config.ClipGModelPath, config.ClipGVocabPath, config.ClipGMergesPath,
-                1280, "CLIP-G", _gpuId);
-            
-            Logger.Log($"[EmbeddingOrchestrator GPU {_gpuId}] Loading CLIP-Vision encoder...");
+            Logger.Log($"[EmbeddingOrchestrator GPU {_gpuId}] Loading CLIP-Vision encoder (~2.6GB)...");
             _clipVisionEncoder = new CLIPVisionEncoder(config.ClipVisionModelPath, _gpuId);
             
             // Create work queues
             _bgeQueue = Channel.CreateUnbounded<EncoderWorkItem>();
-            _clipLQueue = Channel.CreateUnbounded<EncoderWorkItem>();
-            _clipGQueue = Channel.CreateUnbounded<EncoderWorkItem>();
             _visionQueue = Channel.CreateUnbounded<EncoderWorkItem>();
             
             // Start sub-workers for each encoder
             for (int i = 0; i < _workersPerModel; i++)
             {
                 _workerTasks.Add(Task.Run(() => RunBgeWorker(i, _cts.Token)));
-                _workerTasks.Add(Task.Run(() => RunClipLWorker(i, _cts.Token)));
-                _workerTasks.Add(Task.Run(() => RunClipGWorker(i, _cts.Token)));
                 _workerTasks.Add(Task.Run(() => RunVisionWorker(i, _cts.Token)));
             }
             
             _isInitialized = true;
-            Logger.Log($"[EmbeddingOrchestrator GPU {_gpuId}] Initialized with {_workersPerModel} sub-workers per model ({_workersPerModel * 4} total workers)");
+            Logger.Log($"[EmbeddingOrchestrator GPU {_gpuId}] Initialized with {_workersPerModel} sub-workers per model ({_workersPerModel * 2} total workers)");
         }
         catch (Exception ex)
         {
@@ -142,8 +135,8 @@ public class EmbeddingPooledOrchestrator : IDisposable
     }
     
     /// <summary>
-    /// Generate all embeddings for an image. Distributes work across all 4 encoders
-    /// and waits for all to complete before returning.
+    /// Generate all embeddings for an image. Distributes work across both encoders
+    /// and waits for both to complete before returning.
     /// </summary>
     public async Task<EmbeddingResult?> GenerateEmbeddingsAsync(
         int imageId,
@@ -166,26 +159,12 @@ public class EmbeddingPooledOrchestrator : IDisposable
                 ? prompt 
                 : $"{prompt} [SEP] {negativePrompt}";
             
-            // Queue work items to all 4 encoders
+            // Queue work items to both encoders
             await _bgeQueue!.Writer.WriteAsync(new EncoderWorkItem
             {
                 ImageId = imageId,
                 Text = textToEncode,
                 OnComplete = emb => pending.SetBge(emb)
-            }, ct);
-            
-            await _clipLQueue!.Writer.WriteAsync(new EncoderWorkItem
-            {
-                ImageId = imageId,
-                Text = prompt,  // CLIP uses just the prompt
-                OnComplete = emb => pending.SetClipL(emb)
-            }, ct);
-            
-            await _clipGQueue!.Writer.WriteAsync(new EncoderWorkItem
-            {
-                ImageId = imageId,
-                Text = prompt,
-                OnComplete = emb => pending.SetClipG(emb)
             }, ct);
             
             await _visionQueue!.Writer.WriteAsync(new EncoderWorkItem
@@ -196,7 +175,7 @@ public class EmbeddingPooledOrchestrator : IDisposable
                 OnComplete = emb => pending.SetVision(emb)
             }, ct);
             
-            // Wait for all 4 embeddings to complete
+            // Wait for both embeddings to complete
             var result = await pending.WaitForCompletionAsync(ct);
             
             return result;
@@ -230,56 +209,6 @@ public class EmbeddingPooledOrchestrator : IDisposable
         catch (OperationCanceledException) { }
         
         Logger.Log($"[EmbeddingOrchestrator GPU {_gpuId}] BGE sub-worker {workerId} exiting");
-    }
-    
-    private async Task RunClipLWorker(int workerId, CancellationToken ct)
-    {
-        Logger.Log($"[EmbeddingOrchestrator GPU {_gpuId}] CLIP-L sub-worker {workerId} started");
-        
-        try
-        {
-            await foreach (var item in _clipLQueue!.Reader.ReadAllAsync(ct))
-            {
-                try
-                {
-                    var embedding = await _clipLEncoder!.EncodeAsync(item.Text);
-                    item.OnComplete(embedding);
-                }
-                catch (Exception ex)
-                {
-                    Logger.Log($"[EmbeddingOrchestrator GPU {_gpuId}] CLIP-L worker {workerId} error: {ex.Message}");
-                    item.OnComplete(null);
-                }
-            }
-        }
-        catch (OperationCanceledException) { }
-        
-        Logger.Log($"[EmbeddingOrchestrator GPU {_gpuId}] CLIP-L sub-worker {workerId} exiting");
-    }
-    
-    private async Task RunClipGWorker(int workerId, CancellationToken ct)
-    {
-        Logger.Log($"[EmbeddingOrchestrator GPU {_gpuId}] CLIP-G sub-worker {workerId} started");
-        
-        try
-        {
-            await foreach (var item in _clipGQueue!.Reader.ReadAllAsync(ct))
-            {
-                try
-                {
-                    var embedding = await _clipGEncoder!.EncodeAsync(item.Text);
-                    item.OnComplete(embedding);
-                }
-                catch (Exception ex)
-                {
-                    Logger.Log($"[EmbeddingOrchestrator GPU {_gpuId}] CLIP-G worker {workerId} error: {ex.Message}");
-                    item.OnComplete(null);
-                }
-            }
-        }
-        catch (OperationCanceledException) { }
-        
-        Logger.Log($"[EmbeddingOrchestrator GPU {_gpuId}] CLIP-G sub-worker {workerId} exiting");
     }
     
     private async Task RunVisionWorker(int workerId, CancellationToken ct)
@@ -324,8 +253,6 @@ public class EmbeddingPooledOrchestrator : IDisposable
         
         // Complete all queues
         _bgeQueue?.Writer.TryComplete();
-        _clipLQueue?.Writer.TryComplete();
-        _clipGQueue?.Writer.TryComplete();
         _visionQueue?.Writer.TryComplete();
         
         // Wait for workers to finish
@@ -337,8 +264,6 @@ public class EmbeddingPooledOrchestrator : IDisposable
         
         // Dispose encoders
         _bgeEncoder?.Dispose();
-        _clipLEncoder?.Dispose();
-        _clipGEncoder?.Dispose();
         _clipVisionEncoder?.Dispose();
         
         _cts?.Dispose();
@@ -348,14 +273,12 @@ public class EmbeddingPooledOrchestrator : IDisposable
 }
 
 /// <summary>
-/// Tracks the completion of all 4 embeddings for a single image
+/// Tracks the completion of both embeddings for a single image
 /// </summary>
 internal class PendingEmbeddingResult
 {
     private readonly int _imageId;
     private float[]? _bgeEmbedding;
-    private float[]? _clipLEmbedding;
-    private float[]? _clipGEmbedding;
     private float[]? _visionEmbedding;
     
     private int _completedCount;
@@ -372,18 +295,6 @@ internal class PendingEmbeddingResult
         CheckComplete();
     }
     
-    public void SetClipL(float[]? embedding)
-    {
-        _clipLEmbedding = embedding;
-        CheckComplete();
-    }
-    
-    public void SetClipG(float[]? embedding)
-    {
-        _clipGEmbedding = embedding;
-        CheckComplete();
-    }
-    
     public void SetVision(float[]? embedding)
     {
         _visionEmbedding = embedding;
@@ -393,24 +304,23 @@ internal class PendingEmbeddingResult
     private void CheckComplete()
     {
         var count = Interlocked.Increment(ref _completedCount);
-        if (count == 4)
+        if (count == 2)
         {
-            // All 4 embeddings complete
-            if (_bgeEmbedding != null && _clipLEmbedding != null && 
-                _clipGEmbedding != null && _visionEmbedding != null)
+            // Both embeddings complete
+            if (_bgeEmbedding != null && _visionEmbedding != null)
             {
                 _tcs.TrySetResult(new EmbeddingResult
                 {
                     BgeEmbedding = _bgeEmbedding,
-                    ClipLEmbedding = _clipLEmbedding,
-                    ClipGEmbedding = _clipGEmbedding,
+                    ClipLEmbedding = null,  // No longer generated
+                    ClipGEmbedding = null,  // No longer generated
                     ImageEmbedding = _visionEmbedding
                 });
             }
             else
             {
                 // At least one embedding failed
-                Logger.Log($"Embedding incomplete for image {_imageId}: BGE={_bgeEmbedding != null}, CLIP-L={_clipLEmbedding != null}, CLIP-G={_clipGEmbedding != null}, Vision={_visionEmbedding != null}");
+                Logger.Log($"Embedding incomplete for image {_imageId}: BGE={_bgeEmbedding != null}, Vision={_visionEmbedding != null}");
                 _tcs.TrySetResult(null);
             }
         }

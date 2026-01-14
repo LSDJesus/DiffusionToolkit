@@ -232,11 +232,12 @@ public partial class TaggingWindow : Window, INotifyPropertyChanged
             Logger.Log($"  FaceDetectionCheckBox.IsChecked={FaceDetectionCheckBox?.IsChecked}, FaceDetectionAvailable={FaceDetectionAvailable}");
             Logger.Log($"  Parallel processing with {maxConcurrency} concurrent workers, skipAlreadyTagged={skipAlreadyTagged}");
 
-            // Queue images for face detection if enabled
+            // Queue images for face detection if enabled (ALWAYS skips already-processed)
             if (runFaceDetection)
             {
                 Logger.Log($"Queueing {_imageIds.Count} images for face detection");
-                await dataStore.SetNeedsFaceDetection(_imageIds, true);
+                var queued = await dataStore.SmartQueueForFaceDetection(_imageIds);
+                Logger.Log($"Queued {queued}/{_imageIds.Count} images for face detection (skipped: {_imageIds.Count - queued})");
                 
                 // Start background face detection service
                 var faceService = ServiceLocator.BackgroundFaceDetectionService;

@@ -16,6 +16,11 @@ namespace Diffusion.IO
         }
 
         public string Label => _name.Replace("_", "__");
+        
+        /// <summary>
+        /// Title from _meta.title (e.g., "Positive", "Negative", "KSampler")
+        /// </summary>
+        public string? MetaTitle { get; set; }
 
         public List<Input> Inputs { get; set; }
         public object ImageRef { get; set; }
@@ -125,6 +130,17 @@ namespace Diffusion.IO
                     else if (props.Name == "class_type")
                     {
                         node.Name = props.Value.GetString();
+                    }
+                    else if (props.Name == "_meta")
+                    {
+                        // Extract title from _meta object
+                        if (props.Value.ValueKind == JsonValueKind.Object)
+                        {
+                            if (props.Value.TryGetProperty("title", out var titleProp))
+                            {
+                                node.MetaTitle = titleProp.GetString();
+                            }
+                        }
                     }
                 }
                 nodes.Add(node);

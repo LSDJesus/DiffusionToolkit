@@ -536,29 +536,61 @@ public class BackgroundTaggingService : IDisposable
     }
 
     /// <summary>
-    /// Queue images for tagging
+    /// Queue images for tagging (respects skipAlreadyProcessed setting)
     /// </summary>
-    public async Task QueueImagesForTagging(List<int> imageIds)
+    public async Task<int> QueueImagesForTagging(List<int> imageIds, bool skipAlreadyProcessed = true)
     {
-        await _dataStore.SetNeedsTagging(imageIds, true);
-        Logger.Log($"Queued {imageIds.Count} images for tagging");
+        var queued = await _dataStore.SmartQueueForTagging(imageIds, skipAlreadyProcessed);
+        Logger.Log($"Queued {queued}/{imageIds.Count} images for tagging (skipped: {imageIds.Count - queued})");
         
         // Update queue count immediately
         _taggingQueueRemaining = await _dataStore.CountImagesNeedingTagging();
         QueueCountsChanged?.Invoke(this, EventArgs.Empty);
+        
+        return queued;
     }
 
     /// <summary>
-    /// Queue images for captioning
+    /// Queue images for captioning (respects skipAlreadyProcessed setting)
     /// </summary>
-    public async Task QueueImagesForCaptioning(List<int> imageIds)
+    public async Task<int> QueueImagesForCaptioning(List<int> imageIds, bool skipAlreadyProcessed = true)
     {
-        await _dataStore.SetNeedsCaptioning(imageIds, true);
-        Logger.Log($"Queued {imageIds.Count} images for captioning");
+        var queued = await _dataStore.SmartQueueForCaptioning(imageIds, skipAlreadyProcessed);
+        Logger.Log($"Queued {queued}/{imageIds.Count} images for captioning (skipped: {imageIds.Count - queued})");
         
         // Update queue count immediately
         _captioningQueueRemaining = await _dataStore.CountImagesNeedingCaptioning();
         QueueCountsChanged?.Invoke(this, EventArgs.Empty);
+        
+        return queued;
+    }
+
+    /// <summary>
+    /// Queue images for embedding (ALWAYS skips already-processed)
+    /// </summary>
+    public async Task<int> QueueImagesForEmbedding(List<int> imageIds)
+    {
+        var queued = await _dataStore.SmartQueueForEmbedding(imageIds);
+        Logger.Log($"Queued {queued}/{imageIds.Count} images for embedding (skipped: {imageIds.Count - queued})");
+        
+        // Update queue count immediately
+        QueueCountsChanged?.Invoke(this, EventArgs.Empty);
+        
+        return queued;
+    }
+
+    /// <summary>
+    /// Queue images for face detection (ALWAYS skips already-processed)
+    /// </summary>
+    public async Task<int> QueueImagesForFaceDetection(List<int> imageIds)
+    {
+        var queued = await _dataStore.SmartQueueForFaceDetection(imageIds);
+        Logger.Log($"Queued {queued}/{imageIds.Count} images for face detection (skipped: {imageIds.Count - queued})");
+        
+        // Update queue count immediately
+        QueueCountsChanged?.Invoke(this, EventArgs.Empty);
+        
+        return queued;
     }
 
     /// <summary>

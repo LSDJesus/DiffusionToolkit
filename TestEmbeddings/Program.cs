@@ -8,6 +8,10 @@ namespace TestEmbeddings
         static async Task Main(string[] args)
         {
             Console.WriteLine("=== Diffusion Toolkit - ONNX Embedding Test ===\n");
+            Console.WriteLine("Embedding types:");
+            Console.WriteLine("  - BGE-large-en-v1.5 (1024D) - Semantic text similarity");
+            Console.WriteLine("  - CLIP-ViT-H (1280D) - Visual image similarity\n");
+            Console.WriteLine("Note: CLIP-L/G text encoders removed - conditioning generated on-demand.\n");
 
             // Add CUDA paths to environment
             var cudaPaths = new[]
@@ -44,8 +48,7 @@ namespace TestEmbeddings
 
             // Initialize service
             Console.WriteLine("Initializing embedding service...");
-            Console.WriteLine($"  BGE + CLIP Vision on GPU {config.BgeGpuDevice}");
-            Console.WriteLine($"  CLIP-L + CLIP-G on GPU {config.ClipLGpuDevice}\n");
+            Console.WriteLine($"  BGE + CLIP Vision on GPU {config.BgeGpuDevice}\n");
 
             EmbeddingService service;
             try
@@ -67,23 +70,21 @@ namespace TestEmbeddings
             using var serviceDispose = service;
 
             // Test 1: Single text encoding
-            Console.WriteLine("=== Test 1: Text Embeddings ===");
+            Console.WriteLine("=== Test 1: BGE Text Embedding ===");
             var testPrompt = "a beautiful landscape with mountains and lake";
             Console.WriteLine($"Prompt: \"{testPrompt}\"");
             
             var sw = Stopwatch.StartNew();
-            var (bge, clipL, clipG) = await service.GenerateTextEmbeddingsAsync(testPrompt);
+            var bge = await service.GenerateTextEmbeddingAsync(testPrompt);
             sw.Stop();
             
             Console.WriteLine($"✓ Generated in {sw.ElapsedMilliseconds}ms");
-            Console.WriteLine($"  BGE:    {bge.Length}D (norm: {Math.Sqrt(bge.Sum(x => x * x)):F2})");
-            Console.WriteLine($"  CLIP-L: {clipL.Length}D (norm: {Math.Sqrt(clipL.Sum(x => x * x)):F2})");
-            Console.WriteLine($"  CLIP-G: {clipG.Length}D (norm: {Math.Sqrt(clipG.Sum(x => x * x)):F2})\n");
+            Console.WriteLine($"  BGE: {bge.Length}D (norm: {Math.Sqrt(bge.Sum(x => x * x)):F2})\n");
 
             // Validate dimensions
-            if (bge.Length != 1024 || clipL.Length != 768 || clipG.Length != 1280)
+            if (bge.Length != 1024)
             {
-                Console.WriteLine("✗ FAILED: Incorrect embedding dimensions!");
+                Console.WriteLine("✗ FAILED: Incorrect BGE embedding dimension!");
                 return;
             }
 
@@ -120,7 +121,7 @@ namespace TestEmbeddings
 
             if (sampleImagePath != null && File.Exists(sampleImagePath))
             {
-                Console.WriteLine("=== Test 2: Image Embedding ===");
+                Console.WriteLine("=== Test 2: CLIP-ViT-H Image Embedding ===");
                 Console.WriteLine($"Image: {Path.GetFileName(sampleImagePath)}");
                 
                 sw.Restart();
@@ -128,7 +129,7 @@ namespace TestEmbeddings
                 sw.Stop();
                 
                 Console.WriteLine($"✓ Generated in {sw.ElapsedMilliseconds}ms");
-                Console.WriteLine($"  CLIP-H Vision: {imageEmb.Length}D (norm: {Math.Sqrt(imageEmb.Sum(x => x * x)):F2})\n");
+                Console.WriteLine($"  CLIP-ViT-H: {imageEmb.Length}D (norm: {Math.Sqrt(imageEmb.Sum(x => x * x)):F2})\n");
 
                 if (imageEmb.Length != 1280)
                 {
@@ -138,71 +139,65 @@ namespace TestEmbeddings
             }
             else
             {
-                Console.WriteLine("=== Test 2: Image Embedding ===");
-                Console.WriteLine($"⊗ Skipped (no test image at {sampleImagePath})\n");
+                Console.WriteLine("=== Test 2: CLIP-ViT-H Image Embedding ===");
+                Console.WriteLine($"⊗ Skipped (no test image found)\n");
             }
 
             // Test 3: Full image generation
-            if (File.Exists(sampleImagePath))
+            if (sampleImagePath != null && File.Exists(sampleImagePath))
             {
-                Console.WriteLine("=== Test 3: Full Image Generation ===");
+                Console.WriteLine("=== Test 3: Full Embedding Generation ===");
                 var prompt = "masterpiece, best quality, sunset over ocean";
-                var negative = "blurry, low quality, watermark";
                 
                 Console.WriteLine($"Prompt: \"{prompt}\"");
-                Console.WriteLine($"Negative: \"{negative}\"");
                 
                 sw.Restart();
-                var result = await service.GenerateAllEmbeddingsAsync(prompt, negative, sampleImagePath);
+                var result = await service.GenerateAllEmbeddingsAsync(prompt, sampleImagePath);
                 sw.Stop();
                 
-                Console.WriteLine($"✓ Generated all 5 embeddings in {sw.ElapsedMilliseconds}ms (parallel execution)");
-                Console.WriteLine($"  BGE:    {result.BgeEmbedding.Length}D");
-                Console.WriteLine($"  CLIP-L: {result.ClipLEmbedding.Length}D");
-                Console.WriteLine($"  CLIP-G: {result.ClipGEmbedding.Length}D");
-                Console.WriteLine($"  Image:  {result.ImageEmbedding.Length}D\n");
+                Console.WriteLine($"✓ Generated both embeddings in {sw.ElapsedMilliseconds}ms (parallel execution)");
+                Console.WriteLine($"  BGE:        {result.BgeEmbedding?.Length ?? 0}D");
+                Console.WriteLine($"  CLIP-ViT-H: {result.ImageEmbedding?.Length ?? 0}D\n");
             }
 
             // Test 4: Batch processing (only if we have a sample image)
             if (sampleImagePath != null)
             {
-                Console.WriteLine("=== Test 4: Batch Text Processing ===");
-                var prompts = new[]
+                Console.WriteLine("=== Test 4: Batch Processing ===");
+                var items = new[]
                 {
-                    "a beautiful landscape",
-                    "a portrait of a woman",
-                    "abstract art with colors",
-                    "cyberpunk city at night",
-                    "a beautiful landscape"  // Duplicate for deduplication test
+                    ("a beautiful landscape", sampleImagePath),
+                    ("a portrait of a woman", sampleImagePath),
+                    ("abstract art with colors", sampleImagePath),
+                    ("cyberpunk city at night", sampleImagePath),
+                    ("a beautiful landscape", sampleImagePath)  // Duplicate for deduplication test
                 };
 
-                Console.WriteLine($"Batch size: {prompts.Length} prompts ({prompts.Distinct().Count()} unique)");
+                Console.WriteLine($"Batch size: {items.Length} items ({items.Select(i => i.Item1).Distinct().Count()} unique prompts)");
                 
                 sw.Restart();
-                var batchResults = await service.GenerateBatchEmbeddingsAsync(
-                    prompts.Select(p => (prompt: p, negativePrompt: "", imagePath: sampleImagePath))
-                );
+                var batchResults = await service.GenerateBatchEmbeddingsAsync(items);
                 sw.Stop();
                 
                 Console.WriteLine($"✓ Generated in {sw.ElapsedMilliseconds}ms");
-                Console.WriteLine($"  Average: {sw.ElapsedMilliseconds / (double)prompts.Length:F1}ms per item");
+                Console.WriteLine($"  Average: {sw.ElapsedMilliseconds / (double)items.Length:F1}ms per item");
                 Console.WriteLine($"  Results: {batchResults.Length} items\n");
             }
             else
             {
-                Console.WriteLine("=== Test 4: Batch Text Processing ===");
+                Console.WriteLine("=== Test 4: Batch Processing ===");
                 Console.WriteLine($"⊗ Skipped (no test image available)\n");
             }
 
             // Test 5: Text similarity
-            Console.WriteLine("=== Test 5: Text Similarity ===");
+            Console.WriteLine("=== Test 5: Text Similarity (BGE) ===");
             var text1 = "a beautiful landscape with mountains";
             var text2 = "a beautiful landscape with mountains";  // Identical
             var text3 = "a cyberpunk city at night";  // Different
             
-            var (bge1, _, _) = await service.GenerateTextEmbeddingsAsync(text1);
-            var (bge2, _, _) = await service.GenerateTextEmbeddingsAsync(text2);
-            var (bge3, _, _) = await service.GenerateTextEmbeddingsAsync(text3);
+            var bge1 = await service.GenerateTextEmbeddingAsync(text1);
+            var bge2 = await service.GenerateTextEmbeddingAsync(text2);
+            var bge3 = await service.GenerateTextEmbeddingAsync(text3);
             
             var similarity12 = CosineSimilarity(bge1, bge2);
             var similarity13 = CosineSimilarity(bge1, bge3);
@@ -224,14 +219,13 @@ namespace TestEmbeddings
             // Test 6: GPU memory usage check
             Console.WriteLine("=== Test 6: GPU Information ===");
             Console.WriteLine("Run 'nvidia-smi' in another terminal to check GPU utilization");
-            Console.WriteLine("Expected: Both RTX 5090 (GPU 0) and RTX 3080 Ti (GPU 1) active\n");
+            Console.WriteLine("Expected VRAM usage: ~3.1GB (BGE ~0.5GB + CLIP-ViT-H ~2.6GB)\n");
 
             Console.WriteLine("=== All Tests Completed Successfully ===");
-            Console.WriteLine("\nNext steps:");
-            Console.WriteLine("1. Check GPU memory usage with nvidia-smi");
-            Console.WriteLine("2. Test with real image files from your dataset");
-            Console.WriteLine("3. Benchmark batch processing with 32-64 images");
-            Console.WriteLine("4. Integrate with EmbeddingCacheService for deduplication");
+            Console.WriteLine("\nEmbedding architecture:");
+            Console.WriteLine("  BGE-large-en-v1.5 (1024D) - Semantic text search for prompts/tags/captions");
+            Console.WriteLine("  CLIP-ViT-H (1280D) - Visual similarity search for images");
+            Console.WriteLine("\nNote: CLIP-L/G text embeddings removed - conditioning generated on-demand for ComfyUI.");
         }
 
         static double CosineSimilarity(float[] a, float[] b)

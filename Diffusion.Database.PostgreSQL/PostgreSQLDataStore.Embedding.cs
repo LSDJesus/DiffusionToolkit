@@ -131,22 +131,25 @@ public partial class PostgreSQLDataStore
     }
     
     /// <summary>
-    /// Store embeddings for an image and mark if it's a representative
+    /// Store embeddings for an image and mark if it's a representative.
+    /// 
+    /// Stored embeddings:
+    /// - BGE-large-en-v1.5 (1024D) - Semantic text similarity for prompts
+    /// - CLIP-ViT-H (1280D) - Visual image similarity
+    /// 
+    /// Note: CLIP-L/G text embeddings are no longer stored - for ComfyUI integration,
+    /// conditioning will be generated on-demand from prompts.
     /// </summary>
     public async Task StoreImageEmbeddingsAsync(
         int imageId,
-        float[] bgeEmbedding,
-        float[] clipLEmbedding,
-        float[] clipGEmbedding,
-        float[] imageEmbedding,
+        float[]? bgeEmbedding,
+        float[]? imageEmbedding,
         bool isRepresentative,
         CancellationToken cancellationToken = default)
     {
         var sql = @"
             UPDATE image
             SET prompt_embedding = @bgeEmbedding,
-                clip_l_embedding = @clipLEmbedding,
-                clip_g_embedding = @clipGEmbedding,
                 image_embedding = @imageEmbedding,
                 is_embedding_representative = @isRepresentative,
                 embedding_source_id = CASE 
@@ -160,11 +163,26 @@ public partial class PostgreSQLDataStore
         {
             imageId,
             bgeEmbedding,
-            clipLEmbedding,
-            clipGEmbedding,
             imageEmbedding,
             isRepresentative
         }).ConfigureAwait(false);
+    }
+    
+    /// <summary>
+    /// Store embeddings for an image (legacy overload with CLIP-L/G - ignores those parameters)
+    /// </summary>
+    [Obsolete("Use StoreImageEmbeddingsAsync(imageId, bgeEmbedding, imageEmbedding, isRepresentative) instead")]
+    public async Task StoreImageEmbeddingsAsync(
+        int imageId,
+        float[]? bgeEmbedding,
+        float[]? clipLEmbedding,
+        float[]? clipGEmbedding,
+        float[]? imageEmbedding,
+        bool isRepresentative,
+        CancellationToken cancellationToken = default)
+    {
+        // Ignore clipL and clipG - no longer stored
+        await StoreImageEmbeddingsAsync(imageId, bgeEmbedding, imageEmbedding, isRepresentative, cancellationToken);
     }
     
     /// <summary>

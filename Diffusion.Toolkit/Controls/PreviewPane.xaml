@@ -110,6 +110,21 @@
                 </Image>
             </ScrollViewer>
 
+            <!-- Face bounding box overlay -->
+            <Canvas x:Name="FaceBoundingBoxCanvas" Grid.Row="0" Grid.RowSpan="3" 
+                    IsHitTestVisible="False" 
+                    Visibility="Collapsed">
+                <Border x:Name="FaceBoundingBox" 
+                        BorderBrush="#FF00FF00" 
+                        BorderThickness="3" 
+                        Background="#2000FF00"
+                        CornerRadius="3">
+                    <Border.Effect>
+                        <DropShadowEffect BlurRadius="8" ShadowDepth="0" Color="Lime" Opacity="0.8"/>
+                    </Border.Effect>
+                </Border>
+            </Canvas>
+
             <Grid Grid.Row="0" RowSpan="3" Background="Transparent" IsHitTestVisible="False"
                   DataContext="{Binding Image, RelativeSource={RelativeSource FindAncestor, AncestorType={x:Type UserControl}}}"
                   >

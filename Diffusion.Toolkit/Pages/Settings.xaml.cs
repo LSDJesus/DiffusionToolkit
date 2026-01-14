@@ -156,6 +156,8 @@ namespace Diffusion.Toolkit.Pages
             _model.GpuVramCapacity = _settings.GpuVramCapacity;
             _model.MaxVramUsagePercent = _settings.MaxVramUsagePercent;
             _model.UseNewProcessingArchitecture = _settings.UseNewProcessingArchitecture;
+            _model.EnableDynamicVramAllocation = _settings.EnableDynamicVramAllocation;
+            _model.DefaultOnnxWorkersPerGpu = _settings.DefaultOnnxWorkersPerGpu;
             
             // GPU Model Allocation - Concurrent mode
             _model.ConcurrentCaptioningAllocation = _settings.ConcurrentCaptioningAllocation;
@@ -604,6 +606,8 @@ namespace Diffusion.Toolkit.Pages
                 _settings.GpuVramCapacity = _model.GpuVramCapacity;
                 _settings.MaxVramUsagePercent = _model.MaxVramUsagePercent;
                 _settings.UseNewProcessingArchitecture = _model.UseNewProcessingArchitecture;
+                _settings.EnableDynamicVramAllocation = _model.EnableDynamicVramAllocation;
+                _settings.DefaultOnnxWorkersPerGpu = _model.DefaultOnnxWorkersPerGpu;
                 
                 // GPU Model Allocation - Concurrent mode
                 _settings.ConcurrentCaptioningAllocation = _model.ConcurrentCaptioningAllocation;

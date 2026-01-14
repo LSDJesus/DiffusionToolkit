@@ -315,8 +315,22 @@
                                 <DataTemplate>
                                     <Border BorderBrush="{DynamicResource SecondaryBrush}" BorderThickness="1" 
                                             Margin="5" Padding="5" Background="#20000000"
-                                            MouseDown="FaceThumbnail_OnMouseDown" Cursor="Hand"
-                                            ToolTip="Double-click to find similar faces">
+                                            MouseDown="FaceThumbnail_OnMouseDown" 
+                                            MouseEnter="FaceThumbnail_OnMouseEnter"
+                                            MouseLeave="FaceThumbnail_OnMouseLeave"
+                                            Cursor="Hand"
+                                            Tag="{Binding}"
+                                            ToolTip="Hover to highlight face • Double-click to find similar faces">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Style.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+                                                        <Setter Property="BorderThickness" Value="2"/>
+                                                    </Trigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
                                         <StackPanel>
                                             <!-- Face crop image -->
                                             <Image Source="{Binding FaceCropImage}" Width="120" Height="120" 

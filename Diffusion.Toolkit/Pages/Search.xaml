@@ -1002,7 +1002,8 @@
                 </Grid.RowDefinitions>
 
                 <Grid Grid.Row="1" Background="#A0000000" Margin="10" Visibility="{Binding CurrentImage.IsParametersVisible, Converter={StaticResource boolToVis}}">
-                    <controls:MetadataPanel CurrentImage="{Binding CurrentImage}" MetadataSection="{Binding MetadataSection}">
+                    <controls:MetadataPanel CurrentImage="{Binding CurrentImage}" MetadataSection="{Binding MetadataSection}"
+                                            FaceBoundingBoxHover="MetadataPanel_OnFaceBoundingBoxHover">
                     </controls:MetadataPanel>
                 </Grid>
             </Grid>
@@ -1016,7 +1017,8 @@
                           Height="5"
             />
 
-            <controls:MetadataPanel Grid.Row="2"   CurrentImage="{Binding CurrentImage}">
+            <controls:MetadataPanel Grid.Row="2" CurrentImage="{Binding CurrentImage}"
+                                    FaceBoundingBoxHover="MetadataPanel_OnFaceBoundingBoxHover">
             </controls:MetadataPanel>
 
         </Grid>

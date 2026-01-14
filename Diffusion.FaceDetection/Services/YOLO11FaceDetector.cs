@@ -183,13 +183,13 @@ public class YOLO11FaceDetector : IDisposable
 
         for (int i = 0; i < numDetections; i++)
         {
-            float cx, cy, w, h, confidence, classId;
+            float x1_raw, y1_raw, w, h, confidence, classId;
 
             if (transposed)
             {
-                // [1, 6, num_det] format
-                cx = output[0 * numDetections + i];
-                cy = output[1 * numDetections + i];
+                // [1, 6, num_det] format: [x1, y1, w, h, confidence, class] per detection
+                x1_raw = output[0 * numDetections + i];
+                y1_raw = output[1 * numDetections + i];
                 w = output[2 * numDetections + i];
                 h = output[3 * numDetections + i];
                 confidence = output[4 * numDetections + i];
@@ -197,10 +197,11 @@ public class YOLO11FaceDetector : IDisposable
             }
             else
             {
-                // [1, num_det, 6] format
+                // [1, num_det, 6] format: [x1, y1, w, h, confidence, class]
+                // YOLO11 outputs x1, y1 (top-left corner) + width, height in pixel space (0-640)
                 int idx = i * 6;
-                cx = output[idx + 0];
-                cy = output[idx + 1];
+                x1_raw = output[idx + 0];
+                y1_raw = output[idx + 1];
                 w = output[idx + 2];
                 h = output[idx + 3];
                 confidence = output[idx + 4];
@@ -209,12 +210,13 @@ public class YOLO11FaceDetector : IDisposable
 
             if (confidence < _confidenceThreshold) continue;
 
-            // Convert from normalized coordinates with padding
-            // YOLO outputs are in input image space (0-640), need to remove padding and scale
-            float x1 = (cx - w / 2 - padX) / scale;
-            float y1 = (cy - h / 2 - padY) / scale;
-            float x2 = (cx + w / 2 - padX) / scale;
-            float y2 = (cy + h / 2 - padY) / scale;
+            // YOLO11 outputs are in letterboxed image space (0-640)
+            // Format is x1, y1, w, h (top-left corner + dimensions)
+            // Need to remove padding offset and scale back to original image coordinates
+            float x1 = (x1_raw - padX) / scale;
+            float y1 = (y1_raw - padY) / scale;
+            float x2 = (x1_raw + w - padX) / scale;
+            float y2 = (y1_raw + h - padY) / scale;
 
             // Clamp to image bounds
             x1 = Math.Max(0, Math.Min(x1, originalWidth));

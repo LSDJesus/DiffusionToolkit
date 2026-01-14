@@ -1925,6 +1925,14 @@ namespace Diffusion.Toolkit.Pages
 
         }
 
+        /// <summary>
+        /// Handle face thumbnail hover to show/hide bounding box on preview
+        /// </summary>
+        private void MetadataPanel_OnFaceBoundingBoxHover(object? sender, (int faceId, int x, int y, int width, int height) bbox)
+        {
+            PreviewPane.ShowFaceBoundingBox(bbox.x, bbox.y, bbox.width, bbox.height);
+        }
+
         public Filter Filter => _model.Filter.AsFilter();
 
         public void ExtOnKeyUp(object sender, KeyEventArgs e)

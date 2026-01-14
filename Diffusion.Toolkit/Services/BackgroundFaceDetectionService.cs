@@ -474,13 +474,15 @@ public class BackgroundFaceDetectionService : IDisposable
             
             foreach (var face in results.Faces)
             {
-                // Store face detection
+                // Store face detection with multi-model embeddings
                 var faceId = await _dataStore.StoreFaceDetectionAsync(
                     imageId,
                     face.X, face.Y, face.Width, face.Height,
                     storeFaceCrops ? face.FaceCrop : null,
                     face.CropWidth, face.CropHeight,
                     face.ArcFaceEmbedding,
+                    face.ClipFaceEmbedding,
+                    face.StyleType,
                     face.DetectionModel,
                     face.Confidence, face.QualityScore, face.SharpnessScore,
                     face.PoseYaw, face.PosePitch, face.PoseRoll,
@@ -488,17 +490,19 @@ public class BackgroundFaceDetectionService : IDisposable
                 
                 Interlocked.Increment(ref _totalFacesDetected);
                 
-                // Auto-cluster if enabled
-                if (autoCluster && face.ArcFaceEmbedding != null)
+                // Auto-cluster if enabled - use style-aware search
+                if (autoCluster && (face.ArcFaceEmbedding != null || face.ClipFaceEmbedding != null))
                 {
-                    var similarFaces = await _dataStore.FindSimilarFaces(
-                        face.ArcFaceEmbedding, 
+                    var similarFaces = await _dataStore.FindSimilarFacesStyleAware(
+                        face.ArcFaceEmbedding,
+                        face.ClipFaceEmbedding,
+                        face.StyleType,
                         clusterThreshold, 
                         1);
                     
                     if (similarFaces.Count > 0)
                     {
-                        var existingFace = await _dataStore.GetFacesForImage(similarFaces[0].imageId);
+                        var existingFace = await _dataStore.GetFacesForImage(similarFaces[0].faceId);
                         var clusterId = existingFace.FirstOrDefault(f => f.FaceGroupId.HasValue)?.FaceGroupId;
                         
                         if (clusterId.HasValue)

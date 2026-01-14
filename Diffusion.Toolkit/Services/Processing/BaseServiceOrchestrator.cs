@@ -390,6 +390,17 @@ public abstract class BaseServiceOrchestrator : IServiceOrchestrator
                     if (!result.Success)
                     {
                         Interlocked.Increment(ref _skipped);
+                        if (!string.IsNullOrEmpty(result.ErrorMessage))
+                        {
+                            Logger.Log($"{Name}: Worker {worker.WorkerId} failed on image {job.ImageId}: {result.ErrorMessage}");
+                        }
+                    }
+                    
+                    // Log progress periodically (every 100 items, or first 5, or on error)
+                    if (progress % 100 == 0 || progress <= 5)
+                    {
+                        var percent = _total > 0 ? (progress * 100.0 / _total) : 0;
+                        Logger.Log($"{Name}: Progress {progress}/{_total} ({percent:F1}%) - {remaining} remaining");
                     }
                     
                     // Raise progress event (throttled)

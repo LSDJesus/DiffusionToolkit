@@ -11,9 +11,12 @@ using Diffusion.Toolkit.Configuration;
 namespace Diffusion.Toolkit.Services.Processing;
 
 /// <summary>
-/// Embedding model pool - holds BGE, CLIP-L, CLIP-G, and CLIP-Vision models for a specific GPU.
+/// Embedding model pool - holds BGE and CLIP-Vision models for a specific GPU.
 /// Thread-safe: ONNX Runtime with CUDA EP supports concurrent Run() calls.
 /// Multiple workers can share one pool.
+/// 
+/// Note: CLIP-L/G text encoders removed - for ComfyUI integration,
+/// conditioning will be generated on-demand from prompts.
 /// </summary>
 public class EmbeddingModelPool : IModelPool
 {
@@ -24,7 +27,7 @@ public class EmbeddingModelPool : IModelPool
     
     public int GpuId { get; }
     public bool IsReady => _isReady;
-    public double VramUsageGb => 7.6; // BGE (~0.5GB) + CLIP-L (~1.5GB) + CLIP-G (~3GB) + CLIP-Vision (~2.6GB)
+    public double VramUsageGb => EmbeddingPooledOrchestrator.VramUsageGb; // BGE (~0.5GB) + CLIP-Vision (~2.6GB)
     
     public EmbeddingPooledOrchestrator? PooledOrchestrator => _pooledOrchestrator;
     
@@ -161,10 +164,16 @@ public class EmbeddingOrchestrator : BaseServiceOrchestrator
             await DataStore.StoreImageEmbeddingsAsync(
                 result.ImageId,
                 embeddings.BgeEmbedding,
-                embeddings.ClipLEmbedding,
-                embeddings.ClipGEmbedding,
                 embeddings.ImageEmbedding,
                 isRepresentative: true);
+            
+            var embeddingCount = (embeddings.BgeEmbedding != null ? 1 : 0) +
+                                 (embeddings.ImageEmbedding != null ? 1 : 0);
+            Logger.Log($"Embedding: Saved {embeddingCount} embeddings for image {result.ImageId} (BGE text + CLIP vision)");
+        }
+        else if (!result.Success)
+        {
+            Logger.Log($"Embedding: Failed for image {result.ImageId}: {result.ErrorMessage ?? "unknown error"}");
         }
         
         await DataStore.SetNeedsEmbedding(new List<int> { result.ImageId }, false);
@@ -233,14 +242,18 @@ public class EmbeddingJobData
 }
 
 /// <summary>
-/// Result data from embedding processing
+/// Result data from embedding processing.
+/// 
+/// Contains:
+/// - BGE-large-en-v1.5 (1024D) - Semantic text similarity
+/// - CLIP-ViT-H (1280D) - Visual image similarity
+/// 
+/// Note: CLIP-L/G text embeddings removed - conditioning generated on-demand.
 /// </summary>
 public class EmbeddingResultData
 {
-    public float[] BgeEmbedding { get; init; } = Array.Empty<float>();
-    public float[] ClipLEmbedding { get; init; } = Array.Empty<float>();
-    public float[] ClipGEmbedding { get; init; } = Array.Empty<float>();
-    public float[] ImageEmbedding { get; init; } = Array.Empty<float>();
+    public float[]? BgeEmbedding { get; init; }
+    public float[]? ImageEmbedding { get; init; }
 }
 
 /// <summary>
@@ -283,7 +296,7 @@ public class EmbeddingWorker : IProcessingWorker
             var prompt = jobData?.Prompt ?? "";
             var negativePrompt = jobData?.NegativePrompt;
             
-            // Use the pooled orchestrator to generate all 4 embeddings
+            // Use the pooled orchestrator to generate embeddings (BGE + CLIP-Vision)
             var result = await _modelPool.PooledOrchestrator.GenerateEmbeddingsAsync(
                 job.ImageId,
                 prompt,
@@ -308,8 +321,6 @@ public class EmbeddingWorker : IProcessingWorker
                 Data = new EmbeddingResultData
                 {
                     BgeEmbedding = result.BgeEmbedding,
-                    ClipLEmbedding = result.ClipLEmbedding,
-                    ClipGEmbedding = result.ClipGEmbedding,
                     ImageEmbedding = result.ImageEmbedding
                 }
             };

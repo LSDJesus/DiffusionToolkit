@@ -140,7 +140,7 @@ public class FaceDetectionOrchestrator : BaseServiceOrchestrator
     {
         if (result.Success && result.Data is FaceDetectionResultData faceData && faceData.Faces.Count > 0)
         {
-            // Store each detected face
+            // Store each detected face with multi-model embeddings
             foreach (var face in faceData.Faces)
             {
                 await DataStore.StoreFaceDetectionAsync(
@@ -148,11 +148,23 @@ public class FaceDetectionOrchestrator : BaseServiceOrchestrator
                     face.X, face.Y, face.Width, face.Height,
                     face.FaceCrop, face.CropWidth, face.CropHeight,
                     face.ArcFaceEmbedding,
+                    face.ClipFaceEmbedding,
+                    face.StyleType ?? "unknown",
                     face.DetectionModel,
                     face.Confidence, face.QualityScore, face.SharpnessScore,
                     face.PoseYaw, face.PosePitch, face.PoseRoll,
                     face.Landmarks != null ? System.Text.Json.JsonSerializer.Serialize(face.Landmarks) : null);
             }
+            Logger.Log($"FaceDetection: Found {faceData.Faces.Count} faces for image {result.ImageId}");
+        }
+        else if (result.Success)
+        {
+            // Successfully processed but no faces found
+            Logger.Log($"FaceDetection: No faces found for image {result.ImageId}");
+        }
+        else
+        {
+            Logger.Log($"FaceDetection: Failed for image {result.ImageId}: {result.ErrorMessage ?? "unknown error"}");
         }
         
         await DataStore.SetNeedsFaceDetection(new List<int> { result.ImageId }, false);

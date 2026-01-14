@@ -1089,39 +1089,207 @@ public class Metadata
 
         try
         {
+            string json;
+            
             if (!isProperJson)
             {
-                var json = description.Substring("prompt: ".Length);
+                json = description.Substring("prompt: ".Length);
 
                 // fix for errant nodes
                 json = json.Replace("NaN", "null");
-
-                fp.Workflow = json;
-
-                var root = JsonDocument.Parse(json);
-                fp.WorkflowId = GetHashCode(root.RootElement).ToString("X");
-
-                var parser = new ComfyUIParser();
-                var pnodes = parser.Parse(fp.WorkflowId, fp.Workflow);
-
-                fp.Nodes = pnodes;
             }
             else
             {
-                fp.Workflow = description;
+                json = description;
+            }
+            
+            fp.Workflow = json;
 
-                var parser = new ComfyUIParser();
-                var pnodes = parser.Parse(fp.WorkflowId, fp.Workflow);
+            var root = JsonDocument.Parse(json);
+            fp.WorkflowId = GetHashCode(root.RootElement).ToString("X");
 
-                fp.Nodes = pnodes;
+            // Check for Civitai's extraMetadata field (contains simplified prompt/negative/params)
+            if (root.RootElement.TryGetProperty("extraMetadata", out var extraMetadataElement))
+            {
+                try
+                {
+                    string extraMetadataJson;
+                    
+                    // extraMetadata can be a string (escaped JSON) or an object
+                    if (extraMetadataElement.ValueKind == JsonValueKind.String)
+                    {
+                        extraMetadataJson = extraMetadataElement.GetString() ?? "";
+                    }
+                    else if (extraMetadataElement.ValueKind == JsonValueKind.Object)
+                    {
+                        extraMetadataJson = extraMetadataElement.GetRawText();
+                    }
+                    else
+                    {
+                        extraMetadataJson = "";
+                    }
+                    
+                    if (!string.IsNullOrEmpty(extraMetadataJson))
+                    {
+                        var extraMeta = JsonDocument.Parse(extraMetadataJson);
+                        var extraRoot = extraMeta.RootElement;
+                        
+                        // Extract prompt
+                        if (extraRoot.TryGetProperty("prompt", out var promptEl))
+                        {
+                            fp.Prompt = promptEl.GetString();
+                        }
+                        
+                        // Extract negative prompt
+                        if (extraRoot.TryGetProperty("negativePrompt", out var negPromptEl))
+                        {
+                            fp.NegativePrompt = negPromptEl.GetString();
+                        }
+                        
+                        // Extract steps
+                        if (extraRoot.TryGetProperty("steps", out var stepsEl) && stepsEl.ValueKind == JsonValueKind.Number)
+                        {
+                            fp.Steps = stepsEl.GetInt32();
+                        }
+                        
+                        // Extract CFG scale
+                        if (extraRoot.TryGetProperty("cfgScale", out var cfgEl) && cfgEl.ValueKind == JsonValueKind.Number)
+                        {
+                            fp.CFGScale = cfgEl.GetDecimal();
+                        }
+                        
+                        // Extract sampler
+                        if (extraRoot.TryGetProperty("sampler", out var samplerEl))
+                        {
+                            fp.Sampler = samplerEl.GetString();
+                        }
+                        
+                        // Extract seed
+                        if (extraRoot.TryGetProperty("seed", out var seedEl) && seedEl.ValueKind == JsonValueKind.Number)
+                        {
+                            fp.Seed = seedEl.GetInt64();
+                        }
+                        
+                        // Extract workflowId (Civitai workflow type like "img2img-hires")
+                        if (extraRoot.TryGetProperty("workflowId", out var workflowIdEl))
+                        {
+                            var civitaiWorkflowId = workflowIdEl.GetString();
+                            if (!string.IsNullOrEmpty(civitaiWorkflowId))
+                            {
+                                // Append to other parameters for reference
+                                fp.OtherParameters = $"Civitai Workflow: {civitaiWorkflowId}";
+                            }
+                        }
+                        
+                        // Build OtherParameters string
+                        var paramsBuilder = new StringBuilder();
+                        if (fp.Steps > 0) paramsBuilder.Append($"Steps: {fp.Steps} ");
+                        if (!string.IsNullOrEmpty(fp.Sampler)) paramsBuilder.Append($"Sampler: {fp.Sampler} ");
+                        if (fp.CFGScale > 0) paramsBuilder.Append($"CFG scale: {fp.CFGScale} ");
+                        if (fp.Seed > 0) paramsBuilder.Append($"Seed: {fp.Seed} ");
+                        if (!string.IsNullOrEmpty(fp.OtherParameters)) paramsBuilder.Append(fp.OtherParameters);
+                        
+                        fp.OtherParameters = paramsBuilder.ToString().Trim();
+                    }
+                }
+                catch
+                {
+                    // Failed to parse extraMetadata, fall through to node parsing
+                }
             }
 
+            var parser = new ComfyUIParser();
+            var pnodes = parser.Parse(fp.WorkflowId, fp.Workflow);
+            fp.Nodes = pnodes;
+            
+            // If we didn't get prompts from extraMetadata, try to extract from nodes
+            if (string.IsNullOrEmpty(fp.Prompt) && pnodes != null)
+            {
+                ExtractPromptsFromNodes(fp, pnodes);
+            }
 
             return fp;
         }
         catch
         {
             return fp;
+        }
+    }
+    
+    /// <summary>
+    /// Extract prompts from ComfyUI nodes (smZ CLIPTextEncode, CLIPTextEncode, etc.)
+    /// </summary>
+    private static void ExtractPromptsFromNodes(FileParameters fp, IReadOnlyCollection<Node> nodes)
+    {
+        foreach (var node in nodes)
+        {
+            if (node.Inputs == null) continue;
+            
+            // Look for text encoding nodes
+            var nodeType = node.Name?.ToLowerInvariant() ?? "";
+            var isTextEncode = nodeType.Contains("cliptextencode") || 
+                               nodeType.Contains("textencode") ||
+                               nodeType.Contains("conditioning");
+            
+            if (!isTextEncode) continue;
+            
+            // Use MetaTitle from node (parsed from _meta.title)
+            var metaTitle = node.MetaTitle ?? "";
+            var textInput = node.Inputs.FirstOrDefault(i => i.Name == "text")?.Value?.ToString();
+            
+            if (string.IsNullOrEmpty(textInput)) continue;
+            
+            // Try to determine if positive or negative based on meta title or node ID
+            var nodeId = node.Id?.ToLowerInvariant() ?? "";
+            var isNegative = metaTitle.Contains("Negative", StringComparison.OrdinalIgnoreCase) ||
+                             nodeId.Contains("neg") ||
+                             nodeId == "7"; // Common convention: node 7 is negative
+            
+            var isPositive = metaTitle.Contains("Positive", StringComparison.OrdinalIgnoreCase) ||
+                             nodeId.Contains("pos") ||
+                             nodeId == "6"; // Common convention: node 6 is positive
+            
+            if (isNegative && string.IsNullOrEmpty(fp.NegativePrompt))
+            {
+                fp.NegativePrompt = textInput;
+            }
+            else if (isPositive && string.IsNullOrEmpty(fp.Prompt))
+            {
+                fp.Prompt = textInput;
+            }
+            else if (string.IsNullOrEmpty(fp.Prompt))
+            {
+                // Default to prompt if we can't determine
+                fp.Prompt = textInput;
+            }
+        }
+        
+        // Try to extract sampler parameters from KSampler nodes
+        foreach (var node in nodes)
+        {
+            if (node.Inputs == null) continue;
+            
+            var nodeType = node.Name?.ToLowerInvariant() ?? "";
+            if (!nodeType.Contains("ksampler") && !nodeType.Contains("sampler")) continue;
+            
+            foreach (var input in node.Inputs)
+            {
+                switch (input.Name?.ToLowerInvariant())
+                {
+                    case "steps" when fp.Steps == 0 && input.Value is double steps:
+                        fp.Steps = (int)steps;
+                        break;
+                    case "cfg" when fp.CFGScale == 0 && input.Value is double cfg:
+                        fp.CFGScale = (decimal)cfg;
+                        break;
+                    case "sampler_name" when string.IsNullOrEmpty(fp.Sampler) && input.Value is string sampler:
+                        fp.Sampler = sampler;
+                        break;
+                    case "seed" when fp.Seed == 0 && input.Value is double seed:
+                        fp.Seed = (long)seed;
+                        break;
+                }
+            }
         }
     }
 

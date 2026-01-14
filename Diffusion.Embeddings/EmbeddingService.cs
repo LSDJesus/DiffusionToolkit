@@ -6,51 +6,55 @@ using System.Threading.Tasks;
 namespace Diffusion.Embeddings
 {
     /// <summary>
-    /// Result containing all 5 embedding vectors for an image.
+    /// Result containing embedding vectors for an image.
+    /// 
+    /// Stored embeddings:
+    /// - BGE-large-en-v1.5 (1024D) - Semantic text similarity for prompts
+    /// - CLIP-ViT-H (1280D) - Visual image similarity
+    /// 
+    /// Note: CLIP-L/G text embeddings removed - for ComfyUI integration,
+    /// conditioning will be generated on-demand from prompts.
     /// </summary>
     public class EmbeddingResult
     {
-        public required float[] BgeEmbedding { get; set; }      // 1024D semantic text search
-        public required float[] ClipLEmbedding { get; set; }    // 768D SDXL text_l
-        public required float[] ClipGEmbedding { get; set; }    // 1280D SDXL text_g
-        public float[]? ClipHEmbedding { get; set; }            // 1280D CLIP-H text (optional)
-        public required float[] ImageEmbedding { get; set; }    // 1280D visual similarity
+        public float[]? BgeEmbedding { get; set; }      // 1024D semantic text search
+        public float[]? ImageEmbedding { get; set; }    // 1280D visual similarity (CLIP-ViT-H)
+        
+        // Legacy properties - always null, kept for compatibility
+        [Obsolete("CLIP-L text embeddings no longer generated")]
+        public float[]? ClipLEmbedding { get; set; }
+        
+        [Obsolete("CLIP-G text embeddings no longer generated")]
+        public float[]? ClipGEmbedding { get; set; }
     }
 
     /// <summary>
-    /// High-level service orchestrating all embedding encoders with dual-GPU parallelism.
-    /// Generates all 5 embeddings (4 text + 1 image) for an AI-generated image.
+    /// High-level service orchestrating embedding encoders.
+    /// Generates BGE text and CLIP-ViT-H image embeddings.
+    /// 
+    /// Embedding types:
+    /// - BGE-large-en-v1.5 (1024D) - Semantic text similarity for prompts, tags, captions
+    /// - CLIP-ViT-H (1280D) - Visual image similarity
+    /// 
+    /// Note: CLIP-L/G text encoders removed - their embeddings are effectively just
+    /// tokenized prompts that need transformer inference anyway. For ComfyUI integration,
+    /// conditioning will be generated on-demand.
     /// </summary>
     public class EmbeddingService : IDisposable
     {
         private readonly BGETextEncoder _bgeEncoder;
-        private readonly CLIPTextEncoder _clipLEncoder;
-        private readonly CLIPTextEncoder _clipGEncoder;
         private readonly CLIPVisionEncoder _clipVisionEncoder;
         private bool _disposed = false;
 
         public EmbeddingService(
             string bgeModelPath,
             string bgeVocabPath,
-            string clipLModelPath,
-            string clipLVocabPath,
-            string clipLMergesPath,
-            string clipGModelPath,
-            string clipGVocabPath,
-            string clipGMergesPath,
             string clipVisionModelPath,
             int bgeGpuDevice = 0,
-            int clipLGpuDevice = 1,
-            int clipGGpuDevice = 1,
             int clipVisionGpuDevice = 0)
         {
-            // GPU 0 (RTX 5090): BGE + CLIP Vision
             _bgeEncoder = new BGETextEncoder(bgeModelPath, bgeVocabPath, bgeGpuDevice);
             _clipVisionEncoder = new CLIPVisionEncoder(clipVisionModelPath, clipVisionGpuDevice);
-
-            // GPU 1 (RTX 3080 Ti): CLIP-L + CLIP-G
-            _clipLEncoder = new CLIPTextEncoder(clipLModelPath, clipLVocabPath, clipLMergesPath, 768, "CLIP-L", clipLGpuDevice);
-            _clipGEncoder = new CLIPTextEncoder(clipGModelPath, clipGVocabPath, clipGMergesPath, 1280, "CLIP-G", clipGGpuDevice);
         }
 
         /// <summary>
@@ -63,69 +67,43 @@ namespace Diffusion.Embeddings
             return new EmbeddingService(
                 config.BgeModelPath,
                 config.BgeVocabPath,
-                config.ClipLModelPath,
-                config.ClipLVocabPath,
-                config.ClipLMergesPath,
-                config.ClipGModelPath,
-                config.ClipGVocabPath,
-                config.ClipGMergesPath,
                 config.ClipVisionModelPath,
                 config.BgeGpuDevice,
-                config.ClipLGpuDevice,
-                config.ClipGGpuDevice,
                 config.ClipVisionGpuDevice
             );
         }
 
         /// <summary>
-        /// Generate all embeddings for a single image with its prompt and negative prompt.
-        /// Uses parallel execution across both GPUs for maximum throughput.
+        /// Generate all embeddings for a single image with its prompt.
+        /// Uses parallel execution for BGE text and CLIP-ViT-H vision.
         /// </summary>
         public async Task<EmbeddingResult> GenerateAllEmbeddingsAsync(
             string prompt,
-            string negativePrompt,
             string imagePath)
         {
-            // Run all encoders in parallel (dual-GPU utilization)
-            var tasks = new[]
-            {
-                _bgeEncoder.EncodeAsync(prompt),
-                _clipLEncoder.EncodeAsync(prompt),
-                _clipGEncoder.EncodeAsync(prompt),
-                _clipVisionEncoder.EncodeAsync(imagePath)
-            };
+            // Run both encoders in parallel
+            var bgeTask = _bgeEncoder.EncodeAsync(prompt);
+            var visionTask = _clipVisionEncoder.EncodeAsync(imagePath);
 
-            await Task.WhenAll(tasks);
+            await Task.WhenAll(bgeTask, visionTask);
 
             return new EmbeddingResult
             {
-                BgeEmbedding = await tasks[0],
-                ClipLEmbedding = await tasks[1],
-                ClipGEmbedding = await tasks[2],
-                ImageEmbedding = await tasks[3]
+                BgeEmbedding = await bgeTask,
+                ImageEmbedding = await visionTask
             };
         }
 
         /// <summary>
-        /// Generate text embeddings only (for prompts/negative prompts).
-        /// Returns BGE, CLIP-L, and CLIP-G embeddings in parallel.
+        /// Generate BGE text embedding only (for prompts/captions/tags similarity search).
         /// </summary>
-        public async Task<(float[] bge, float[] clipL, float[] clipG)> GenerateTextEmbeddingsAsync(string text)
+        public async Task<float[]> GenerateTextEmbeddingAsync(string text)
         {
-            var tasks = new[]
-            {
-                _bgeEncoder.EncodeAsync(text),
-                _clipLEncoder.EncodeAsync(text),
-                _clipGEncoder.EncodeAsync(text)
-            };
-
-            await Task.WhenAll(tasks);
-
-            return (await tasks[0], await tasks[1], await tasks[2]);
+            return await _bgeEncoder.EncodeAsync(text);
         }
 
         /// <summary>
-        /// Generate image embedding only (for visual similarity search).
+        /// Generate CLIP-ViT-H image embedding only (for visual similarity search).
         /// </summary>
         public async Task<float[]> GenerateImageEmbeddingAsync(string imagePath)
         {
@@ -134,10 +112,9 @@ namespace Diffusion.Embeddings
 
         /// <summary>
         /// Batch process multiple images for maximum GPU efficiency.
-        /// Recommended batch size: 32-64 images depending on GPU memory.
         /// </summary>
         public async Task<EmbeddingResult[]> GenerateBatchEmbeddingsAsync(
-            IEnumerable<(string prompt, string negativePrompt, string imagePath)> items)
+            IEnumerable<(string prompt, string imagePath)> items)
         {
             var itemList = items.ToList();
             if (itemList.Count == 0) return Array.Empty<EmbeddingResult>();
@@ -146,20 +123,13 @@ namespace Diffusion.Embeddings
             var uniquePrompts = itemList.Select(x => x.prompt).Distinct().ToList();
             var imagePaths = itemList.Select(x => x.imagePath).ToList();
 
-            // Process in parallel across both GPUs
-            var textTask = Task.WhenAll(
-                _bgeEncoder.EncodeBatchAsync(uniquePrompts),
-                _clipLEncoder.EncodeBatchAsync(uniquePrompts),
-                _clipGEncoder.EncodeBatchAsync(uniquePrompts)
-            );
+            // Process in parallel
+            var textTask = _bgeEncoder.EncodeBatchAsync(uniquePrompts);
             var imageTask = _clipVisionEncoder.EncodeBatchAsync(imagePaths);
 
             await Task.WhenAll(textTask, imageTask);
 
-            var textResults = await textTask;
-            var bgeEmbeddings = textResults[0];
-            var clipLEmbeddings = textResults[1];
-            var clipGEmbeddings = textResults[2];
+            var bgeEmbeddings = await textTask;
             var imageEmbeddings = await imageTask;
 
             // Build lookup for text embeddings
@@ -177,8 +147,6 @@ namespace Diffusion.Embeddings
                 results[i] = new EmbeddingResult
                 {
                     BgeEmbedding = bgeEmbeddings[textIdx],
-                    ClipLEmbedding = clipLEmbeddings[textIdx],
-                    ClipGEmbedding = clipGEmbeddings[textIdx],
                     ImageEmbedding = imageEmbeddings[i]
                 };
             }
@@ -191,8 +159,6 @@ namespace Diffusion.Embeddings
             if (!_disposed)
             {
                 _bgeEncoder?.Dispose();
-                _clipLEncoder?.Dispose();
-                _clipGEncoder?.Dispose();
                 _clipVisionEncoder?.Dispose();
                 _disposed = true;
             }

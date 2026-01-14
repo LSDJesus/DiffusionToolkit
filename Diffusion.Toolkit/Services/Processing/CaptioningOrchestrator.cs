@@ -152,6 +152,11 @@ public class CaptioningOrchestrator : BaseServiceOrchestrator
         if (result.Success && result.Data is string caption && !string.IsNullOrEmpty(caption))
         {
             await DataStore.StoreCaptionAsync(result.ImageId, caption);
+            Logger.Log($"Captioning: Saved caption for image {result.ImageId} ({caption.Length} chars)");
+        }
+        else if (!result.Success)
+        {
+            Logger.Log($"Captioning: Failed for image {result.ImageId}: {result.ErrorMessage ?? "unknown error"}");
         }
         
         await DataStore.SetNeedsCaptioning(new List<int> { result.ImageId }, false);

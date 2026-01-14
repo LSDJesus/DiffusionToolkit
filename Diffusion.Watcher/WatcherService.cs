@@ -822,18 +822,23 @@ public class WatcherService : IDisposable
                 var id = await _dataStore.GetImageIdByPathAsync(file);
                 if (id.HasValue)
                 {
+                    // Use smart queue methods that respect the needs_* flag state
+                    // For new images, needs_* will be NULL so they will always be queued
+                    // Default to skipping already-processed images (sensible default for auto-scan)
                     if (_settings?.AutoTagOnScan == true)
                     {
-                        await _dataStore.SetNeedsTagging(new List<int> { id.Value }, true);
+                        await _dataStore.SmartQueueForTagging(new List<int> { id.Value }, skipAlreadyProcessed: true);
                     }
                     if (_settings?.AutoCaptionOnScan == true)
                     {
-                        await _dataStore.SetNeedsCaptioning(new List<int> { id.Value }, true);
+                        await _dataStore.SmartQueueForCaptioning(new List<int> { id.Value }, skipAlreadyProcessed: true);
                     }
                     if (_settings?.AutoFaceDetectionOnScan == true)
                     {
-                        await _dataStore.SetNeedsFaceDetection(new List<int> { id.Value }, true);
+                        // Always skip already-processed for face detection
+                        await _dataStore.SmartQueueForFaceDetection(new List<int> { id.Value });
                     }
+                    // Note: AutoEmbeddingOnScan not yet supported in WatcherSettings
                 }
             }
             catch (Exception ex)

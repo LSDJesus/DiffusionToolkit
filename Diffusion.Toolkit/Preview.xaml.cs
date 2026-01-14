@@ -184,6 +184,14 @@ namespace Diffusion.Toolkit
             }
         }
 
+        /// <summary>
+        /// Handle face thumbnail hover to show/hide bounding box on preview
+        /// </summary>
+        private void MetadataPanel_OnFaceBoundingBoxHover(object? sender, (int faceId, int x, int y, int width, int height) bbox)
+        {
+            PreviewPane.ShowFaceBoundingBox(bbox.x, bbox.y, bbox.width, bbox.height);
+        }
+
         private void PreviewPane_OnPreviewKeyUp(object sender, KeyEventArgs e)
         {
             //OnPreviewKeyUp(e);
