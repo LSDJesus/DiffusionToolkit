@@ -1650,7 +1650,7 @@ namespace Diffusion.Toolkit.Pages
                     dest.AlbumCount = src.AlbumCount;
                     dest.Albums = src.Albums;
                     dest.HasError = src.HasError;
-                    dest.Unavailable = !File.Exists(src.Path);
+                    dest.Unavailable = false; // Don't check file existence on UI thread - defer to thumbnail loading
                     dest.LoadState = LoadState.Unloaded;
                     dest.Dispatcher = Dispatcher;
                     dest.Thumbnail = null;

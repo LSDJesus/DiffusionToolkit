@@ -279,7 +279,27 @@ public class YOLO11FaceDetector : IDisposable
 
     private byte[] CropFace(Image<Rgb24> image, FaceDetectionResult face)
     {
-        var cropRect = new Rectangle(face.X, face.Y, face.Width, face.Height);
+        // Use proportional padding (30% of face size) for better context
+        var paddingX = (int)(face.Width * 0.3f);
+        var paddingY = (int)(face.Height * 0.3f);
+        
+        // Make crop square by using the larger dimension
+        var size = Math.Max(face.Width, face.Height) + 2 * Math.Max(paddingX, paddingY);
+        
+        // Center the face in the square crop
+        var centerX = face.X + face.Width / 2;
+        var centerY = face.Y + face.Height / 2;
+        
+        var cropX = Math.Max(0, centerX - size / 2);
+        var cropY = Math.Max(0, centerY - size / 2);
+        var cropW = Math.Min(image.Width - cropX, size);
+        var cropH = Math.Min(image.Height - cropY, size);
+        
+        // Store the actual crop coordinates for UI display
+        face.CropWidth = cropW;
+        face.CropHeight = cropH;
+        
+        var cropRect = new Rectangle(cropX, cropY, cropW, cropH);
         using var cropped = image.Clone(ctx => ctx.Crop(cropRect));
         
         using var ms = new MemoryStream();

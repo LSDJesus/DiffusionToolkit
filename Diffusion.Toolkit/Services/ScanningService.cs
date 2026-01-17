@@ -233,35 +233,39 @@ public class ScanningService
 
             var excludedPaths = ServiceLocator.FolderService.ExcludedOrArchivedFolderPaths.ToHashSet();
 
-            foreach (var folder in ServiceLocator.FolderService.RootFolders)
+            // Gather files asynchronously to avoid blocking
+            await Task.Run(() =>
             {
-                if (cancellationToken.IsCancellationRequested)
+                foreach (var folder in ServiceLocator.FolderService.RootFolders)
                 {
-                    break;
-                }
-
-                if (Directory.Exists(folder.Path))
-                {
-                    var folderImages = _dataStore.GetAllPathImages(folder.Path).ToList();
-
-                    var folderImagesHashSet = folderImages.Select(p => p.Path).ToHashSet();
-
                     if (cancellationToken.IsCancellationRequested)
                     {
                         break;
                     }
 
-                    ServiceLocator.ProgressService.SetStatus(gatheringFilesMessage.Replace("{path}", folder.Path));
+                    if (Directory.Exists(folder.Path))
+                    {
+                        var folderImages = _dataStore.GetAllPathImages(folder.Path).ToList();
 
-                    var ignoreFiles = updateImages ? null : folderImagesHashSet;
+                        var folderImagesHashSet = folderImages.Select(p => p.Path).ToHashSet();
 
-                    filesToScan.AddRange(MetadataScanner.GetFiles(folder.Path, _settings.FileExtensions, ignoreFiles, folder.Recursive, excludedPaths, cancellationToken).ToList());
+                        if (cancellationToken.IsCancellationRequested)
+                        {
+                            break;
+                        }
+
+                        ServiceLocator.ProgressService.SetStatus(gatheringFilesMessage.Replace("{path}", folder.Path));
+
+                        var ignoreFiles = updateImages ? null : folderImagesHashSet;
+
+                        filesToScan.AddRange(MetadataScanner.GetFiles(folder.Path, _settings.FileExtensions, ignoreFiles, folder.Recursive, excludedPaths, cancellationToken).ToList());
+                    }
+                    else
+                    {
+                        _dataStore.SetFolderUnavailable(folder.Id, true, true);
+                    }
                 }
-                else
-                {
-                    _dataStore.SetFolderUnavailable(folder.Id, true, true);
-                }
-            }
+            }, cancellationToken);
 
             Logger.Log($"ScanWatchedFolders: Gathered {filesToScan.Count} files to scan, updateImages={updateImages}");
 

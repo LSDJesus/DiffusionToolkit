@@ -149,11 +149,21 @@ public class FaceONNXService : IDisposable
                 {
                     try
                     {
-                        // Create padded crop region
-                        var cropX = Math.Max(0, box.X - _config.CropPadding);
-                        var cropY = Math.Max(0, box.Y - _config.CropPadding);
-                        var cropW = Math.Min(image.Width - cropX, box.Width + 2 * _config.CropPadding);
-                        var cropH = Math.Min(image.Height - cropY, box.Height + 2 * _config.CropPadding);
+                        // Use proportional padding (30% of face size) for better context
+                        var paddingX = (int)(box.Width * 0.3f);
+                        var paddingY = (int)(box.Height * 0.3f);
+                        
+                        // Make crop square by using the larger dimension
+                        var size = Math.Max(box.Width, box.Height) + 2 * Math.Max(paddingX, paddingY);
+                        
+                        // Center the face in the square crop
+                        var centerX = box.X + box.Width / 2;
+                        var centerY = box.Y + box.Height / 2;
+                        
+                        var cropX = Math.Max(0, centerX - size / 2);
+                        var cropY = Math.Max(0, centerY - size / 2);
+                        var cropW = Math.Min(image.Width - cropX, size);
+                        var cropH = Math.Min(image.Height - cropY, size);
 
                         // Crop face
                         using var faceCrop = image.Clone(ctx => 

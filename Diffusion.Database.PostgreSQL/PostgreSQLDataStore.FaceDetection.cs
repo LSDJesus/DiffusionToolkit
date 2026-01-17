@@ -277,27 +277,27 @@ public partial class PostgreSQLDataStore
     {
         await using var connection = await _dataSource.OpenConnectionAsync();
         
+        // Don't select vector columns directly - Dapper can't deserialize them
         var sql = $@"
-            SELECT id, image_id, bbox_x, bbox_y, bbox_width, bbox_height,
-                   arcface_embedding, detection_model, confidence, quality_score
+            SELECT id, image_id, bbox_x AS x, bbox_y AS y, bbox_width AS width, bbox_height AS height,
+                   detection_model, confidence, quality_score
             FROM {Table("face_detection")}
             WHERE id = @faceId";
         
         var face = await connection.QueryFirstOrDefaultAsync<FaceDetectionEntity>(sql, new { faceId });
         
-        // Parse the vector embedding from PostgreSQL format
-        if (face != null && face.ArcFaceEmbedding == null)
+        if (face == null) return null;
+        
+        // Fetch the vector embedding separately as text and parse it
+        var embeddingStr = await connection.ExecuteScalarAsync<string>(
+            $"SELECT arcface_embedding::text FROM {Table("face_detection")} WHERE id = @faceId",
+            new { faceId });
+        
+        if (!string.IsNullOrEmpty(embeddingStr))
         {
-            var embeddingStr = await connection.ExecuteScalarAsync<string>(
-                $"SELECT arcface_embedding::text FROM {Table("face_detection")} WHERE id = @faceId",
-                new { faceId });
-            
-            if (!string.IsNullOrEmpty(embeddingStr))
-            {
-                // Parse "[0.1,0.2,...]" format
-                embeddingStr = embeddingStr.Trim('[', ']');
-                face.ArcFaceEmbedding = embeddingStr.Split(',').Select(float.Parse).ToArray();
-            }
+            // Parse "[0.1,0.2,...]" format
+            embeddingStr = embeddingStr.Trim('[', ']');
+            face.ArcFaceEmbedding = embeddingStr.Split(',').Select(float.Parse).ToArray();
         }
         
         return face;

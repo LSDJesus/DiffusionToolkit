@@ -22,10 +22,21 @@ namespace Diffusion.Toolkit
     {
         public void LoadImageModels()
         {
-            var existingModels = _model.ImageModels == null ? Enumerable.Empty<ModelViewModel>() : _model.ImageModels.ToList();
+            // Fire and forget - non-blocking model loading
+            _ = LoadImageModelsAsync();
+        }
 
-            var imageModels = _dataStore.GetImageModels();
+        private async Task LoadImageModelsAsync()
+        {
+            // Run database query on background thread
+            var (existingModels, imageModels) = await Task.Run(() =>
+            {
+                var existing = _model.ImageModels == null ? Enumerable.Empty<ModelViewModel>() : _model.ImageModels.ToList();
+                var models = _dataStore.GetImageModels();
+                return (existing, models);
+            });
 
+            // Back on UI thread - update collections
             _model.ImageModels = imageModels.Select(m => new ModelViewModel()
             {
                 IsTicked = existingModels.FirstOrDefault(d => d.Name == m.Name || d.Hash == m.Hash)?.IsTicked ?? false,

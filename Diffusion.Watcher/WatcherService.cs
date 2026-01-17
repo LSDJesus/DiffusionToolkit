@@ -49,6 +49,10 @@ public class WatcherService : IDisposable
     private bool _isPaused;
     private bool _isDisposed;
     private bool _isConnected;
+    
+    // Schema-aware folder cache for routing files to correct schema
+    private Dictionary<string, string> _folderSchemaCache = new();
+    private readonly object _schemaCacheLock = new();
 
     public int HttpPort { get; set; } = 19284; // Default port for Watcher API
 
@@ -374,15 +378,20 @@ public class WatcherService : IDisposable
 
                 if (data != null && (!string.IsNullOrEmpty(data.Path) || data.Id > 0))
                 {
+                    // Check if caller wants to skip metadata extraction
+                    // (e.g., Luna Multi Saver already wrote full metadata)
+                    var skipMetadata = data.SkipMetadata ?? false;
+                    var runAiOnly = data.RunAiOnly ?? false;
+                    
                     // Trigger immediate processing
                     _ = Task.Run(async () => {
                         if (data.Id > 0)
                         {
-                            await ProcessImageById(data.Id);
+                            await ProcessImageById(data.Id, skipMetadata: skipMetadata, aiOnly: runAiOnly);
                         }
                         else if (!string.IsNullOrEmpty(data.Path))
                         {
-                            await ProcessImageByPath(data.Path);
+                            await ProcessImageByPath(data.Path, skipMetadata: skipMetadata, aiOnly: runAiOnly);
                         }
                     });
 
@@ -478,19 +487,28 @@ public class WatcherService : IDisposable
         }
     }
 
-    private async Task ProcessImageById(int id)
+    private async Task ProcessImageById(int id, bool skipMetadata = false, bool aiOnly = false)
     {
+        // If skipMetadata or aiOnly is true, only run AI processing (face, tags, captions)
+        // If false, also extract metadata from file (for Watcher quick-scanned images)
+        
+        if (!skipMetadata && !aiOnly)
+        {
+            // TODO: Extract metadata from file if scan_phase = 0
+        }
+        
+        // Always run AI processing (unless explicitly disabled in settings)
         await ProcessFaceDetection(id);
         await ProcessTagging(id);
         await ProcessCaptioning(id);
     }
 
-    private async Task ProcessImageByPath(string path)
+    private async Task ProcessImageByPath(string path, bool skipMetadata = false, bool aiOnly = false)
     {
         var id = await _dataStore.GetImageIdByPathAsync(path);
         if (id.HasValue)
         {
-            await ProcessImageById(id.Value);
+            await ProcessImageById(id.Value, skipMetadata, aiOnly);
         }
     }
 
@@ -776,17 +794,22 @@ public class WatcherService : IDisposable
     {
         await Task.Run(() =>
         {
-            var fileInfoList = new List<(string path, long fileSize, DateTime createdDate, DateTime modifiedDate)>();
+            // Group files by their target schema
+            var filesBySchema = new Dictionary<string, List<(string path, long fileSize, DateTime createdDate, DateTime modifiedDate)>>();
             
             foreach (var file in files)
             {
                 try
                 {
                     var fi = new FileInfo(file);
-                    if (fi.Exists)
-                    {
-                        fileInfoList.Add((file, fi.Length, fi.CreationTimeUtc, fi.LastWriteTimeUtc));
-                    }
+                    if (!fi.Exists) continue;
+                    
+                    var schema = GetSchemaForFile(file);
+                    
+                    if (!filesBySchema.ContainsKey(schema))
+                        filesBySchema[schema] = new List<(string, long, DateTime, DateTime)>();
+                    
+                    filesBySchema[schema].Add((file, fi.Length, fi.CreationTimeUtc, fi.LastWriteTimeUtc));
                 }
                 catch (Exception ex)
                 {
@@ -794,17 +817,79 @@ public class WatcherService : IDisposable
                 }
             }
 
-            if (fileInfoList.Any())
+            // Process each schema's files separately
+            foreach (var (schema, fileInfoList) in filesBySchema)
             {
-                using var conn = _dataStore.OpenConnection();
+                if (!fileInfoList.Any()) continue;
                 
-                // Pre-populate folder cache to avoid queries during COPY operation
-                var rootFolderCache = conn.Query<DBModels.Folder>("SELECT id, parent_id, root_folder_id, path, image_count, scanned_date, unavailable, archived, excluded, is_root FROM folder")
-                    .ToDictionary(f => f.Path, f => f);
-                
-                _dataStore.QuickAddImages(conn, fileInfoList, rootFolderCache, _cts.Token);
+                try
+                {
+                    using var conn = _dataStore.OpenConnection();
+                    
+                    // Switch to target schema
+                    conn.Execute($"SET search_path TO {schema}, public;");
+                    
+                    // Pre-populate folder cache to avoid queries during COPY operation
+                    var rootFolderCache = conn.Query<DBModels.Folder>(
+                        "SELECT id, parent_id, root_folder_id, path, image_count, scanned_date, unavailable, archived, excluded, is_root, schema_name FROM folder")
+                        .ToDictionary(f => f.Path, f => f);
+                    
+                    _dataStore.QuickAddImages(conn, fileInfoList, rootFolderCache, _cts.Token);
+                    
+                    Logger.Log($"Quick-scanned {fileInfoList.Count} files to schema '{schema}'");
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log($"Error processing batch for schema '{schema}': {ex.Message}");
+                }
             }
         });
+    }
+    
+    /// <summary>
+    /// Determines which schema a file should be saved to based on its folder path
+    /// </summary>
+    private string GetSchemaForFile(string filePath)
+    {
+        var folderPath = Path.GetDirectoryName(filePath) ?? "";
+        
+        // Check cache first (thread-safe)
+        lock (_schemaCacheLock)
+        {
+            if (_folderSchemaCache.TryGetValue(folderPath, out var cachedSchema))
+                return cachedSchema;
+        }
+        
+        // Query database for folder's schema
+        try
+        {
+            using var conn = _dataStore.OpenConnection();
+            
+            // Find the longest matching folder path (handles nested folders)
+            // Use LIKE with % to match folder and all subfolders
+            var schema = conn.QuerySingleOrDefault<string>(@"
+                SELECT schema_name 
+                FROM folder 
+                WHERE @filePath LIKE path || '%'
+                ORDER BY length(path) DESC 
+                LIMIT 1",
+                new { filePath });
+            
+            var result = schema ?? "public"; // Default if no match
+            
+            // Cache the result
+            lock (_schemaCacheLock)
+            {
+                _folderSchemaCache[folderPath] = result;
+            }
+            
+            return result;
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"Error getting schema for file {filePath}: {ex.Message}");
+            return "public"; // Safe fallback
+        }
     }
 
     private async Task ProcessMetadataScan(string file)
@@ -813,9 +898,19 @@ public class WatcherService : IDisposable
         {
             try
             {
+                // Check if image already has full metadata (e.g., from Luna Multi Saver)
+                using var conn = _dataStore.OpenConnection();
+                var currentPhase = conn.ExecuteScalar<int?>("SELECT scan_phase FROM image WHERE path = @path", new { path = file });
+                
+                // Skip if already fully processed (scan_phase = 1)
+                if (currentPhase == 1)
+                {
+                    Logger.Log($"Skipping metadata extraction for {Path.GetFileName(file)} - already processed");
+                    return;
+                }
+                
                 // TODO: Extract metadata using MetadataScanner
                 // For now, just mark as scanned
-                using var conn = _dataStore.OpenConnection();
                 conn.Execute("UPDATE image SET scan_phase = 1 WHERE path = @path AND scan_phase = 0", 
                     new { path = file });
                 
@@ -940,4 +1035,6 @@ public class ProcessImageRequest
 {
     public int Id { get; set; }
     public string? Path { get; set; }
+    public bool? SkipMetadata { get; set; }  // If true, don't re-extract metadata (Luna already did it)
+    public bool? RunAiOnly { get; set; }     // If true, only run AI processing (face, tags, captions)
 }

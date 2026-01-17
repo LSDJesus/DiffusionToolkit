@@ -1052,35 +1052,41 @@ namespace Diffusion.Toolkit
             {
                 ServiceLocator.NavigatorService.Goto("search");
 
+                // PERFORMANCE: Do NOT scan on startup - just load from database
+                // For 1.8M+ image collections, startup scans are not feasible
+                // Scans should be manual or triggered when navigating to specific folders
+                // File existence is verified lazily when thumbnails are requested
+                
                 if (ServiceLocator.FolderService.HasRootFolders)
                 {
-                    if (_settings.ScanForNewImagesOnStartup)
-                    {
-                        Logger.Log($"Scanning for new images");
-
-                        _ = Task.Run(async () =>
-                        {
-                            try
-                            {
-                                if (await ServiceLocator.ProgressService.TryStartTask())
-                                {
-                                    try
-                                    {
-                                        await ServiceLocator.ScanningService.ScanWatchedFolders(false, false, ServiceLocator.ProgressService.CancellationToken);
-                                    }
-                                    finally
-                                    {
-                                        ServiceLocator.ProgressService.CompleteTask();
-                                    }
-                                }
-                            }
-                            catch (Exception ex)
-                            {
-                                Logger.Log($"Error in startup scan: {ex.Message}");
-                                Logger.Log($"  Stack: {ex.StackTrace}");
-                            }
-                        });
-                    }
+                    // Startup scan disabled - use manual rescan from menu if needed
+                    // if (_settings.ScanForNewImagesOnStartup)
+                    // {
+                    //     Logger.Log($"Scanning for new images");
+                    //     
+                    //     _ = Task.Run(async () =>
+                    //     {
+                    //         try
+                    //         {
+                    //             if (await ServiceLocator.ProgressService.TryStartTask())
+                    //             {
+                    //                 try
+                    //                 {
+                    //                     await ServiceLocator.ScanningService.ScanWatchedFolders(false, false, ServiceLocator.ProgressService.CancellationToken);
+                    //                 }
+                    //                 finally
+                    //                 {
+                    //                     ServiceLocator.ProgressService.CompleteTask();
+                    //                 }
+                    //             }
+                    //         }
+                    //         catch (Exception ex)
+                    //         {
+                    //             Logger.Log($"Error in startup scan: {ex.Message}");
+                    //             Logger.Log($"  Stack: {ex.StackTrace}");
+                    //         }
+                    //     });
+                    // }
                 }
             }
 
@@ -1088,8 +1094,8 @@ namespace Diffusion.Toolkit
 
             Logger.Log($"Init completed");
 
-            // Check for pending tagged/captioned images
-            await CheckPendingQueueAsync();
+            // Check for pending tagged/captioned images (non-blocking)
+            _ = CheckPendingQueueAsync();
 
             if (_showReleaseNotes)
             {

@@ -520,6 +520,13 @@ namespace Diffusion.Toolkit.Controls
                 double scaleX = actualWidth / originalWidth;
                 double scaleY = actualHeight / originalHeight;
 
+                // Ensure both elements are in the visual tree before attempting transform
+                if (!Preview.IsDescendantOf(FaceBoundingBoxCanvas))
+                {
+                    FaceBoundingBoxCanvas.Visibility = Visibility.Collapsed;
+                    return;
+                }
+
                 // Get the position of the Image relative to the Canvas
                 var imagePosition = Preview.TransformToAncestor(FaceBoundingBoxCanvas)
                     .Transform(new Point(0, 0));

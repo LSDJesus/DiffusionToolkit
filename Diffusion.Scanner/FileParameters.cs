@@ -36,6 +36,17 @@ public class FileParameters
     // Sidecar .txt file content (AI-generated tags)
     public string? GeneratedTags { get; set; }
     
+    // Civitai metadata from JSON sidecar
+    public long? CivitaiImageId { get; set; }
+    public long? CivitaiPostId { get; set; }
+    public string? CivitaiUsername { get; set; }
+    public string? CivitaiNsfwLevel { get; set; }
+    public int? CivitaiBrowsingLevel { get; set; }
+    public string? CivitaiBaseModel { get; set; }
+    public DateTime? CivitaiCreatedAt { get; set; }
+    public string? CivitaiImageUrl { get; set; }
+    public int? CivitaiLikeCount { get; set; }
+    
     // Extracted searchable metadata
     public List<LoraInfo>? Loras { get; set; }
     public List<EmbeddingInfo>? Embeddings { get; set; }

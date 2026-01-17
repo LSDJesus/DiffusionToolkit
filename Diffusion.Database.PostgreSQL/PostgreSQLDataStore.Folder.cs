@@ -52,7 +52,8 @@ public partial class PostgreSQLDataStore
         excluded AS Excluded, 
         is_root AS IsRoot, 
         recursive AS Recursive, 
-        watched AS Watched";
+        watched AS Watched,
+        schema_name AS SchemaName";
 
     public void SetFolderExcluded(string path, bool excluded, bool recursive)
     {
@@ -164,8 +165,8 @@ public partial class PostgreSQLDataStore
             {
                 // Insert new folder with temporary root_folder_id = 0
                 var newId = conn.QuerySingle<int>($@"
-                    INSERT INTO {Table("folder")} (parent_id, root_folder_id, path, image_count, scanned_date, unavailable, archived, excluded, is_root, recursive, watched)
-                    VALUES (0, 0, @path, 0, NULL, false, false, false, true, @recursive, @watched)
+                    INSERT INTO {Table("folder")} (parent_id, root_folder_id, path, image_count, scanned_date, unavailable, archived, excluded, is_root, recursive, watched, schema_name)
+                    VALUES (0, 0, @path, 0, NULL, false, false, false, true, @recursive, @watched, current_schema())
                     RETURNING id",
                     new { path, recursive, watched });
 
@@ -207,8 +208,8 @@ public partial class PostgreSQLDataStore
             {
                 // Insert new excluded folder with temporary root_folder_id = 0
                 var newId = conn.QuerySingle<int>($@"
-                    INSERT INTO {Table("folder")} (parent_id, root_folder_id, path, image_count, scanned_date, unavailable, archived, excluded, is_root)
-                    VALUES (0, 0, @path, 0, NULL, false, false, true, false)
+                    INSERT INTO {Table("folder")} (parent_id, root_folder_id, path, image_count, scanned_date, unavailable, archived, excluded, is_root, schema_name)
+                    VALUES (0, 0, @path, 0, NULL, false, false, true, false, current_schema())
                     RETURNING id",
                     new { path });
 
@@ -276,10 +277,10 @@ public partial class PostgreSQLDataStore
                 int id;
                 lock (_lock)
                 {
-                    // Sub-folders inherit root_folder_id from their root
+                    // Sub-folders inherit root_folder_id AND schema_name from their root
                     id = conn.QuerySingle<int>($@"
-                        INSERT INTO {Table("folder")} (parent_id, root_folder_id, path, unavailable, archived, excluded, is_root)
-                        VALUES (@currentParentId, @rootId, @current, false, false, false, false)
+                        INSERT INTO {Table("folder")} (parent_id, root_folder_id, path, unavailable, archived, excluded, is_root, schema_name)
+                        VALUES (@currentParentId, @rootId, @current, false, false, false, false, current_schema())
                         RETURNING id",
                         new { currentParentId, rootId = root.Id, current });
                 }

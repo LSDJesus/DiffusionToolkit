@@ -80,25 +80,23 @@ namespace Diffusion.Toolkit
 
         private void LoadQueries()
         {
-            //var currentAlbums = _model.Queries is { } ? _model.Queries.ToList() : Enumerable.Empty<QueryModel>();
+            // Fire and forget - non-blocking query loading
+            _ = LoadQueriesAsync();
+        }
 
-            var albums = _dataStore.GetQueries().Select(a => new QueryModel()
+        private async Task LoadQueriesAsync()
+        {
+            // Run database query on background thread
+            var albums = await Task.Run(() =>
+            {
+                return _dataStore.GetQueries().Select(a => new QueryModel()
             {
                 Id = a.Id,
                 Name = a.Name,
-            }).ToList();
+                }).ToList();
+            });
 
-            //foreach (var album in albums)
-            //{
-            //    var prevAlbum = currentAlbums.FirstOrDefault(d => d.Id == album.Id);
-
-            //    if (prevAlbum != null)
-            //    {
-            //        album.IsSelected = prevAlbum.IsSelected;
-            //    }
-
-            //}
-
+            // Back on UI thread - update ObservableCollection
             switch (_settings.SortQueriesBy)
             {
                 case "Name":

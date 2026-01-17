@@ -71,6 +71,26 @@ public partial class PostgreSQLDataStore : IDisposable
         
         var builder = new NpgsqlDataSourceBuilder(connStringBuilder.ConnectionString);
         builder.EnableParameterLogging();
+        
+        // Configure connection initialization to set search_path for schema support
+        builder.UsePhysicalConnectionInitializer(
+            conn =>
+            {
+                if (!string.IsNullOrEmpty(_currentSchema))
+                {
+                    using var cmd = new NpgsqlCommand($"SET search_path TO {_currentSchema}, public;", conn);
+                    cmd.ExecuteNonQuery();
+                }
+            },
+            async conn =>
+            {
+                if (!string.IsNullOrEmpty(_currentSchema))
+                {
+                    await using var cmd = new NpgsqlCommand($"SET search_path TO {_currentSchema}, public;", conn);
+                    await cmd.ExecuteNonQueryAsync();
+                }
+            });
+        
         _dataSource = builder.Build();
     }
 
@@ -93,16 +113,18 @@ public partial class PostgreSQLDataStore : IDisposable
     }
 
     /// <summary>
-    /// Opens a new database connection from the pool
+    /// Opens a new database connection from the pool with correct schema search_path
     /// </summary>
     public async Task<NpgsqlConnection> OpenConnectionAsync()
     {
         var conn = await _dataSource.OpenConnectionAsync().ConfigureAwait(false);
+        // search_path is set automatically via UsePhysicalConnectionInitializer in constructor
         return conn;
     }
 
     /// <summary>
     /// Opens a synchronous connection (for compatibility with existing code)
+    /// Search path is set automatically via UsePhysicalConnectionInitializer
     /// </summary>
     public NpgsqlConnection OpenConnection()
     {

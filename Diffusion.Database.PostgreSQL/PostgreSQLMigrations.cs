@@ -10,7 +10,7 @@ public class PostgreSQLMigrations
 {
     private readonly NpgsqlConnection _connection;
     private readonly string _schema;
-    private const int CurrentVersion = 10;
+    private const int CurrentVersion = 11;
 
     public PostgreSQLMigrations(NpgsqlConnection connection, string schema = "public")
     {
@@ -45,6 +45,7 @@ public class PostgreSQLMigrations
             if (currentVersion < 8) await ApplyV8Async();
             if (currentVersion < 9) await ApplyV9Async();
             if (currentVersion < 10) await ApplyV10Async();
+            if (currentVersion < 11) await ApplyV11Async();
 
             // Only insert version if migrations were applied
             if (currentVersion < CurrentVersion)
@@ -1033,6 +1034,40 @@ COMMENT ON COLUMN image.t5xxl_caption_embedding IS 'T5-XXL (4096d) embedding of 
         catch (Exception ex)
         {
             Diffusion.Common.Logger.Log($"Migration V10 failed: {ex.Message}");
+            throw;
+        }
+    }
+    
+    private async Task ApplyV11Async()
+    {
+        try
+        {
+            Diffusion.Common.Logger.Log("Applying V11 migration: Add schema_name to folder table for multi-schema support");
+            
+            var sql = @"
+-- Add schema_name column to folder table for multi-collection support
+ALTER TABLE folder ADD COLUMN IF NOT EXISTS schema_name TEXT DEFAULT 'public';
+
+-- Update existing folders to current schema (run AFTER search_path is set)
+UPDATE folder SET schema_name = current_schema() WHERE schema_name IS NULL OR schema_name = 'public';
+
+-- Create index for fast schema lookups
+CREATE INDEX IF NOT EXISTS idx_folder_schema_name ON folder(schema_name);
+
+-- Create index for path prefix matching (used by Watcher to find folder for file path)
+CREATE INDEX IF NOT EXISTS idx_folder_path_prefix ON folder(path text_pattern_ops);
+
+-- Add comment documenting the column
+COMMENT ON COLUMN folder.schema_name IS 'Schema/collection this folder belongs to - enables Watcher auto-routing';
+            ";
+            
+            await _connection.ExecuteAsync(sql);
+            
+            Diffusion.Common.Logger.Log("V11 migration completed successfully - folder schema tracking added");
+        }
+        catch (Exception ex)
+        {
+            Diffusion.Common.Logger.Log($"Migration V11 failed: {ex.Message}");
             throw;
         }
     }

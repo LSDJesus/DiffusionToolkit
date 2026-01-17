@@ -141,9 +141,9 @@ AUTOMATIC1111, InvokeAI, NovelAI, Stable Diffusion, EasyDiffusion, Fooocus, Ruin
    - Manual edits/imports
 - Ensures consistent tags across the library even when mixing taggers and sources.
 
-## 🧠 Multi-Modal Embedding System (4 Embedding Models)
+## 🧠 Multi-Modal Embedding System (2 Embedding Models)
 
-**Why**: Enable semantic search and ComfyUI workflow integration.
+**Why**: Enable semantic search and visual similarity.
 
 **What Changed**:
 Added multiple embedding vectors per image stored in pgvector:
@@ -153,20 +153,61 @@ Added multiple embedding vectors per image stored in pgvector:
 | Prompt & Tags | BGE-large-en-v1.5 | 1024D | Natural language prompt search, tag embeddings |
 | Captions | BGE-large-en-v1.5 | 1024D | Search by generated captions |
 | Visual Similarity | CLIP-ViT-H/14 | 1024D | Visual similarity search & IPAdapter integration |
-| SDXL CLIP-L | Stable Diffusion CLIP-L | 768D | Direct ComfyUI conditioning for prompts, tags & captions |
-| SDXL CLIP-G | Stable Diffusion CLIP-G | 1280D | Direct ComfyUI conditioning for prompts, tags & captions |
 
 **Embedding Model Breakdown**:
 - **BGE-large-en-v1.5**: Text-only embeddings optimized for retrieval. Used for prompt/tag/caption similarity search.
 - **CLIP-ViT-H/14**: Multi-modal vision-language model for image-to-image visual similarity. Integrates with ComfyUI's IPAdapter for semantic image generation.
-- **CLIP-L & CLIP-G**: Native SDXL text encoders for direct conditioning. Embed your prompts, tags, and captions in SDXL-compatible vector space for generation workflows.
 
 **Benefits**:
 - "Find images like this" visual search with CLIP-ViT-H
 - Natural language search ("dramatic lighting at sunset") via BGE embeddings
-- Direct export to ComfyUI for SDXL generation with CLIP-L/G conditioning
 - IPAdapter-compatible embeddings for semantic image variations
 - Multi-modal hybrid search (text + visual combined)
+
+**ComfyUI Integration**:
+- CLIP-L and CLIP-G embeddings/conditionings can be generated on demand for ComfyUI workflow integration
+- No pre-processing or storage of CLIP-L/G embeddings - generated only when needed for export
+
+## ⚙️ New GPU Processing Architecture (Experimental)
+
+**Why**: The legacy background processing services couldn't efficiently manage multiple AI operations across multiple GPUs with dynamic VRAM constraints.
+
+**What Changed**:
+- **Three-Tier Modular System**: 
+  - **Tier 1 (GlobalProcessingOrchestrator)**: Coordinates multiple services, determines processing mode (Solo vs Concurrent), aggregates progress
+  - **Tier 2 (Service Orchestrators)**: Manage individual service queues (tagging, captioning, embedding, face detection), own model lifecycle, spawn workers
+  - **Tier 3 (Workers)**: Lightweight image processors that receive model references from orchestrators
+
+- **Priority-Based Loading Strategy**: Services load in order of VRAM efficiency:
+  1. **Priority 1 (Fast & Small)**: Tagging (2.6GB) + Face Detection (0.8GB) - complete quickly
+  2. **Priority 2 (Fast & Medium)**: Embedding (7.6GB) - faster than captioning despite larger VRAM
+  3. **Priority 3 (Slow & Scalable)**: Captioning (5.6GB per instance) - fills remaining VRAM
+
+- **Dynamic VRAM Reallocation**: When fast services complete, their freed VRAM automatically loads additional captioning instances
+  - Example: 32GB GPU initially runs 2 captioning instances → embedding completes → 3 instances (+50% throughput)
+  - Maximizes GPU utilization throughout the processing session
+
+- **Model Sharing**: ONNX models (tagging, embedding, face detection) are thread-safe - 10 workers can share 1 model instance
+  - Reduces VRAM usage and initialization overhead
+  - Captioning uses 1:1 worker-to-model ratio for lower latency
+
+**Performance Comparison**:
+| Service | Time/Image | Images/Hour (single GPU) | Queue of 50,000 |
+|---------|------------|--------------------------|-----------------|
+| Tagging | 27ms | ~133,000 | ~23 min |
+| Face Detection | 27ms | ~133,000 | ~23 min |
+| Embedding | 175ms | ~20,500 | ~2.4 hours |
+| Captioning (×2 instances) | 1.5s | ~4,800 | ~10.4 hours |
+| Captioning (×4 instances) | 1.5s | ~9,600 | ~5.2 hours |
+
+**Benefits**:
+- Scalable multi-GPU support with independent allocations per service
+- Automatic VRAM optimization - fast services free resources for slow ones
+- Unified progress tracking across all AI operations
+- Graceful degradation - services skip if queues are empty
+- Better error isolation - one service failure doesn't affect others
+
+**Enable**: Settings → Tagging & Captioning → GPU Settings → ☑ "Use New Processing Architecture (Experimental)"
 
 ## 🔄 Batch Image Conversion (WebP)
 

@@ -860,19 +860,8 @@ public class Metadata
         fileParameters.Width = width;
         fileParameters.Height = height;
 
-        // Import sidecar .txt file (AI-generated tags from WD14, BLIP, etc.)
-        var sidecarPath = Path.ChangeExtension(file, ".txt");
-        if (File.Exists(sidecarPath))
-        {
-            try
-            {
-                fileParameters.GeneratedTags = File.ReadAllText(sidecarPath);
-            }
-            catch (Exception ex)
-            {
-                Logger.Log($"Failed to read sidecar file {sidecarPath}: {ex.Message}");
-            }
-        }
+        // Import sidecar files (AI-generated tags from WD14, BLIP, etc. OR Civitai metadata)
+        ImportSidecarData(file, fileParameters);
 
         // Extract searchable metadata from Parameters field
         if (!string.IsNullOrEmpty(fileParameters.Parameters))
@@ -888,6 +877,217 @@ public class Metadata
     {
         ImageInfo info = Image.Identify(stream);
         return (info.Width, info.Height);
+    }
+
+    /// <summary>
+    /// Import sidecar metadata from .txt or .json files
+    /// </summary>
+    private static void ImportSidecarData(string imagePath, FileParameters fp)
+    {
+        // Try JSON sidecar first (Civitai format)
+        var jsonSidecarPath = Path.ChangeExtension(imagePath, ".json");
+        if (File.Exists(jsonSidecarPath))
+        {
+            try
+            {
+                var jsonContent = File.ReadAllText(jsonSidecarPath);
+                ParseCivitaiJsonSidecar(jsonContent, fp);
+                return; // JSON takes precedence over .txt
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"Failed to parse JSON sidecar {jsonSidecarPath}: {ex.Message}");
+            }
+        }
+
+        // Fallback to .txt sidecar (AI-generated tags)
+        var txtSidecarPath = Path.ChangeExtension(imagePath, ".txt");
+        if (File.Exists(txtSidecarPath))
+        {
+            try
+            {
+                fp.GeneratedTags = File.ReadAllText(txtSidecarPath);
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"Failed to read txt sidecar {txtSidecarPath}: {ex.Message}");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Parse Civitai JSON sidecar format
+    /// </summary>
+    private static void ParseCivitaiJsonSidecar(string jsonContent, FileParameters fp)
+    {
+        var root = JsonDocument.Parse(jsonContent);
+        var json = root.RootElement;
+
+        // Extract Civitai-specific metadata
+        if (json.TryGetProperty("id", out var idProp) && idProp.ValueKind == JsonValueKind.Number)
+        {
+            fp.CivitaiImageId = idProp.GetInt64();
+        }
+
+        if (json.TryGetProperty("postId", out var postIdProp) && postIdProp.ValueKind == JsonValueKind.Number)
+        {
+            fp.CivitaiPostId = postIdProp.GetInt64();
+        }
+
+        if (json.TryGetProperty("username", out var usernameProp))
+        {
+            fp.CivitaiUsername = usernameProp.GetString();
+        }
+
+        if (json.TryGetProperty("nsfwLevel", out var nsfwLevelProp))
+        {
+            fp.CivitaiNsfwLevel = nsfwLevelProp.GetString();
+        }
+
+        if (json.TryGetProperty("browsingLevel", out var browsingLevelProp) && browsingLevelProp.ValueKind == JsonValueKind.Number)
+        {
+            fp.CivitaiBrowsingLevel = browsingLevelProp.GetInt32();
+        }
+
+        if (json.TryGetProperty("baseModel", out var baseModelProp))
+        {
+            fp.CivitaiBaseModel = baseModelProp.GetString();
+        }
+
+        if (json.TryGetProperty("createdAt", out var createdAtProp))
+        {
+            var createdAtStr = createdAtProp.GetString();
+            if (DateTime.TryParse(createdAtStr, out var createdAt))
+            {
+                fp.CivitaiCreatedAt = createdAt;
+            }
+        }
+
+        if (json.TryGetProperty("url", out var urlProp))
+        {
+            fp.CivitaiImageUrl = urlProp.GetString();
+        }
+
+        // Extract stats
+        if (json.TryGetProperty("stats", out var statsProp) && statsProp.ValueKind == JsonValueKind.Object)
+        {
+            if (statsProp.TryGetProperty("likeCount", out var likeCountProp) && likeCountProp.ValueKind == JsonValueKind.Number)
+            {
+                fp.CivitaiLikeCount = likeCountProp.GetInt32();
+            }
+        }
+
+        // Extract generation metadata from "meta" object
+        if (json.TryGetProperty("meta", out var metaProp) && metaProp.ValueKind == JsonValueKind.Object)
+        {
+            if (metaProp.TryGetProperty("prompt", out var promptProp))
+            {
+                fp.Prompt = promptProp.GetString();
+            }
+
+            if (metaProp.TryGetProperty("negativePrompt", out var negPromptProp))
+            {
+                fp.NegativePrompt = negPromptProp.GetString();
+            }
+
+            if (metaProp.TryGetProperty("steps", out var stepsProp) && stepsProp.ValueKind == JsonValueKind.Number)
+            {
+                fp.Steps = stepsProp.GetInt32();
+            }
+
+            if (metaProp.TryGetProperty("cfgScale", out var cfgProp) && cfgProp.ValueKind == JsonValueKind.Number)
+            {
+                fp.CFGScale = cfgProp.GetDecimal();
+            }
+
+            if (metaProp.TryGetProperty("sampler", out var samplerProp))
+            {
+                fp.Sampler = samplerProp.GetString();
+            }
+
+            if (metaProp.TryGetProperty("seed", out var seedProp) && seedProp.ValueKind == JsonValueKind.Number)
+            {
+                fp.Seed = seedProp.GetInt64();
+            }
+
+            if (metaProp.TryGetProperty("clipSkip", out var clipSkipProp) && clipSkipProp.ValueKind == JsonValueKind.Number)
+            {
+                fp.ClipSkip = clipSkipProp.GetInt32();
+            }
+
+            if (metaProp.TryGetProperty("width", out var widthProp) && widthProp.ValueKind == JsonValueKind.Number)
+            {
+                fp.Width = widthProp.GetInt32();
+            }
+
+            if (metaProp.TryGetProperty("height", out var heightProp) && heightProp.ValueKind == JsonValueKind.Number)
+            {
+                fp.Height = heightProp.GetInt32();
+            }
+
+            if (metaProp.TryGetProperty("Model", out var modelProp))
+            {
+                fp.Model = modelProp.GetString();
+            }
+
+            if (metaProp.TryGetProperty("Hires upscaler", out var hiresUpscalerProp))
+            {
+                fp.HiresUpscaler = hiresUpscalerProp.GetString();
+            }
+
+            if (metaProp.TryGetProperty("Hires steps", out var hiresStepsProp) && hiresStepsProp.ValueKind == JsonValueKind.Number)
+            {
+                fp.HiresSteps = hiresStepsProp.GetInt32();
+            }
+
+            if (metaProp.TryGetProperty("Denoising strength", out var denoiseProp) && denoiseProp.ValueKind == JsonValueKind.Number)
+            {
+                fp.DenoisingStrength = denoiseProp.GetDecimal();
+            }
+
+            // Parse civitaiResources for LoRA info
+            if (metaProp.TryGetProperty("civitaiResources", out var resourcesProp) && resourcesProp.ValueKind == JsonValueKind.Array)
+            {
+                fp.Loras = new List<LoraInfo>();
+                
+                foreach (var resource in resourcesProp.EnumerateArray())
+                {
+                    if (!resource.TryGetProperty("type", out var typeProp))
+                        continue;
+
+                    var type = typeProp.GetString()?.ToLowerInvariant();
+                    
+                    if (type == "checkpoint" && resource.TryGetProperty("modelVersionName", out var checkpointNameProp))
+                    {
+                        // Override model name with Civitai checkpoint name
+                        fp.Model = checkpointNameProp.GetString();
+                    }
+                    else if (type == "lora")
+                    {
+                        var loraInfo = new LoraInfo();
+                        
+                        if (resource.TryGetProperty("modelVersionName", out var loraNameProp))
+                        {
+                            loraInfo.Name = loraNameProp.GetString() ?? "";
+                        }
+                        else if (resource.TryGetProperty("modelName", out var modelNameProp))
+                        {
+                            loraInfo.Name = modelNameProp.GetString() ?? "";
+                        }
+
+                        if (resource.TryGetProperty("weight", out var weightProp) && weightProp.ValueKind == JsonValueKind.Number)
+                        {
+                            loraInfo.Strength = weightProp.GetDecimal();
+                        }
+
+                        if (!string.IsNullOrEmpty(loraInfo.Name))
+                        {
+                            fp.Loras.Add(loraInfo);
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private static FileParameters DetectAndReadMetaType(string parameters)

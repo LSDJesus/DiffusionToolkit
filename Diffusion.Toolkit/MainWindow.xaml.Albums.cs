@@ -175,17 +175,29 @@ namespace Diffusion.Toolkit
 
         private void LoadAlbums()
         {
-            var currentAlbums = _model.Albums is { } ? _model.Albums.ToList() : Enumerable.Empty<AlbumModel>();
+            // Fire and forget - non-blocking album loading
+            _ = LoadAlbumsAsync();
+        }
 
-            var albums = _dataStore.GetAlbumsView().Select(a => new AlbumModel()
+        private async Task LoadAlbumsAsync()
+        {
+            // Run database query on background thread
+            var (currentAlbums, albums) = await Task.Run(() =>
+            {
+                var current = _model.Albums is { } ? _model.Albums.ToList() : Enumerable.Empty<AlbumModel>();
+                var albumList = _dataStore.GetAlbumsView().Select(a => new AlbumModel()
             {
                 Id = a.Id,
                 Name = a.Name,
                 LastUpdated = a.LastUpdated,
                 ImageCount = a.ImageCount,
                 Order = a.Order,
-            }).ToList();
+                }).ToList();
 
+                return (current, albumList);
+            });
+
+            // Back on UI thread - update ObservableCollection
             foreach (var album in albums)
             {
                 var prevAlbum = currentAlbums.FirstOrDefault(d => d.Id == album.Id);
