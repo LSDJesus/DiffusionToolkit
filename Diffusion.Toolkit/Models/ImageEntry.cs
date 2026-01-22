@@ -41,6 +41,10 @@ public class ImageEntry : BaseNotify
     {
         BatchId = batchId;
         LoadState = LoadState.Unloaded;
+        _name = string.Empty;
+        _albums = Enumerable.Empty<string>();
+        _path = string.Empty;
+        _sizeFormatted = string.Empty;
     }
 
     public long BatchId { get; set; }

@@ -11,10 +11,13 @@ public class CivitaiRequestException : Exception
     public CivitaiRequestException(string message, HttpStatusCode statusCode) : base(message)
     {
         StatusCode = statusCode;
+        Path = string.Empty;
+        Body = string.Empty;
     }
 
     public CivitaiRequestException(string message, string body, HttpStatusCode statusCode) : base($"{message}")
     {
+        Path = string.Empty;
         Body = body;
         StatusCode = statusCode;
     }

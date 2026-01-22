@@ -1,7 +1,6 @@
 using System;
 using System.Windows;
 using Dapper;
-using Diffusion.Common;
 using Diffusion.Database.PostgreSQL;
 using Diffusion.Toolkit.Configuration;
 

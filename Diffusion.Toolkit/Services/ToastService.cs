@@ -13,8 +13,14 @@ public class ToastService
 {
     private readonly Queue<Toast> _toastMessages = new Queue<Toast>();
     private readonly Popup _popup;
-    private Dispatcher _dispatcher => ServiceLocator.Dispatcher;
-    private Settings _settings => ServiceLocator.Settings;
+    private Dispatcher _dispatcher
+    {
+        get
+        {
+            return ServiceLocator.Dispatcher ?? throw new System.InvalidOperationException("ServiceLocator.Dispatcher is not initialized.");
+        }
+    }
+    private Settings? _settings => ServiceLocator.Settings;
     public ToastService(Popup popup)
     {
         _popup = popup;
@@ -42,7 +48,10 @@ public class ToastService
             {
                 var toast = _toastMessages.Dequeue();
                 _popup.IsOpen = true;
-                ServiceLocator.MainModel.ToastMessage = toast.Message;
+                if (ServiceLocator.MainModel != null && toast.Message != null)
+                {
+                    ServiceLocator.MainModel.ToastMessage = toast.Message;
+                }
 
                 Task.Delay(toast.Timeout * 1000).ContinueWith((_) =>
                 {

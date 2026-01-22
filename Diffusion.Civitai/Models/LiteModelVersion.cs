@@ -3,12 +3,12 @@
 public class LiteModelVersion
 {
     public int Id { get; set; }
-    public string Name { get; set; }
+    public string? Name { get; set; }
     //public string Description { get; set; }
     //public DateTime CreatedAt { get; set; }
-    public string DownloadUrl { get; set; }
-    public List<string> TrainedWords { get; set; }
-    public List<LiteModelFile> Files { get; set; }
+    public string? DownloadUrl { get; set; }
+    public List<string> TrainedWords { get; set; } = new List<string>();
+    public List<LiteModelFile> Files { get; set; } = new List<LiteModelFile>();
     //public List<ModelImage> Images { get; set; }
     //public Stats Stats { get; set; }
 }

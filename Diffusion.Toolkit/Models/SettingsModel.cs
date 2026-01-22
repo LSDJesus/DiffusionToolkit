@@ -130,9 +130,9 @@ public class SettingsModel : BaseNotify
     
     // Database profiles
     private ObservableCollection<Configuration.DatabaseProfile> _databaseProfiles;
-
     public SettingsModel()
     {
+        _databaseProfiles = new ObservableCollection<Configuration.DatabaseProfile>();
         SelectedIndex = -1;
         ExcludedSelectedIndex = -1;
         _modelRootPath = string.Empty;

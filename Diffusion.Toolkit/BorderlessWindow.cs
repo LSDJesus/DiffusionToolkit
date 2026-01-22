@@ -20,14 +20,14 @@ namespace Diffusion.Toolkit
         private Point mouseDownPosition;
         private Point positionBeforeDrag;
 
-        public Grid WindowRoot { get; private set; }
-        public Grid LayoutRoot { get; private set; }
-        public Button MinimizeButton { get; private set; }
-        public Button MaximizeButton { get; private set; }
-        public Button RestoreButton { get; private set; }
-        public Button CloseButton { get; private set; }
-        public Grid HeaderBar { get; private set; }
-        public Grid TitleBar { get; private set; }
+        public Grid? WindowRoot { get; private set; }
+        public Grid? LayoutRoot { get; private set; }
+        public Button? MinimizeButton { get; private set; }
+        public Button? MaximizeButton { get; private set; }
+        public Button? RestoreButton { get; private set; }
+        public Button? CloseButton { get; private set; }
+        public Grid? HeaderBar { get; private set; }
+        public Grid? TitleBar { get; private set; }
 
         public static readonly DependencyProperty IsFullScreenProperty =
             DependencyProperty.Register(
@@ -138,8 +138,17 @@ namespace Diffusion.Toolkit
         {
             public static int GetCurrentDPI()
             {
-                return (int)typeof(SystemParameters).GetProperty
-                    ("Dpi", BindingFlags.Static | BindingFlags.NonPublic).GetValue(null, null);
+                var dpiProperty = typeof(SystemParameters).GetProperty("Dpi", BindingFlags.Static | BindingFlags.NonPublic);
+                if (dpiProperty != null)
+                {
+                    var dpiValue = dpiProperty.GetValue(null, null);
+                    if (dpiValue != null)
+                    {
+                        return (int)dpiValue;
+                    }
+                }
+                // Fallback to default DPI (96) if property or value is null
+                return 96;
             }
 
             public static double GetCurrentDPIScaleFactor()
@@ -276,7 +285,7 @@ namespace Diffusion.Toolkit
 
             if (IsFullScreen) return;
 
-            if (position.X - LayoutRoot.Margin.Left <= leftmostClickableOffset &&
+            if (LayoutRoot != null && position.X - LayoutRoot.Margin.Left <= leftmostClickableOffset &&
                 position.Y <= headerBarHeight)
             {
                 if (e.ClickCount != 2)
@@ -497,7 +506,7 @@ namespace Diffusion.Toolkit
 
         public double HeightBeforeMaximize { get; set; }
 
-        private void OnStateChanged(object sender, EventArgs e)
+        private void OnStateChanged(object? sender, EventArgs e)
         {
             Screen screen = Screen.FromHandle((new WindowInteropHelper(this)).Handle);
             Thickness thickness = new Thickness(0);
@@ -539,22 +548,33 @@ namespace Diffusion.Toolkit
 
         private void ShowButtons()
         {
-            CloseButton.Visibility = Visibility.Visible;
-            RestoreButton.Visibility = _restoreButtonVisibility;
-            MaximizeButton.Visibility = _maximizeButtonVisibility;
-            MinimizeButton.Visibility = _minimizeButtonVisibility;
+            if (CloseButton != null)
+                CloseButton.Visibility = Visibility.Visible;
+            if (RestoreButton != null)
+                RestoreButton.Visibility = _restoreButtonVisibility;
+            if (MaximizeButton != null)
+                MaximizeButton.Visibility = _maximizeButtonVisibility;
+            if (MinimizeButton != null)
+                MinimizeButton.Visibility = _minimizeButtonVisibility;
         }
 
         private void HideButtons()
         {
-            _restoreButtonVisibility = RestoreButton.Visibility;
-            _maximizeButtonVisibility = MaximizeButton.Visibility;
-            _minimizeButtonVisibility = MinimizeButton.Visibility;
+            if (RestoreButton != null)
+                _restoreButtonVisibility = RestoreButton.Visibility;
+            if (MaximizeButton != null)
+                _maximizeButtonVisibility = MaximizeButton.Visibility;
+            if (MinimizeButton != null)
+                _minimizeButtonVisibility = MinimizeButton.Visibility;
 
-            CloseButton.Visibility = Visibility.Collapsed;
-            RestoreButton.Visibility = Visibility.Collapsed;
-            MaximizeButton.Visibility = Visibility.Collapsed;
-            MinimizeButton.Visibility = Visibility.Collapsed;
+            if (CloseButton != null)
+                CloseButton.Visibility = Visibility.Collapsed;
+            if (RestoreButton != null)
+                RestoreButton.Visibility = Visibility.Collapsed;
+            if (MaximizeButton != null)
+                MaximizeButton.Visibility = Visibility.Collapsed;
+            if (MinimizeButton != null)
+                MinimizeButton.Visibility = Visibility.Collapsed;
         }
 
 
@@ -567,9 +587,12 @@ namespace Diffusion.Toolkit
                 minimizeButton = false;
             }
 
-            RestoreButton.Visibility = restoreButton ? Visibility.Visible : Visibility.Collapsed;
-            MaximizeButton.Visibility = maximizeButton ? Visibility.Visible : Visibility.Collapsed;
-            MinimizeButton.Visibility = minimizeButton ? Visibility.Visible : Visibility.Collapsed;
+            if (RestoreButton != null)
+                RestoreButton.Visibility = restoreButton ? Visibility.Visible : Visibility.Collapsed;
+            if (MaximizeButton != null)
+                MaximizeButton.Visibility = maximizeButton ? Visibility.Visible : Visibility.Collapsed;
+            if (MinimizeButton != null)
+                MinimizeButton.Visibility = minimizeButton ? Visibility.Visible : Visibility.Collapsed;
         }
 
         public WindowState PreviousState { get; set; }

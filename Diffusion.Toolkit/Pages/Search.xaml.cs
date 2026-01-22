@@ -1,10 +1,7 @@
-﻿using Diffusion.Database;
-using Diffusion.Database.PostgreSQL;
-using PgSorting = Diffusion.Database.PostgreSQL.Sorting;
+﻿using PgSorting = Diffusion.Database.PostgreSQL.Sorting;
 using PgPaging = Diffusion.Database.PostgreSQL.Paging;
 using PgAlbum = Diffusion.Database.PostgreSQL.Models.Album;
 using PgImageView = Diffusion.Database.PostgreSQL.ImageView;
-using Diffusion.Database.PostgreSQL.Models;
 using Diffusion.Toolkit.Models;
 using System;
 using System.Collections.Generic;
@@ -32,12 +29,9 @@ using System.Windows.Media;
 using Diffusion.Common;
 using Diffusion.Toolkit.Localization;
 using Diffusion.Toolkit.Services;
-using Diffusion.Database.PostgreSQL.Models;
 using Diffusion.Toolkit.Configuration;
 using SearchView = Diffusion.Common.SearchView;
-using Diffusion.Civitai.Models;
 using Metadata = Diffusion.IO.Metadata;
-using System.Security.Cryptography;
 using Diffusion.Common.Query;
 
 namespace Diffusion.Toolkit.Pages
@@ -65,11 +59,11 @@ namespace Diffusion.Toolkit.Pages
             History = new List<string?>();
         }
 
-        public string LastQuery { get; set; }
+        public string? LastQuery { get; set; }
         public List<string?> History { get; set; }
-        public string Name { get; set; }
+        public string? Name { get; set; }
         public ViewMode ViewMode { get; set; }
-        public string Key { get; set; }
+        public string? Key { get; set; }
     }
 
     public abstract class NavigationPage : Page
@@ -100,9 +94,14 @@ namespace Diffusion.Toolkit.Pages
         private readonly SearchModel _model;
         private Dictionary<string, ModeSettings> _modeSettings = new Dictionary<string, ModeSettings>();
 
-        private ModeSettings _currentModeSettings;
+        private ModeSettings? _currentModeSettings;
 
         private ICollection<Model>? _modelLookup;
+
+        public Action<ImageViewModel>? OnCurrentImageChange { get; set; }
+        public Action<ImageViewModel>? OnCurrentImageOpen { get; set; }
+        public PgSorting? Sorting { get; set; }
+        public event EventHandler? NavigationCompleted;
 
         private void ThumbnailNavigationServiceOnPreviousPage(object? sender, EventArgs e)
         {
@@ -201,7 +200,7 @@ namespace Diffusion.Toolkit.Pages
             ServiceLocator.ThumbnailNavigationService.NextPage += ThumbnailNavigationServiceOnNextPage;
             ServiceLocator.ThumbnailNavigationService.PreviousPage += ThumbnailNavigationServiceOnPreviousPage;
 
-            var _settings = ServiceLocator.Settings;
+            var _settings = ServiceLocator.Settings!;
 
             if (_settings.MainGridWidth != null)
             {
@@ -275,7 +274,7 @@ namespace Diffusion.Toolkit.Pages
                 Refresh();
             });
 
-            _model.CurrentImage.ToggleParameters = new RelayCommand<object>((o) => ToggleInfo());
+            _model.CurrentImage!.ToggleParameters = new RelayCommand<object>((o) => ToggleInfo());
             _model.CopyFiles = new RelayCommand<object>((o) => CopyFiles(ThumbnailListView.SelectedImages));
 
             ThumbnailListView.CopyFiles = CopyFiles;
@@ -291,7 +290,7 @@ namespace Diffusion.Toolkit.Pages
             _model.HideFilter = new RelayCommand<object>((o) => _model.IsFilterVisible = false);
             _model.ClearSearch = new RelayCommand<object>((o) => ClearQueryFilter());
 
-            var settings = ServiceLocator.Settings;
+            var settings = ServiceLocator.Settings!;
 
             _model.SearchSettings.SearchNodes = settings.SearchNodes;
             _model.SearchSettings.SearchAllProperties = settings.SearchAllProperties;
@@ -321,7 +320,7 @@ namespace Diffusion.Toolkit.Pages
             {
                 _model.IsFilterVisible = false;
                 _model.SearchText = "";
-                ServiceLocator.MainModel.QueryText = "";
+                ServiceLocator.MainModel!.QueryText = "";
                 SearchImages(null);
             });
 
@@ -333,8 +332,8 @@ namespace Diffusion.Toolkit.Pages
 
             _model.OpenCommand = new RelayCommand<object>(async (o) =>
             {
-                if (_currentModeSettings.ViewMode == ViewMode.Folder &&
-                    (_model.SelectedImageEntry.EntryType is EntryType.Folder or EntryType.RootFolder))
+                if (_currentModeSettings?.ViewMode == ViewMode.Folder &&
+                    (_model.SelectedImageEntry?.EntryType is EntryType.Folder or EntryType.RootFolder))
                 {
                     _model.FolderPath = _model.SelectedImageEntry.Path;
 
@@ -344,13 +343,13 @@ namespace Diffusion.Toolkit.Pages
                 }
                 else
                 {
-                    OpenImage(null);
+                    OpenImage(null!);
                 }
             });
 
             _model.GoHome = new RelayCommand<object>((o) =>
             {
-                if (_currentModeSettings.ViewMode == ViewMode.Folder)
+                if (_currentModeSettings?.ViewMode == ViewMode.Folder)
                 {
                     OpenFolder(FolderViewModel.Home);
                 }
@@ -571,7 +570,7 @@ namespace Diffusion.Toolkit.Pages
 
             ThumbnailListView.OnExpandToFolder = (entry) =>
             {
-                _ = ExpandToPath(Path.GetDirectoryName(entry.Path));
+                _ = ExpandToPath(Path.GetDirectoryName(entry.Path) ?? "");
             };
 
             ServiceLocator.TaggingService.TagUpdated += (sender, arguments) =>
@@ -605,7 +604,7 @@ namespace Diffusion.Toolkit.Pages
 
         private void AdvanceOnTag()
         {
-            if (ServiceLocator.Settings.AutoAdvance)
+            if (ServiceLocator.Settings!.AutoAdvance)
             {
                 ServiceLocator.ThumbnailNavigationService.MoveNext();
             }
@@ -620,7 +619,7 @@ namespace Diffusion.Toolkit.Pages
         public void ClearQueryFilter()
         {
             _model.Filter.Clear();
-            _currentModeSettings.LastQuery = "";
+            _currentModeSettings!.LastQuery = "";
             SearchTermTextBox.Text = "";
             SearchImages(null);
         }
@@ -638,37 +637,37 @@ namespace Diffusion.Toolkit.Pages
 
         private string GetLocalizedText(string key)
         {
-            return (string)JsonLocalizationProvider.Instance.GetLocalizedObject(key, null, CultureInfo.InvariantCulture);
+            return (string?)JsonLocalizationProvider.Instance.GetLocalizedObject(key, null!, CultureInfo.InvariantCulture) ?? key;
         }
 
         private void WidthChanged(object? sender, EventArgs e)
         {
-            ServiceLocator.Settings.MainGridWidth = MainGrid.ColumnDefinitions[0].Width.ToString();
+            ServiceLocator.Settings!.MainGridWidth = MainGrid.ColumnDefinitions[0].Width.ToString();
         }
 
         private void WidthChanged2(object? sender, EventArgs e)
         {
-            ServiceLocator.Settings.MainGridWidth2 = MainGrid.ColumnDefinitions[2].Width.ToString();
+            ServiceLocator.Settings!.MainGridWidth2 = MainGrid.ColumnDefinitions[2].Width.ToString();
         }
 
         private void NavThumbWidthChanged(object? sender, EventArgs e)
         {
-            ServiceLocator.Settings.NavigationThumbnailGridWidth = NavigationThumbnailGrid.ColumnDefinitions[0].Width.ToString();
+            ServiceLocator.Settings!.NavigationThumbnailGridWidth = NavigationThumbnailGrid.ColumnDefinitions[0].Width.ToString();
         }
 
         private void NavThumbWidthChanged2(object? sender, EventArgs e)
         {
-            ServiceLocator.Settings.NavigationThumbnailGridWidth2 = NavigationThumbnailGrid.ColumnDefinitions[2].Width.ToString();
+            ServiceLocator.Settings!.NavigationThumbnailGridWidth2 = NavigationThumbnailGrid.ColumnDefinitions[2].Width.ToString();
         }
 
         private void HeightChanged(object? sender, EventArgs e)
         {
-            ServiceLocator.Settings.PreviewGridHeight = PreviewGrid.RowDefinitions[0].Height.ToString();
+            ServiceLocator.Settings!.PreviewGridHeight = PreviewGrid.RowDefinitions[0].Height.ToString();
         }
 
         private void HeightChanged2(object? sender, EventArgs e)
         {
-            ServiceLocator.Settings.PreviewGridHeight2 = PreviewGrid.RowDefinitions[2].Height.ToString();
+            ServiceLocator.Settings!.PreviewGridHeight2 = PreviewGrid.RowDefinitions[2].Height.ToString();
         }
 
         public Action<IList<ImageEntry>> MoveFiles
@@ -684,16 +683,12 @@ namespace Diffusion.Toolkit.Pages
         //    set => ThumbnailListView.CopyFiles = value;
         //}
 
-        public Action<ImageViewModel> OnCurrentImageChange { get; set; }
-
         public ImageViewModel? CurrentImage => _model.CurrentImage;
-        public IEnumerable<ImageEntry> Images => _model.Images;
-
-        public Action<ImageViewModel> OnCurrentImageOpen { get; set; }
+        public IEnumerable<ImageEntry> Images => _model.Images ?? Enumerable.Empty<ImageEntry>();
 
         private void OpenImage(object obj)
         {
-            OnCurrentImageOpen?.Invoke(_model.CurrentImage);
+            OnCurrentImageOpen?.Invoke(_model.CurrentImage!);
         }
 
         public void SearchImages()
@@ -745,7 +740,7 @@ namespace Diffusion.Toolkit.Pages
             text = text.Replace("{count}", $"{_model.Count:n0}")
                 .Replace("{size}", $"{formattedSize}");
 
-            if (ServiceLocator.MainModel.SelectedImages != null && ServiceLocator.MainModel.SelectedImages.Count > 1)
+            if (ServiceLocator.MainModel!.SelectedImages != null && ServiceLocator.MainModel.SelectedImages.Count > 1)
             {
                 text = text + " | " + selectedText.Replace("{count}", $"{ServiceLocator.MainModel.SelectedImages.Count:n0}");
             }
@@ -788,7 +783,7 @@ namespace Diffusion.Toolkit.Pages
                 {
                     QueryOptions = queryOptions;
 
-                    ServiceLocator.MainModel.SelectedAlbumsCount = queryOptions.AlbumIds.Count;
+                    ServiceLocator.MainModel!.SelectedAlbumsCount = queryOptions.AlbumIds.Count;
 
                     foreach (var album in ServiceLocator.MainModel.Albums ?? Enumerable.Empty<AlbumModel>())
                     {
@@ -804,16 +799,16 @@ namespace Diffusion.Toolkit.Pages
                     switch (queryOptions.SearchView)
                     {
                         case SearchView.Search:
-                            _currentModeSettings.ViewMode = ViewMode.Search;
+                            _currentModeSettings!.ViewMode = ViewMode.Search;
                             break;
                         case SearchView.Folder:
-                            _currentModeSettings.ViewMode = ViewMode.Folder;
+                            _currentModeSettings!.ViewMode = ViewMode.Folder;
                             break;
                         case SearchView.Favorites:
-                            _currentModeSettings.ViewMode = ViewMode.Search;
+                            _currentModeSettings!.ViewMode = ViewMode.Search;
                             break;
                         case SearchView.Deleted:
-                            _currentModeSettings.ViewMode = ViewMode.Search;
+                            _currentModeSettings!.ViewMode = ViewMode.Search;
                             break;
                     }
 
@@ -828,11 +823,11 @@ namespace Diffusion.Toolkit.Pages
 
                     _model.Filter = queryOptions.Filter.AsModel();
 
-                    _model.SearchText = queryOptions.Query;
+                    _model.SearchText = queryOptions.Query ?? string.Empty;
                 }
                 else
                 {
-                    if (ServiceLocator.MainModel.CurrentQuery != null)
+                    if (ServiceLocator.MainModel!.CurrentQuery != null)
                     {
                         ServiceLocator.MainModel.CurrentQuery.IsSelected = false;
                     }
@@ -864,7 +859,7 @@ namespace Diffusion.Toolkit.Pages
                 ServiceLocator.MainModel.HasFilter = QueryOptions.HasFilter;
 
 
-                if (_currentModeSettings.Key == "folders")
+                if (_currentModeSettings!.Key == "folders")
                 {
                     QueryOptions.SearchView = SearchView.Folder;
                 }
@@ -896,16 +891,16 @@ namespace Diffusion.Toolkit.Pages
                                 _model.SearchHistory.Insert(0, QueryOptions.Query);
                             });
 
-                            _currentModeSettings.History = _model.SearchHistory.ToList();
+                            _currentModeSettings!.History = _model.SearchHistory.Select(x => (string?)x).ToList();
                         }
 
-                        _currentModeSettings.LastQuery = QueryOptions.Query;
+                        _currentModeSettings!.LastQuery = QueryOptions.Query;
                     }
 
                     Logger.Log($"SearchImages: Calling CountAndFileSizeEx...");
                     try
                     {
-                        (count, size) = ServiceLocator.DataStore.CountAndFileSizeEx(QueryOptions);
+                        (count, size) = ServiceLocator.DataStore!.CountAndFileSizeEx(QueryOptions);
                         Logger.Log($"SearchImages: CountAndFileSizeEx returned count={count}, size={size}");
                     }
                     catch (Exception ex)
@@ -925,7 +920,7 @@ namespace Diffusion.Toolkit.Pages
                             //_model.CurrentImage.;
                         }
 
-                        _model.Pages = (int)(count / ServiceLocator.Settings.PageSize + (count % ServiceLocator.Settings.PageSize > 1 ? 1 : 0));
+                        _model.Pages = (int)(count / ServiceLocator.Settings!.PageSize + (count % ServiceLocator.Settings.PageSize > 1 ? 1 : 0));
 
 
                         _model.Count = (int)count;
@@ -969,7 +964,7 @@ namespace Diffusion.Toolkit.Pages
                         var exception = d.Exception?.GetBaseException() ?? d.Exception;
                         var errorMessage = exception?.Message ?? "Unknown error";
                         Logger.Log($"Search error: {errorMessage}\r\nStack: {exception?.StackTrace}");
-                        ServiceLocator.MessageService.Show(errorMessage, "An error occured while searching", PopupButtons.OK);
+                        ServiceLocator.MessageService!.Show(errorMessage, "An error occured while searching", PopupButtons.OK);
                         _model.IsBusy = false;
                     }
                 });
@@ -977,7 +972,7 @@ namespace Diffusion.Toolkit.Pages
             }
             catch (Exception e)
             {
-                ServiceLocator.MessageService.ShowMedium(e.Message, GetLocalizedText("Messages.Captions.Error"),
+                ServiceLocator.MessageService!.ShowMedium(e.Message, GetLocalizedText("Messages.Captions.Error"),
                     PopupButtons.OK);
             }
         }
@@ -985,11 +980,9 @@ namespace Diffusion.Toolkit.Pages
 
         public QueryOptions QueryOptions
         {
-            get => ServiceLocator.MainModel.QueryOptions;
-            set => ServiceLocator.MainModel.QueryOptions = value;
+            get => ServiceLocator.MainModel!.QueryOptions;
+            set => ServiceLocator.MainModel!.QueryOptions = value;
         }
-
-        public PgSorting Sorting { get; private set; }
 
         private void ModelOnPropertyChanged(object? sender, PropertyChangedEventArgs e)
         {
@@ -1006,13 +999,13 @@ namespace Diffusion.Toolkit.Pages
             }
             else if (e.PropertyName == nameof(SearchModel.SortBy))
             {
-                ServiceLocator.Settings.SortBy = _model.SortBy;
+                ServiceLocator.Settings!.SortBy = _model.SortBy;
 
                 ReloadMatches(new ReloadOptions() { Focus = true });
             }
             else if (e.PropertyName == nameof(SearchModel.SortDirection))
             {
-                ServiceLocator.Settings.SortDirection = _model.SortDirection;
+                ServiceLocator.Settings!.SortDirection = _model.SortDirection;
 
                 ReloadMatches(new ReloadOptions() { Focus = true });
             }
@@ -1076,14 +1069,14 @@ namespace Diffusion.Toolkit.Pages
 
                 var parameters = Metadata.ReadFromFile(path);
 
-                var old = _model.CurrentImage.IsParametersVisible;
+                var old = _model.CurrentImage!.IsParametersVisible;
 
                 var imageViewModel = new ImageViewModel();
                 imageViewModel.IsParametersVisible = old;
                 imageViewModel.ToggleParameters = new RelayCommand<object>((o) => ToggleInfo());
                 imageViewModel.OpenAlbumCommand = new RelayCommand<PgAlbum>((o) =>
                 {
-                    var albumModel = ServiceLocator.MainModel.Albums.First(d => d.Id == o.Id);
+                    var albumModel = ServiceLocator.MainModel!.Albums!.First(d => d.Id == o.Id);
                     OpenAlbum(albumModel);
                 });
                 imageViewModel.RemoveFromAlbumCommand = new RelayCommand<PgAlbum>(RemoveFromAlbum);
@@ -1096,7 +1089,7 @@ namespace Diffusion.Toolkit.Pages
                     imageViewModel.Rating = image.Rating;
                     imageViewModel.NSFW = image.NSFW;
                     imageViewModel.ForDeletion = image.ForDeletion;
-                    imageViewModel.Albums = ServiceLocator.DataStore.GetImageAlbums(image.Id);
+                    imageViewModel.Albums = ServiceLocator.DataStore!.GetImageAlbums(image.Id);
                     var albumLookup = imageViewModel.Albums.ToDictionary(x => x.Id);
 
                     // Load tags and caption from database
@@ -1195,7 +1188,7 @@ namespace Diffusion.Toolkit.Pages
                     try
                     {
                         var parser = new ComfyUIParser();
-                        imageViewModel.Nodes = parser.Parse(parameters.WorkflowId, parameters.Workflow);
+                        imageViewModel.Nodes = parser.Parse(parameters.WorkflowId ?? "", parameters.Workflow) ?? Array.Empty<Node>();
                     }
                     catch
                     {
@@ -1247,11 +1240,11 @@ namespace Diffusion.Toolkit.Pages
                 var notFound = GetLocalizedText("Search.LoadPreview.ImageNotFound");
                 var caption = GetLocalizedText("Search.LoadPreview.ImageNotFound.Caption");
 
-                ServiceLocator.MessageService.ShowMedium(notFound, caption, PopupButtons.OK);
+                ServiceLocator.MessageService!.ShowMedium(notFound, caption, PopupButtons.OK);
             }
             catch (Exception ex)
             {
-                ServiceLocator.MessageService.ShowMedium($"{ex.Message}", "An error occured", PopupButtons.OK);
+                ServiceLocator.MessageService!.ShowMedium($"{ex.Message}", "An error occured", PopupButtons.OK);
             }
         }
 
@@ -1417,15 +1410,15 @@ namespace Diffusion.Toolkit.Pages
             
             var paging = new PgPaging()
             {
-                PageSize = ServiceLocator.Settings.PageSize,
-                Offset = ServiceLocator.Settings.PageSize * (page - 1)
+                PageSize = ServiceLocator.Settings!.PageSize,
+                Offset = ServiceLocator.Settings!.PageSize * (page - 1)
             };
 
             Sorting = new PgSorting(_model.SortBy, _model.SortDirection);
 
             IEnumerable<PgImageView> matches = Enumerable.Empty<PgImageView>();
 
-            matches = Time(() => ServiceLocator.DataStore
+            matches = Time(() => ServiceLocator.DataStore!
                 .SearchEx(QueryOptions,
                     Sorting,
                     paging
@@ -1481,9 +1474,9 @@ namespace Diffusion.Toolkit.Pages
             {
                 if (QueryOptions.Folder != null && !Directory.Exists(QueryOptions.Folder))
                 {
-                    _ = ServiceLocator.MessageService.ShowMedium(GetLocalizedText("Search.Folders.Unavailable"),
+                    _ = ServiceLocator.MessageService!.ShowMedium(GetLocalizedText("Search.Folders.Unavailable"),
                         GetLocalizedText("Search.Folders.Unavailable.Title"), PopupButtons.OK);
-                    ServiceLocator.MainModel.CurrentFolder.IsUnavailable = true;
+                    ServiceLocator.MainModel!.CurrentFolder!.IsUnavailable = true;
                     return;
                 }
 
@@ -1570,7 +1563,7 @@ namespace Diffusion.Toolkit.Pages
 
                         Task.Run(() =>
                         {
-                            var (count, size) = ServiceLocator.DataStore.FolderCountAndSize(dest.Id);
+                            var (count, size) = ServiceLocator.DataStore!.FolderCountAndSize(dest.Id);
                             Dispatcher.Invoke(() =>
                             {
                                 dest.Count = (int)count;
@@ -1691,13 +1684,14 @@ namespace Diffusion.Toolkit.Pages
 
         private void ImageEntry_OnPropertyChanged(object? sender, PropertyChangedEventArgs e)
         {
-            var imageEntry = ((ImageEntry)sender);
+            var imageEntry = (sender as ImageEntry);
+            if (imageEntry == null) return;
 
             switch (e.PropertyName)
             {
                 case nameof(ImageEntry.IsRecursive):
                 case nameof(ImageEntry.IsWatched):
-                    ServiceLocator.FolderService.UpdateRootFolder(imageEntry.Id, imageEntry.Path, imageEntry.IsWatched, imageEntry.IsRecursive, e.PropertyName);
+                    ServiceLocator.FolderService!.UpdateRootFolder(imageEntry.Id, imageEntry.Path, imageEntry.IsWatched, imageEntry.IsRecursive, e.PropertyName);
                     break;
             }
         }
@@ -1734,7 +1728,7 @@ namespace Diffusion.Toolkit.Pages
             }
             else
             {
-                if (ServiceLocator.MainModel.CurrentFolder != null)
+                if (ServiceLocator.MainModel!.CurrentFolder != null)
                 {
                     ServiceLocator.MainModel.CurrentFolder.IsSelected = true;
                 }
@@ -1748,9 +1742,9 @@ namespace Diffusion.Toolkit.Pages
             _model.CurrentViewMode = _currentModeSettings.ViewMode;
             //_model.SearchText = _currentModeSettings.LastQuery;
 
-            ServiceLocator.SearchService.CurrentViewMode = _currentModeSettings.ViewMode;
+            ServiceLocator.SearchService!.CurrentViewMode = _currentModeSettings!.ViewMode;
 
-            _model.SearchHistory = new ObservableCollection<string?>(_currentModeSettings.History);
+            _model.SearchHistory = new ObservableCollection<string>(_currentModeSettings.History.Where(h => h != null).Select(h => h!));
 
             if (context != null)
             {
@@ -1758,7 +1752,7 @@ namespace Diffusion.Toolkit.Pages
             }
             else
             {
-                _model.ModeName = _currentModeSettings.Name;
+                _model.ModeName = _currentModeSettings.Name ?? string.Empty;
             }
         }
 
@@ -1781,7 +1775,7 @@ namespace Diffusion.Toolkit.Pages
 
         public void ToggleInfo()
         {
-            _model.CurrentImage.IsParametersVisible = !_model.CurrentImage.IsParametersVisible;
+            _model.CurrentImage!.IsParametersVisible = !_model.CurrentImage.IsParametersVisible;
         }
 
         public void SetThumbnailSize(int thumbnailSize)
@@ -1841,7 +1835,7 @@ namespace Diffusion.Toolkit.Pages
                 //NavigationThumbnailGrid.ColumnDefinitions[0].Width = GetGridLength(ServiceLocator.Settings.NavigationThumbnailGridWidth);
                 //NavigationThumbnailGrid.ColumnDefinitions[2].Width = new GridLength(0, GridUnitType.Auto);
 
-                NavigationThumbnailGrid.ColumnDefinitions[0].Width = GetGridLength(ServiceLocator.Settings.NavigationThumbnailGridWidth);
+                NavigationThumbnailGrid.ColumnDefinitions[0].Width = GetGridLength(ServiceLocator.Settings!.NavigationThumbnailGridWidth);
                 NavigationThumbnailGrid.ColumnDefinitions[2].Width = GetGridLength(ServiceLocator.Settings.NavigationThumbnailGridWidth2);
 
                 var widthDescriptor = DependencyPropertyDescriptor.FromProperty(ColumnDefinition.WidthProperty, typeof(ItemsControl));
@@ -1866,7 +1860,7 @@ namespace Diffusion.Toolkit.Pages
 
             if (visible)
             {
-                MainGrid.ColumnDefinitions[0].Width = GetGridLength(ServiceLocator.Settings.MainGridWidth);
+                MainGrid.ColumnDefinitions[0].Width = GetGridLength(ServiceLocator.Settings!.MainGridWidth);
                 MainGrid.ColumnDefinitions[2].Width = GetGridLength(ServiceLocator.Settings.MainGridWidth2);
 
                 var widthDescriptor = DependencyPropertyDescriptor.FromProperty(ColumnDefinition.WidthProperty, typeof(ItemsControl));
@@ -1887,10 +1881,10 @@ namespace Diffusion.Toolkit.Pages
 
         public void Update(int id)
         {
-            var imageData = ServiceLocator.DataStore.GetImage(id);
-            var image = _model.Images.FirstOrDefault(i => i.Id == id);
+            var imageData = ServiceLocator.DataStore!.GetImage(id);
+            var image = _model.Images?.FirstOrDefault(i => i.Id == id);
 
-            if (image != null)
+            if (image != null && imageData != null)
             {
                 image.NSFW = imageData.NSFW;
                 image.Favorite = imageData.Favorite;
@@ -1950,8 +1944,6 @@ namespace Diffusion.Toolkit.Pages
             }
         }
 
-        public event EventHandler NavigationCompleted;
-
         public void ExtOnKeyDown(object sender, KeyEventArgs e)
         {
             if (Keyboard.Modifiers == ModifierKeys.None)
@@ -1983,7 +1975,7 @@ namespace Diffusion.Toolkit.Pages
 
         private void OpenAlbum(AlbumModel albumModel)
         {
-            ServiceLocator.MainModel.CurrentAlbum = albumModel;
+            ServiceLocator.MainModel!.CurrentAlbum = albumModel;
 
             foreach (var album in ServiceLocator.MainModel.Albums)
             {
@@ -2001,7 +1993,7 @@ namespace Diffusion.Toolkit.Pages
 
         private void RemoveFromAlbum(Diffusion.Database.PostgreSQL.Models.Album albumModel)
         {
-            ServiceLocator.DataStore.RemoveImagesFromAlbum(albumModel.Id, new[] { _model.CurrentImage.Id });
+            ServiceLocator.DataStore!.RemoveImagesFromAlbum(albumModel.Id, new[] { _model.CurrentImage!.Id });
             UpdateImagesInPlace();
         }
 
@@ -2017,7 +2009,7 @@ namespace Diffusion.Toolkit.Pages
             PreviewGrid.RowDefinitions[0].Height = new GridLength(1, GridUnitType.Star);
             PreviewGrid.RowDefinitions[2].Height = new GridLength(3, GridUnitType.Star);
 
-            ServiceLocator.Settings.MainGridWidth = "5*";
+            ServiceLocator.Settings!.MainGridWidth = "5*";
             ServiceLocator.Settings.MainGridWidth2 = "*";
             ServiceLocator.Settings.NavigationThumbnailGridWidth = "*";
             ServiceLocator.Settings.NavigationThumbnailGridWidth2 = "3*";
@@ -2031,7 +2023,7 @@ namespace Diffusion.Toolkit.Pages
             {
                 var ids = _model.Images.Select(d => d.Id).ToList();
 
-                var updatedImages = ServiceLocator.DataStore.GetImagesView(ids);
+                var updatedImages = ServiceLocator.DataStore!.GetImagesView(ids);
 
                 var imageLookup = _model.Images.Where(d => d is { EntryType: EntryType.File, IsEmpty: false }).ToDictionary(d => d.Id);
 
@@ -2046,7 +2038,7 @@ namespace Diffusion.Toolkit.Pages
 
             if (_model.CurrentImage != null)
             {
-                _model.CurrentImage.Albums = ServiceLocator.DataStore.GetImageAlbums(_model.CurrentImage.Id);
+                _model.CurrentImage!.Albums = ServiceLocator.DataStore!.GetImageAlbums(_model.CurrentImage.Id);
             }
         }
 

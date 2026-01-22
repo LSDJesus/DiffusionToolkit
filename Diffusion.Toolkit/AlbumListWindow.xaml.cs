@@ -35,6 +35,9 @@ namespace Diffusion.Toolkit
             _model.Escape = new RelayCommand<object>(o => Escape());
             _model.Albums = dataStore.GetAlbums().OrderBy(d => d.Name);
             DataContext = _model;
+            
+            AlbumName = string.Empty;
+            SelectedAlbum = null!;
         }
 
         private void ModelOnPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -64,7 +67,7 @@ namespace Diffusion.Toolkit
 
             IsNewAlbum = _model.IsNewAlbum;
             AlbumName = _model.AlbumName;
-            SelectedAlbum = _model.SelectedAlbum;
+            SelectedAlbum = _model.SelectedAlbum!;
 
             DialogResult = true;
             Close();

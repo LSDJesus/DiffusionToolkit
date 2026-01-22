@@ -312,8 +312,6 @@ internal class PendingEmbeddingResult
                 _tcs.TrySetResult(new EmbeddingResult
                 {
                     BgeEmbedding = _bgeEmbedding,
-                    ClipLEmbedding = null,  // No longer generated
-                    ClipGEmbedding = null,  // No longer generated
                     ImageEmbedding = _visionEmbedding
                 });
             }

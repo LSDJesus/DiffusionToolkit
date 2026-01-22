@@ -5,7 +5,7 @@ namespace Diffusion.Toolkit.Models;
 public class QueryModel : BaseNotify
 {
     private bool _isSelected;
-    private string _name;
+    private string _name = string.Empty;
 
     public int Id { get; set; }
 

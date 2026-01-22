@@ -135,7 +135,7 @@ public class CivitaiEnrichmentService
             
             // Get cover image URL (first image from version)
             var coverImage = modelVersion.Images?.FirstOrDefault();
-            if (coverImage != null)
+            if (coverImage != null && !string.IsNullOrEmpty(coverImage.Url))
             {
                 resource.CivitaiCoverImageUrl = coverImage.Url;
                 
@@ -330,7 +330,7 @@ public class CivitaiEnrichmentService
                     }
 
                     // Parse Civitai metadata from header into resource fields
-                    if (TryParseCivitaiMetadataFromHeader(resource.LocalMetadata, resource))
+                    if (!string.IsNullOrEmpty(resource.LocalMetadata) && TryParseCivitaiMetadataFromHeader(resource.LocalMetadata, resource))
                     {
                         fromHeaders++;
                         await _dataStore.UpdateResourceCivitaiAsync(resource);
@@ -397,7 +397,10 @@ public class CivitaiEnrichmentService
             if (root.TryGetProperty("civitai_base_model", out var baseModel))
             {
                 resource.CivitaiBaseModel = baseModel.GetString();
-                resource.BaseModel = NormalizeBaseModel(resource.CivitaiBaseModel);
+                if (!string.IsNullOrEmpty(resource.CivitaiBaseModel))
+                {
+                    resource.BaseModel = NormalizeBaseModel(resource.CivitaiBaseModel);
+                }
                 foundData = true;
             }
 

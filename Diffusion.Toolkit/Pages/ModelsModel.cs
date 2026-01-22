@@ -5,10 +5,10 @@ namespace Diffusion.Toolkit.Pages;
 
 public class ModelsModel : BaseNotify
 {
-    private IEnumerable<ModelViewModel> _models;
-    private ModelViewModel _selectedModel;
-    private string _search;
-    private IEnumerable<ModelViewModel> _filteredModels;
+    private IEnumerable<ModelViewModel> _models = new List<ModelViewModel>();
+    private ModelViewModel? _selectedModel = null;
+    private string _search = string.Empty;
+    private IEnumerable<ModelViewModel> _filteredModels = new List<ModelViewModel>();
 
     public IEnumerable<ModelViewModel> Models
     {
@@ -28,7 +28,7 @@ public class ModelsModel : BaseNotify
         set => SetField(ref _search, value);
     }
 
-    public ModelViewModel SelectedModel
+    public ModelViewModel? SelectedModel
     {
         get => _selectedModel;
         set => SetField(ref _selectedModel, value);

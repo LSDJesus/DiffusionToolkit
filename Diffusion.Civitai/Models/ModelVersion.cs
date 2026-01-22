@@ -4,17 +4,17 @@ public class ModelVersion
 {
     public int Id { get; set; }
     public int ModelId { get; set; }
-    public string Name { get; set; }
-    public string Description { get; set; }
+    public string? Name { get; set; }
+    public string? Description { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
     public DateTime? PublishedAt { get; set; }
-    public string DownloadUrl { get; set; }
-    public List<string> TrainedWords { get; set; }
-    public List<ModelFile> Files { get; set; }
-    public List<ModelImage> Images { get; set; }
-    public Stats Stats { get; set; }
-    public string BaseModel { get; set; }
+    public string? DownloadUrl { get; set; }
+    public List<string>? TrainedWords { get; set; }
+    public List<ModelFile> Files { get; set; } = new List<ModelFile>();
+    public List<ModelImage> Images { get; set; } = new List<ModelImage>();
+    public Stats? Stats { get; set; }
+    public string? BaseModel { get; set; }
     public string? BaseModelType { get; set; }
     
     // Recommended settings (if provided by creator)
@@ -37,7 +37,7 @@ public class ModelVersion2 : ModelVersion
 
 public class ModelVersionModel
 {
-    public string Name { get; set; }
+    public string? Name { get; set; }
     public ModelType Type { get; set; }
     public bool Nsfw { get; set; }
     public bool Poi { get; set; }

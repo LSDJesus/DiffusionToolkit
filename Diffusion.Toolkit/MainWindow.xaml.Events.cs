@@ -43,80 +43,95 @@ namespace Diffusion.Toolkit
 
         private void InitEvents()
         {
-            _model.ReleaseNotesCommand = new RelayCommand<object>((o) => ShowReleaseNotes());
-            _model.HelpCommand = new RelayCommand<object>((o) => ShowTips());
-            _model.ToggleInfoCommand = new RelayCommand<object>((o) => ToggleInfo());
-
-            _model.ToggleNSFWBlurCommand = new RelayCommand<object>((o) => ToggleNSFWBlur());
-
-            _model.ToggleHideNSFW = new RelayCommand<object>((o) => ToggleHideNSFW());
-            _model.ToggleHideDeleted = new RelayCommand<object>((o) => ToggleHideDeleted());
-            _model.ToggleHideUnavailable = new RelayCommand<object>((o) => ToggleHideUnavailable());
-
-            _model.ToggleFitToPreview = new RelayCommand<object>((o) => ToggleFitToPreview());
-            _model.ToggleActualSize = new RelayCommand<object>((o) => ToggleActualSize());
-
-            _model.ToggleAutoAdvance = new RelayCommand<object>((o) => ToggleAutoAdvance());
-            _model.ToggleTagsCommand = new RelayCommand<object>((o) => ToggleTags());
-            _model.ToggleNotificationsCommand = new RelayCommand<object>((o) => ToggleNotifications());
-
-            _model.NavigateToParentFolderCommand = new RelayCommand<object>((o) =>
+            if (_model != null)
             {
-                NavigateToParentFolder();
-                _search.ThumbnailListView.FocusCurrentItem();
-            });
+                _model.ReleaseNotesCommand = new RelayCommand<object>((o) => ShowReleaseNotes());
+                _model.HelpCommand = new RelayCommand<object>((o) => ShowTips());
+                _model.ToggleInfoCommand = new RelayCommand<object>((o) => ToggleInfo());
 
-            _model.SetThumbnailSize = new RelayCommand<object>((o) => SetThumbnailSize(int.Parse((string)o)));
-            _model.TogglePreview = new RelayCommand<object>((o) => TogglePreview());
-            _model.PoputPreview = new RelayCommand<object>((o) => PopoutPreview(true, true, false));
+                _model.ToggleNSFWBlurCommand = new RelayCommand<object>((o) => ToggleNSFWBlur());
 
-            _model.ToggleFilenamesCommand = new RelayCommand<object>((o) => ToggleFilenames());
+                _model.ToggleHideNSFW = new RelayCommand<object>((o) => ToggleHideNSFW());
+                _model.ToggleHideDeleted = new RelayCommand<object>((o) => ToggleHideDeleted());
+                _model.ToggleHideUnavailable = new RelayCommand<object>((o) => ToggleHideUnavailable());
 
-            _model.ResetLayout = new RelayCommand<object>((o) => ResetLayout());
+                _model.ToggleFitToPreview = new RelayCommand<object>((o) => ToggleFitToPreview());
+                _model.ToggleActualSize = new RelayCommand<object>((o) => ToggleActualSize());
 
-            _model.RescanResults = new RelayCommand<object>((o) => RescanResults());
-            _model.AddAllToAlbum = new RelayCommand<object>((o) => AddAllToAlbum());
-            _model.MarkAllForDeletion = new RelayCommand<object>((o) => MarkAllForDeletion());
-            _model.UnmarkAllForDeletion = new RelayCommand<object>((o) => UnmarkAllForDeletion());
-            _model.RemoveMatching = new RelayCommand<object>((o) => RemoveFromDatabase());
-            _model.AutoTagNSFW = new RelayCommand<object>((o) => AutoTagNSFW());
-            _model.DownloadCivitai = new RelayCommand<object>((o) => DownloadCivitaiModels());
-            _model.EnrichModelMetadata = new AsyncCommand<object>((o) => EnrichModelMetadataAsync());
-            _model.WriteMetadataToFiles = new AsyncCommand<object>((o) => WriteMetadataToFilesAsync());
+                _model.ToggleAutoAdvance = new RelayCommand<object>((o) => ToggleAutoAdvance());
+                _model.ToggleTagsCommand = new RelayCommand<object>((o) => ToggleTags());
+                _model.ToggleNotificationsCommand = new RelayCommand<object>((o) => ToggleNotifications());
 
-            _model.FixFoldersCommand = new RelayCommand<object>((o) => FixFolders());
-            _model.RemoveExcludedImagesCommand = new RelayCommand<object>((o) => CleanExcludedPaths());
-            _model.CleanRemovedFoldersCommand = new AsyncCommand<object>(CleanRemovedFolders);
+                _model.NavigateToParentFolderCommand = new RelayCommand<object>((o) =>
+                {
+                    NavigateToParentFolder();
+                    if (_search?.ThumbnailListView != null)
+                    {
+                        _search.ThumbnailListView.FocusCurrentItem();
+                    }
+                });
 
-            _model.UnavailableFilesCommand = new AsyncCommand<object>(UnavailableFiles);
+                _model.SetThumbnailSize = new RelayCommand<object>((o) => SetThumbnailSize(int.Parse((string)o)));
+                _model.TogglePreview = new RelayCommand<object>((o) => TogglePreview());
+                _model.PoputPreview = new RelayCommand<object>((o) => PopoutPreview(true, true, false));
 
-            _model.ShowFilterCommand = new RelayCommand<object>((o) => _search?.ShowFilter());
-            _model.ToggleAutoRefresh = new RelayCommand<object>((o) => ToggleAutoRefresh());
+                _model.ToggleFilenamesCommand = new RelayCommand<object>((o) => ToggleFilenames());
 
-            _model.SortAlbumCommand = new RelayCommand<object>((o) => SortAlbums());
-            _model.ClearAlbumsCommand = new RelayCommand<object>((o) => ClearAlbums());
-            _model.ClearModelsCommand = new RelayCommand<object>((o) => ClearModels());
+                _model.ResetLayout = new RelayCommand<object>((o) => ResetLayout());
 
-            _model.ToggleNavigationPane = new RelayCommand<object>((o) => ToggleNavigationPane());
-            _model.ToggleVisibilityCommand = new RelayCommand<string>((p) => ToggleVisibility(p));
-            _model.ToggleThumbnailViewModeCommand = new RelayCommand<ThumbnailViewMode>((p) => ToggleThumbnailViewMode(p));
-            _model.FocusSearch = new RelayCommand<object>((p) => OpenQueryBar());
-            _model.ShowInExplorerCommand = new RelayCommand<FolderViewModel>((p) => ShowInExplorer(p));
+                _model.RescanResults = new RelayCommand<object>((o) => RescanResults());
+                _model.AddAllToAlbum = new RelayCommand<object>((o) => AddAllToAlbum());
+                _model.MarkAllForDeletion = new RelayCommand<object>((o) => MarkAllForDeletion());
+                _model.UnmarkAllForDeletion = new RelayCommand<object>((o) => UnmarkAllForDeletion());
+                _model.RemoveMatching = new RelayCommand<object>((o) => RemoveFromDatabase());
+                _model.AutoTagNSFW = new RelayCommand<object>((o) => AutoTagNSFW());
+                _model.DownloadCivitai = new RelayCommand<object>((o) => DownloadCivitaiModels());
+                _model.EnrichModelMetadata = new AsyncCommand<object>((o) => EnrichModelMetadataAsync());
+                _model.WriteMetadataToFiles = new AsyncCommand<object>((o) => WriteMetadataToFilesAsync());
+
+                _model.FixFoldersCommand = new RelayCommand<object>((o) => FixFolders());
+                _model.RemoveExcludedImagesCommand = new RelayCommand<object>((o) => CleanExcludedPaths());
+                _model.CleanRemovedFoldersCommand = new AsyncCommand<object>(CleanRemovedFolders);
+
+                _model.UnavailableFilesCommand = new AsyncCommand<object>(UnavailableFiles);
+
+                _model.ShowFilterCommand = new RelayCommand<object>((o) => _search?.ShowFilter());
+                _model.ToggleAutoRefresh = new RelayCommand<object>((o) => ToggleAutoRefresh());
+
+                _model.SortAlbumCommand = new RelayCommand<object>((o) => SortAlbums());
+                _model.ClearAlbumsCommand = new RelayCommand<object>((o) => ClearAlbums());
+                _model.ClearModelsCommand = new RelayCommand<object>((o) => ClearModels());
+
+                _model.ToggleNavigationPane = new RelayCommand<object>((o) => ToggleNavigationPane());
+                _model.ToggleVisibilityCommand = new RelayCommand<string>((p) => ToggleVisibility(p));
+                _model.ToggleThumbnailViewModeCommand = new RelayCommand<ThumbnailViewMode>((p) => ToggleThumbnailViewMode(p));
+                _model.FocusSearch = new RelayCommand<object>((p) => OpenQueryBar());
+                _model.ShowInExplorerCommand = new RelayCommand<FolderViewModel>((p) => ShowInExplorer(p));
+            }
         }
 
         private void ToggleThumbnailViewMode(ThumbnailViewMode thumbnailViewMode)
         {
-            _settings.ThumbnailViewMode = thumbnailViewMode;
+            if (_settings != null)
+            {
+                _settings.ThumbnailViewMode = thumbnailViewMode;
+            }
         }
 
         // TODO: Move these to the property changed handlers and trigger on setting change
 
         private void ToggleHideNSFW()
         {
-            _model.HideNSFW = !_model.HideNSFW;
-            QueryBuilder.HideNSFW = _model.HideNSFW;
-            _settings.HideNSFW = _model.HideNSFW;
-            _search.SearchImages();
+            if (_model != null)
+            {
+                _model.HideNSFW = !_model.HideNSFW;
+                QueryBuilder.HideNSFW = _model.HideNSFW;
+                if (_settings != null)
+                {
+                    _settings.HideNSFW = _model.HideNSFW;
+                }
+                _search?.SearchImages();
+            }
 
             //_prompts.ReloadPrompts();
             //_prompts.LoadImages();
@@ -125,10 +140,16 @@ namespace Diffusion.Toolkit
 
         private void ToggleHideDeleted()
         {
-            _model.HideDeleted = !_model.HideDeleted;
-            QueryBuilder.HideDeleted = _model.HideDeleted;
-            _settings.HideDeleted = _model.HideDeleted;
-            _search.SearchImages();
+            if (_model != null)
+            {
+                _model.HideDeleted = !_model.HideDeleted;
+                QueryBuilder.HideDeleted = _model.HideDeleted;
+                if (_settings != null)
+                {
+                    _settings.HideDeleted = _model.HideDeleted;
+                }
+                _search?.SearchImages();
+            }
 
             //_prompts.ReloadPrompts();
             //_prompts.LoadImages();
@@ -136,10 +157,16 @@ namespace Diffusion.Toolkit
 
         private void ToggleHideUnavailable()
         {
-            _model.HideUnavailable = !_model.HideUnavailable;
-            QueryBuilder.HideUnavailable = _model.HideUnavailable;
-            _settings.HideUnavailable = _model.HideUnavailable;
-            _search.SearchImages();
+            if (_model != null)
+            {
+                _model.HideUnavailable = !_model.HideUnavailable;
+                QueryBuilder.HideUnavailable = _model.HideUnavailable;
+                if (_settings != null)
+                {
+                    _settings.HideUnavailable = _model.HideUnavailable;
+                }
+                _search?.SearchImages();
+            }
 
             //_prompts.ReloadPrompts();
             //_prompts.LoadImages();
@@ -147,50 +174,83 @@ namespace Diffusion.Toolkit
 
         private void ToggleNSFWBlur()
         {
-            _settings.NSFWBlur = !_settings.NSFWBlur;
+            if (_settings != null)
+            {
+                _settings.NSFWBlur = !_settings.NSFWBlur;
+            }
         }
 
         private void ToggleFitToPreview()
         {
-            _model.FitToPreview = !_model.FitToPreview;
-            _model.ActualSize = false;
-            _settings.FitToPreview = _model.FitToPreview;
-            _settings.ActualSize = _model.ActualSize;
+            if (_model != null)
+            {
+                _model.FitToPreview = !_model.FitToPreview;
+                _model.ActualSize = false;
+                if (_settings != null)
+                {
+                    _settings.FitToPreview = _model.FitToPreview;
+                    _settings.ActualSize = _model.ActualSize;
+                }
+            }
         }
 
         private void ToggleActualSize()
         {
-            _model.ActualSize = !_model.ActualSize;
-            _model.FitToPreview = false;
-            _settings.FitToPreview = _model.FitToPreview;
-            _settings.ActualSize = _model.ActualSize;
+            if (_model != null)
+            {
+                _model.ActualSize = !_model.ActualSize;
+                _model.FitToPreview = false;
+                if (_settings != null)
+                {
+                    _settings.FitToPreview = _model.FitToPreview;
+                    _settings.ActualSize = _model.ActualSize;
+                }
+            }
         }
 
         private void ToggleNotifications()
         {
-            _model.ShowNotifications = !_model.ShowNotifications;
-            _settings.ShowNotifications = _model.ShowNotifications;
+            if (_model != null)
+            {
+                _model.ShowNotifications = !_model.ShowNotifications;
+                if (_settings != null)
+                {
+                    _settings.ShowNotifications = _model.ShowNotifications;
+                }
+            }
         }
 
         private void ToggleAutoAdvance()
         {
-            _settings.AutoAdvance = !_settings.AutoAdvance;
+            if (_settings != null)
+            {
+                _settings.AutoAdvance = !_settings.AutoAdvance;
+            }
         }
 
         private void ToggleFilenames()
         {
-            _settings.ShowFilenames = !_settings.ShowFilenames;
+            if (_settings != null)
+            {
+                _settings.ShowFilenames = !_settings.ShowFilenames;
+            }
         }
 
         private void ToggleTags()
         {
-            _model.ShowTags = !_model.ShowTags;
-            _model.Settings.ShowTags = _model.ShowTags;
+            if (_model != null)
+            {
+                _model.ShowTags = !_model.ShowTags;
+                if (_model.Settings != null)
+                {
+                    _model.Settings.ShowTags = _model.ShowTags;
+                }
+            }
         }
 
         private void ToggleInfo()
         {
-            _search.ToggleInfo();
+            _search?.ToggleInfo();
         }
 
         private void ShowAbout()
@@ -224,31 +284,40 @@ namespace Diffusion.Toolkit
 
         private void OnStateChanged(object? sender, EventArgs e)
         {
-            _settings.WindowState = this.WindowState;
-            if (this.WindowState == WindowState.Maximized)
+            if (_settings != null)
             {
-                Screen screen = Screen.FromHandle((new WindowInteropHelper(this)).Handle);
-                _settings.Top = screen.WorkingArea.Top;
-                _settings.Left = screen.WorkingArea.Left;
-            }
-            else if (this.WindowState == WindowState.Normal)
-            {
-                _settings.Top = this.Top;
-                _settings.Left = this.Left;
+                _settings.WindowState = this.WindowState;
+                if (this.WindowState == WindowState.Maximized)
+                {
+                    Screen screen = Screen.FromHandle((new WindowInteropHelper(this)).Handle);
+                    _settings.Top = screen.WorkingArea.Top;
+                    _settings.Left = screen.WorkingArea.Left;
+                }
+                else if (this.WindowState == WindowState.Normal)
+                {
+                    _settings.Top = this.Top;
+                    _settings.Left = this.Left;
+                }
             }
         }
 
         private void OnSizeChanged(object sender, SizeChangedEventArgs e)
         {
-            _settings.WindowSize = e.NewSize;
-            _settings.Top = this.Top;
-            _settings.Left = this.Left;
+            if (_settings != null)
+            {
+                _settings.WindowSize = e.NewSize;
+                _settings.Top = this.Top;
+                _settings.Left = this.Left;
+            }
         }
 
         private void OnLocationChanged(object? sender, EventArgs e)
         {
-            _settings.Top = this.Top;
-            _settings.Left = this.Left;
+            if (_settings != null)
+            {
+                _settings.Top = this.Top;
+                _settings.Left = this.Left;
+            }
         }
 
         private bool _isClosing;
@@ -259,12 +328,15 @@ namespace Diffusion.Toolkit
             {
                 Logger.Log("Attempting to shut down...");
 
-                if (_settings.IsDirty())
+                if (_settings != null && _settings.IsDirty())
                 {
-                    _configuration.Save(_settings);
+                    if (_configuration != null)
+                    {
+                        _configuration.Save(_settings);
+                    }
                 }
 
-                if (ServiceLocator.MainModel.IsBusy)
+                if (ServiceLocator.MainModel != null && ServiceLocator.MainModel.IsBusy)
                 {
                     Logger.Log("Operation in progress, waiting to shut down...");
 
@@ -313,38 +385,68 @@ namespace Diffusion.Toolkit
             switch (args.PropertyName)
             {
                 case nameof(Settings.ThumbnailViewMode):
-                    _model.ThumbnailViewMode = _settings.ThumbnailViewMode;
+                    if (_model != null && _settings != null)
+                    {
+                        _model.ThumbnailViewMode = _settings.ThumbnailViewMode;
+                    }
                     break;
 
                 case nameof(Settings.NSFWBlur):
-                    _model.NSFWBlur = _settings.NSFWBlur;
+                    if (_model != null && _settings != null)
+                    {
+                        _model.NSFWBlur = _settings.NSFWBlur;
+                    }
                     break;
 
                 case nameof(Settings.AutoAdvance):
-                    _model.AutoAdvance = _settings.AutoAdvance;
+                    if (_model != null && _settings != null)
+                    {
+                        _model.AutoAdvance = _settings.AutoAdvance;
+                    }
                     break;
 
                 case nameof(Settings.AutoRefresh):
-                    _model.AutoRefresh = _settings.AutoRefresh;
+                    if (_model != null && _settings != null)
+                    {
+                        _model.AutoRefresh = _settings.AutoRefresh;
+                    }
                     break;
 
                 case nameof(Settings.ShowFilenames):
-                    _model.ShowFilenames = _settings.ShowFilenames;
+                    if (_model != null && _settings != null)
+                    {
+                        _model.ShowFilenames = _settings.ShowFilenames;
+                    }
                     break;
 
                 case nameof(Settings.PermanentlyDelete):
-                    _model.PermanentlyDelete = _settings.PermanentlyDelete;
+                    if (_model != null && _settings != null)
+                    {
+                        _model.PermanentlyDelete = _settings.PermanentlyDelete;
+                    }
                     break;
 
                 case nameof(Settings.PageSize):
-                    ThumbnailCache.CreateInstance(_settings.PageSize * 5, _settings.PageSize * 2);
-                    _search.SetPageSize(_settings.PageSize);
-                    _prompts.SetPageSize(_settings.PageSize);
-                    _search.SearchImages();
+                    if (_settings != null)
+                    {
+                        ThumbnailCache.CreateInstance(_settings.PageSize * 5, _settings.PageSize * 2);
+                        if (_search != null)
+                        {
+                            _search.SetPageSize(_settings.PageSize);
+                            _search.SearchImages();
+                        }
+                        if (_prompts != null)
+                        {
+                            _prompts.SetPageSize(_settings.PageSize);
+                        }
+                    }
                     break;
 
                 case nameof(Settings.RenderMode):
-                    RenderOptions.ProcessRenderMode = _settings.RenderMode;
+                    if (_settings != null)
+                    {
+                        RenderOptions.ProcessRenderMode = _settings.RenderMode;
+                    }
                     break;
 
                 case nameof(Settings.ModelRootPath):
@@ -353,11 +455,14 @@ namespace Diffusion.Toolkit
                     break;
 
                 case nameof(Settings.Theme):
-                    UpdateTheme(_settings.Theme);
+                    if (_settings != null)
+                    {
+                        UpdateTheme(_settings.Theme);
+                    }
                     break;
 
                 case nameof(Settings.PortableMode):
-                    if (_settings.PortableMode)
+                    if (_settings != null && _settings.PortableMode)
                     {
                         GoPortable();
                     }
@@ -368,13 +473,19 @@ namespace Diffusion.Toolkit
                     break;
 
                 case nameof(Settings.Culture):
-                    if (_settings.Culture == "default")
+                    if (_settings != null)
                     {
-                        LocalizeDictionary.Instance.Culture = DefaultCulture;
-                    }
-                    else
-                    {
-                        LocalizeDictionary.Instance.Culture = new CultureInfo(_settings.Culture);
+                        if (_settings.Culture == "default")
+                        {
+                            LocalizeDictionary.Instance.Culture = DefaultCulture;
+                        }
+                        else
+                        {
+                            if (!string.IsNullOrEmpty(_settings.Culture))
+                            {
+                                LocalizeDictionary.Instance.Culture = new CultureInfo(_settings.Culture);
+                            }
+                        }
                     }
                     break;
 
@@ -388,6 +499,11 @@ namespace Diffusion.Toolkit
 
         private async Task RenameImageEntry()
         {
+            if (ServiceLocator.MainModel == null)
+            {
+                return;
+            }
+
             var selectedImageEntry = ServiceLocator.MainModel.SelectedImageEntry;
 
             if (selectedImageEntry == null) return;
@@ -404,22 +520,32 @@ namespace Diffusion.Toolkit
             }
             else if (entryType == EntryType.Folder)
             {
-                var name = selectedImageEntry.FileName;
+                var name = selectedImageEntry.FileName ?? string.Empty;
 
                 result = await ServiceLocator.FolderService.ShowRenameFolderDialog(name, oldPath);
             }
 
-            if (result.Item1)
+            if (result.Item1 && result.Item2 != null)
             {
-                selectedImageEntry.Name = result.Item2.Name;
-                selectedImageEntry.FileName = result.Item2.FileName;
-                selectedImageEntry.Path = result.Item2.Path;
+                var namePath = result.Item2;
+                if (namePath != null)
+                {
+                    if (namePath.Name != null)
+                        selectedImageEntry.Name = namePath.Name;
+                    if (namePath.FileName != null)
+                        selectedImageEntry.FileName = namePath.FileName;
+                    if (namePath.Path != null)
+                        selectedImageEntry.Path = namePath.Path;
+                }
             }
 
             //_search.Refresh();
 
             //_search.ThumbnailListView.Focus();
-            _search.ThumbnailListView.FocusCurrentItem();
+            if (_search?.ThumbnailListView != null)
+            {
+                _search.ThumbnailListView.FocusCurrentItem();
+            }
 
         }
 

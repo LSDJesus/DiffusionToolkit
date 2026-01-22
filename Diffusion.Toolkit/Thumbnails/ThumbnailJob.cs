@@ -6,7 +6,7 @@ public class ThumbnailJob
 {
     public long BatchId { get; set; }
     public EntryType EntryType { get; set; }
-    public string Path { get; set; }
+    public string? Path { get; set; }
     public int Width { get; set; }
     public int Height { get; set; }
     public bool IsVideo { get; set; }

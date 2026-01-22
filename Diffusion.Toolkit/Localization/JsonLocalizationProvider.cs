@@ -14,9 +14,9 @@ namespace Diffusion.Toolkit.Localization
     public class JsonLocalizationProvider : FrameworkElement, ILocalizationProvider
     {
         private readonly Dictionary<string, Dictionary<string, string>> _dictionaries;
-        private readonly Dictionary<string, string> _defaultDictionary;
+        private readonly Dictionary<string, string>? _defaultDictionary;
 
-        public static JsonLocalizationProvider Instance { get; private set; }
+        public static JsonLocalizationProvider? Instance { get; private set; }
 
         public JsonLocalizationProvider()
         {
@@ -33,9 +33,17 @@ namespace Diffusion.Toolkit.Localization
 
             using (var defaultStream = assembly.GetManifestResourceStream("Diffusion.Toolkit.Localization.default.json"))
             {
-                var reader = new StreamReader(defaultStream);
-                var json = reader.ReadToEnd();
-                _defaultDictionary = JsonSerializer.Deserialize<Dictionary<string, string>>(json);
+                if (defaultStream != null)
+                {
+                    var reader = new StreamReader(defaultStream);
+                    var json = reader.ReadToEnd();
+                    _defaultDictionary = JsonSerializer.Deserialize<Dictionary<string, string>>(json);
+                }
+                else
+                {
+                    // Handle missing resource gracefully
+                    _defaultDictionary = new Dictionary<string, string>();
+                }
             }
 
             foreach (var file in files)
@@ -43,7 +51,10 @@ namespace Diffusion.Toolkit.Localization
                 var key = Path.GetFileNameWithoutExtension(file);
                 var json = File.ReadAllText(file);
                 var dictionary = JsonSerializer.Deserialize<Dictionary<string, string>>(json);
-                _dictionaries.Add(key, dictionary);
+                if (dictionary != null)
+                {
+                    _dictionaries.Add(key, dictionary);
+                }
             }
         }
 
@@ -65,14 +76,14 @@ namespace Diffusion.Toolkit.Localization
                     return value;
                 }
 
-                if (_defaultDictionary.TryGetValue(key, out value))
+                if (_defaultDictionary != null && _defaultDictionary.TryGetValue(key, out value))
                 {
                     return value;
                 }
             }
             else
             {
-                if (_defaultDictionary.TryGetValue(key, out var value))
+                if (_defaultDictionary != null && _defaultDictionary.TryGetValue(key, out var value))
                 {
                     return value;
                 }

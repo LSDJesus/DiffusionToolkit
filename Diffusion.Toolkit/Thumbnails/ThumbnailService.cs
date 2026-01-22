@@ -7,10 +7,7 @@ using System.IO;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
-using System.Windows;
 using System.Windows.Media.Imaging;
-using System.Windows.Media.Media3D;
-using System.Windows.Resources;
 using System.Windows.Threading;
 using Diffusion.Toolkit.Models;
 
@@ -42,7 +39,7 @@ public class ThumbnailService
     private readonly Channel<Job<ThumbnailJob, ThumbailResult>> _channel = Channel.CreateUnbounded<Job<ThumbnailJob, ThumbailResult>>();
     private readonly int _degreeOfParallelism = 2;
 
-    private CancellationTokenSource cancellationTokenSource;
+    private CancellationTokenSource? cancellationTokenSource;
 
     private Stream _defaultStream;
 
@@ -64,7 +61,13 @@ public class ThumbnailService
         //}
     }
 
-    private Dispatcher _dispatcher => ServiceLocator.Dispatcher;
+    private Dispatcher _dispatcher
+    {
+        get
+        {
+            return ServiceLocator.Dispatcher ?? throw new InvalidOperationException("ServiceLocator.Dispatcher is not initialized.");
+        }
+    }
 
 
     public void QueueImage(ImageEntry image)
@@ -90,8 +93,11 @@ public class ThumbnailService
                 _dispatcher.Invoke(() =>
                 {
                     image.Thumbnail = d.Image;
-                    image.ThumbnailHeight = d.Image.Height;
-                    image.ThumbnailWidth = d.Image.Width;
+                    if (d.Image != null)
+                    {
+                        image.ThumbnailHeight = d.Image.Height;
+                        image.ThumbnailWidth = d.Image.Width;
+                    }
                 });
             }
             else
@@ -130,7 +136,7 @@ public class ThumbnailService
 
     public void Stop()
     {
-        cancellationTokenSource.Cancel();
+        cancellationTokenSource?.Cancel();
         _channel.Writer.Complete();
     }
 
@@ -192,22 +198,23 @@ public class ThumbnailService
                 var job = await _channel.Reader.ReadAsync(token);
 
                 // Exit early if the batch has changed
-                if (job.Data.BatchId != _currentBatchId)
+                if (job.Data == null || job.Data.BatchId != _currentBatchId)
                 {
                     continue;
                 }
 
                 if (_enableCache)
                 {
-                    if (!ThumbnailCache.Instance.TryGetThumbnail(job.Data.Path, Size,
+                    if (string.IsNullOrEmpty(job.Data.Path) ||
+                        !ThumbnailCache.Instance.TryGetThumbnail(job.Data.Path, Size,
                             out BitmapSource? thumbnail))
                     {
                         // Debug.WriteLine($"Loading from disk");
                         if (job.Data.EntryType == EntryType.File)
                         {
-                            if (!File.Exists(job.Data.Path))
+                            if (string.IsNullOrEmpty(job.Data.Path) || !File.Exists(job.Data.Path))
                             {
-                                job.Completion(ThumbailResult.Failed);
+                                job.Completion?.Invoke(ThumbailResult.Failed);
                                 continue;
                             }
 
@@ -232,17 +239,17 @@ public class ThumbnailService
                             thumbnail = GetDefaultThumbnailImmediate();
                         }
 
-                        if (thumbnail != null)
+                        if (thumbnail != null && !string.IsNullOrEmpty(job.Data.Path))
                         {
                             ThumbnailCache.Instance.AddThumbnail(job.Data.Path, Size, (BitmapImage)thumbnail);
                         }
 
-                        job.Completion(new ThumbailResult(thumbnail));
+                        job.Completion?.Invoke(thumbnail != null ? new ThumbailResult(thumbnail) : ThumbailResult.Failed);
 
                     }
                     else
                     {
-                        job.Completion(new ThumbailResult(thumbnail));
+                        job.Completion?.Invoke(thumbnail != null ? new ThumbailResult(thumbnail) : ThumbailResult.Failed);
                     }
                 }
                 else
@@ -254,7 +261,7 @@ public class ThumbnailService
                     {
                         if (!File.Exists(job.Data.Path))
                         {
-                            job.Completion(ThumbailResult.Failed);
+                            job.Completion?.Invoke(ThumbailResult.Failed);
                             continue;
                         }
                         thumbnail = GetThumbnailImmediate(job.Data.Path, job.Data.Width, job.Data.Height, Size);
@@ -263,7 +270,8 @@ public class ThumbnailService
                     {
                         // Model thumbnails should already be cached during scanning
                         // Try to get from cache, otherwise use default
-                        if (ThumbnailCache.Instance.TryGetThumbnail(job.Data.Path, Size, out var cachedThumb) && cachedThumb is BitmapImage bmp)
+                        if (!string.IsNullOrEmpty(job.Data.Path) &&
+                            ThumbnailCache.Instance.TryGetThumbnail(job.Data.Path, Size, out var cachedThumb) && cachedThumb is BitmapImage bmp)
                         {
                             thumbnail = bmp;
                         }
@@ -277,9 +285,12 @@ public class ThumbnailService
                         thumbnail = GetDefaultThumbnailImmediate();
                     }
 
-                    ThumbnailCache.Instance.AddThumbnail(job.Data.Path, Size, thumbnail);
+                    if (!string.IsNullOrEmpty(job.Data.Path))
+                    {
+                        ThumbnailCache.Instance.AddThumbnail(job.Data.Path, Size, thumbnail);
+                    }
 
-                    job.Completion(new ThumbailResult(thumbnail));
+                    job.Completion?.Invoke(new ThumbailResult(thumbnail));
                 }
             }
             catch (Exception e)
@@ -294,7 +305,7 @@ public class ThumbnailService
 
     public async Task QueueAsync(ThumbnailJob job, Action<ThumbailResult> completion)
     {
-        if (!cancellationTokenSource.IsCancellationRequested)
+        if (cancellationTokenSource != null && !cancellationTokenSource.IsCancellationRequested)
         {
             await _channel.Writer.WriteAsync(new Job<ThumbnailJob, ThumbailResult>() { Data = job, Completion = completion });
         }
@@ -481,9 +492,8 @@ public class ThumbnailService
 
     private static BitmapImage GetThumbnail(string path, int width, int height)
     {
-        BitmapImage bitmap = null;
         using var stream = new FileStream(path, FileMode.Open, FileAccess.Read);
-        bitmap = new BitmapImage();
+        var bitmap = new BitmapImage();
         //bitmap.UriSource = new Uri(path);
         bitmap.BeginInit();
 

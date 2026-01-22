@@ -8,7 +8,6 @@ using Diffusion.Common;
 using Diffusion.Database.PostgreSQL.Models;
 using Diffusion.IO;
 using Diffusion.Toolkit.Configuration;
-using Diffusion.Toolkit.Thumbnails;
 using Node = Diffusion.IO.Node;
 
 namespace Diffusion.Toolkit.Services;
@@ -22,7 +21,7 @@ public class DatabaseWriteReport
 public class StartResult<T>
 {
     public bool IsStarted { get; set; }
-    public Task<T> Task { get; set; }
+    public Task<T>? Task { get; set; }
 }
 
 
@@ -75,8 +74,14 @@ public class UnboundDataWriterQueue
         _debounceQueueNotification = Utility.Debounce<int>((a) =>
         {
             var diff = a - _queueTotal;
-            ServiceLocator.MainModel.HasQueued = false;
-            ServiceLocator.ToastService.Toast(string.Format(completionMessage, diff), "");
+            if (ServiceLocator.MainModel != null)
+            {
+                ServiceLocator.MainModel.HasQueued = false;
+            }
+            if (ServiceLocator.ToastService != null)
+            {
+                ServiceLocator.ToastService.Toast(string.Format(completionMessage, diff), "");
+            }
             _queueRunning = false;
             ServiceLocator.ProgressService.CompleteTask();
             ServiceLocator.ProgressService.ClearProgress();
@@ -84,7 +89,7 @@ public class UnboundDataWriterQueue
 
             _ = ServiceLocator.FolderService.LoadFolders().ContinueWith(d =>
             {
-                if (ServiceLocator.Settings.AutoRefresh)
+                if (ServiceLocator.Settings != null && ServiceLocator.Settings.AutoRefresh)
                 {
                     ServiceLocator.SearchService.RefreshResults();
                 }
@@ -107,7 +112,7 @@ public class UnboundDataWriterQueue
         await _queueChannel.Writer.WriteAsync(job);
     }
 
-    private Task currentTask;
+    private Task? currentTask;
 
     public Task StartAsync(CancellationToken token)
     {
@@ -118,7 +123,7 @@ public class UnboundDataWriterQueue
             _queueRunning = true;
         }
 
-        return currentTask;
+        return currentTask ?? throw new InvalidOperationException("Queue task has not been started.");
     }
 
     //public abstract int Write(IReadOnlyCollection<Image> images, IReadOnlyCollection<IO.Node> nodes,
@@ -145,7 +150,9 @@ public class UnboundDataWriterQueue
             includeProperties.Add(nameof(Image.Workflow));
         }
 
-        var folderCache = ServiceLocator.DataStore.GetFolders().ToDictionary(d => d.Path);
+        var folderCache = ServiceLocator.DataStore != null
+            ? ServiceLocator.DataStore.GetFolders().ToDictionary(d => d.Path)
+            : new Dictionary<string, Folder>();
 
         int completed = 0;
 
@@ -179,7 +186,10 @@ public class UnboundDataWriterQueue
 
             if (newImages.Count == 33 || _queueChannel.Reader.Count == 0)
             {
-                completed += Write(newImages, newNodes, includeProperties, folderCache, Settings.StoreWorkflow, cancellationToken);
+                if (Write != null)
+                {
+                    completed += Write(newImages, newNodes, includeProperties, folderCache, Settings.StoreWorkflow, cancellationToken);
+                }
                 
                 // Process pending embeddings (fire-and-forget)
                 ProcessEmbeddingsAsync(_pendingEmbeddings, cancellationToken).ContinueWith(t => {
@@ -200,7 +210,10 @@ public class UnboundDataWriterQueue
                 _pendingEmbeddings.Add((fp.Path, fp.ProcessedEmbeddings));
             }
             
-            ServiceLocator.MainModel.HasQueued = true;
+            if (ServiceLocator.MainModel != null)
+            {
+                ServiceLocator.MainModel.HasQueued = true;
+            }
 
             var path = job.FileParameters.Path;
             if (path.Length > 100)
@@ -249,7 +262,7 @@ public class UnboundDataWriterQueue
         List<(string Path, List<(string, decimal, bool)> Embeddings)> pendingEmbeddings,
         CancellationToken cancellationToken)
     {
-        if (pendingEmbeddings?.Count == 0)
+        if (pendingEmbeddings == null || pendingEmbeddings.Count == 0)
             return;
 
         try
@@ -288,10 +301,10 @@ public enum QueueType
 
 public class DatabaseWriterService
 {
-    private Channel<RecordJob> _updateChannel;
-    private Channel<RecordJob> _addChannel;
+    private Channel<RecordJob>? _updateChannel;
+    private Channel<RecordJob>? _addChannel;
 
-    private CancellationTokenSource _cancellationTokenSource;
+    private CancellationTokenSource? _cancellationTokenSource;
     private Settings _settings => ServiceLocator.Settings!;
 
     private readonly UnboundDataWriterQueue _addQueue;
@@ -324,7 +337,7 @@ public class DatabaseWriterService
 
     private bool _queueRunning;
 
-    private Task _queueTask;
+    private Task? _queueTask;
 
     public Task StartQueueAsync(CancellationToken token)
     {
@@ -337,7 +350,7 @@ public class DatabaseWriterService
             _queueTask = Task.WhenAll(taskA, taskB, taskC, taskD);
             _queueRunning = true;
         }
-        return _queueTask;
+        return _queueTask ?? throw new InvalidOperationException("Queue task has not been started.");
     }
 
     public Task QueueAsync(FileParameters fileParameters, QueueType queueType, bool storeMetadata, bool storeWorkflow)
@@ -359,7 +372,7 @@ public class DatabaseWriterService
 
     public async Task QueueAddAsync(FileParameters fileParameters, bool storeMetadata, bool storeWorkflow)
     {
-        if (!_cancellationTokenSource.IsCancellationRequested)
+        if (_cancellationTokenSource?.IsCancellationRequested == false && _addChannel != null)
         {
             var job = new RecordJob()
             {
@@ -374,7 +387,7 @@ public class DatabaseWriterService
 
     public async Task QueueUpdateAsync(FileParameters fileParameters, bool storeMetadata, bool storeWorkflow)
     {
-        if (!_cancellationTokenSource.IsCancellationRequested)
+        if (_cancellationTokenSource?.IsCancellationRequested == false && _updateChannel != null)
         {
             var job = new RecordJob()
             {
@@ -389,7 +402,7 @@ public class DatabaseWriterService
 
     public async Task QueueSkipAsync(FileParameters fileParameters)
     {
-        if (!_cancellationTokenSource.IsCancellationRequested)
+        if (_cancellationTokenSource?.IsCancellationRequested == false && _updateChannel != null)
         {
             var job = new RecordJob()
             {
@@ -403,7 +416,7 @@ public class DatabaseWriterService
 
     private bool _isStarted;
     private bool _isCompleted = false;
-    private Task<DatabaseWriteReport> _currentTask;
+    private Task<DatabaseWriteReport>? _currentTask;
 
 
     public StartResult<DatabaseWriteReport> StartAsync(CancellationToken token)
@@ -452,22 +465,25 @@ public class DatabaseWriterService
 
     public void Stop()
     {
-        _cancellationTokenSource.Cancel();
-        _addChannel.Writer.Complete();
-        _updateChannel.Writer.Complete();
+        _cancellationTokenSource?.Cancel();
+        _addChannel?.Writer.Complete();
+        _updateChannel?.Writer.Complete();
     }
 
     public void Complete()
     {
-        _addChannel.Writer.Complete();
-        _updateChannel.Writer.Complete();
+        _addChannel?.Writer.Complete();
+        _updateChannel?.Writer.Complete();
     }
 
     private readonly SemaphoreSlim _lock = new SemaphoreSlim(1, 1);
 
     private void UpdateStatus()
     {
-        ServiceLocator.ProgressService.SetStatus($"Scanning: {ServiceLocator.MainModel.CurrentProgress} of {ServiceLocator.MainModel.TotalProgress}");
+        if (ServiceLocator.MainModel != null)
+        {
+            ServiceLocator.ProgressService.SetStatus($"Scanning: {ServiceLocator.MainModel.CurrentProgress} of {ServiceLocator.MainModel.TotalProgress}");
+        }
     }
 
     private async Task<int> ProcessAddTaskAsync(CancellationToken token)
@@ -490,7 +506,14 @@ public class DatabaseWriterService
 
         int added = 0;
 
-        var folderCache = ServiceLocator.DataStore.GetFolders().ToDictionary(d => d.Path);
+        var folderCache = ServiceLocator.DataStore != null
+            ? ServiceLocator.DataStore.GetFolders().ToDictionary(d => d.Path)
+            : new Dictionary<string, Folder>();
+
+        if (_addChannel == null)
+        {
+            return added;
+        }
 
         try
         {
@@ -540,7 +563,7 @@ public class DatabaseWriterService
                 }
             }
         }
-        catch (TaskCanceledException e) when (token.IsCancellationRequested)
+        catch (TaskCanceledException) when (token.IsCancellationRequested)
         {
         }
 
@@ -564,9 +587,16 @@ public class DatabaseWriterService
             includeProperties.Add(nameof(Image.Workflow));
         }
 
-        var folderCache = ServiceLocator.DataStore.GetFolders().ToDictionary(d => d.Path);
+        var folderCache = ServiceLocator.DataStore != null
+            ? ServiceLocator.DataStore.GetFolders().ToDictionary(d => d.Path)
+            : new Dictionary<string, Folder>();
 
         int updated = 0;
+
+        if (_updateChannel == null)
+        {
+            return updated;
+        }
 
         try
         {
@@ -624,7 +654,7 @@ public class DatabaseWriterService
                 }
             }
         }
-        catch (TaskCanceledException e) when (token.IsCancellationRequested)
+        catch (TaskCanceledException) when (token.IsCancellationRequested)
         {
         }
 

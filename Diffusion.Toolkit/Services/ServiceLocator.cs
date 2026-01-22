@@ -1,9 +1,5 @@
 ﻿using System;
-using System.Threading.Tasks;
-using System.Windows.Controls.Primitives;
-using System.Windows.Forms;
 using System.Windows;
-using System.Windows.Navigation;
 using System.Windows.Threading;
 using Diffusion.Common;
 using Diffusion.Database.PostgreSQL;
@@ -11,7 +7,6 @@ using Diffusion.Toolkit.Common;
 using Diffusion.Toolkit.Configuration;
 using Diffusion.Toolkit.Models;
 using Diffusion.Toolkit.Thumbnails;
-using Diffusion.Toolkit.Classes;
 using Diffusion.Tagging.Services;
 using Diffusion.Captioning.Services;
 using Diffusion.Toolkit.Services.Processing;
@@ -20,9 +15,9 @@ namespace Diffusion.Toolkit.Services;
 
 public class WindowService
 {
-    private Window _window;
+    private Window? _window;
 
-    public Window CurrentWindow => _window;
+    public Window? CurrentWindow => _window;
 
     public void SetWindow(Window window)
     {
@@ -134,7 +129,7 @@ public class ServiceLocator
         get { return _thumbnailNavigationService ??= new ThumbnailNavigationService(); }
     }
 
-    public static SearchService SearchService
+    public static SearchService? SearchService
     {
         get;
         set;
@@ -173,7 +168,7 @@ public class ServiceLocator
         get { return _progressService ??= new ProgressService(); }
     }
 
-    public static MessageService MessageService
+    public static MessageService? MessageService
     {
         get;
         set;
@@ -207,7 +202,14 @@ public class ServiceLocator
 
     public static NavigatorService NavigatorService
     {
-        get { return _navigatorService; }
+        get
+        {
+            if (_navigatorService == null)
+            {
+                throw new InvalidOperationException("NavigatorService has not been initialized. Call SetNavigatorService() before accessing this property.");
+            }
+            return _navigatorService;
+        }
     }
 
     public static FileService FileService

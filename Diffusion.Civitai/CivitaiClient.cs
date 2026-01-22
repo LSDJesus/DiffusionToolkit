@@ -112,11 +112,11 @@ public class CivitaiClient : IDisposable
                     {
                         var arr = document.RootElement.EnumerateArray();
                         var err = arr.First();
-                        string path = null;
+                        string? path = null;
 
                         if (err.TryGetProperty("message", out var messageElement))
                         {
-                            message = messageElement.GetString();
+                            message = messageElement.GetString() ?? string.Empty;
                         }
 
                         if (err.TryGetProperty("path", out var pathElement))
@@ -124,7 +124,7 @@ public class CivitaiClient : IDisposable
                             path = string.Join("/", pathElement.EnumerateArray().Select(p => p.GetString()));
                         }
 
-                        throw new CivitaiRequestException(message, path, body, response.StatusCode);
+                        throw new CivitaiRequestException(message, path ?? string.Empty, body, response.StatusCode);
                     }
                     else
                     {
@@ -142,12 +142,19 @@ public class CivitaiClient : IDisposable
         {
         }
 
+        if (results == null)
+        {
+            throw new CivitaiRequestException("Failed to deserialize response or no data returned.", System.Net.HttpStatusCode.InternalServerError);
+        }
         return results;
     }
 
     static string GetQueryString<T>(T searchParameters)
     {
         var queryString = new StringBuilder("?");
+
+        if (searchParameters == null)
+            throw new ArgumentNullException(nameof(searchParameters));
 
         // Use reflection to get properties and values from ModelSearchParameters
         var properties = searchParameters.GetType().GetProperties();

@@ -188,7 +188,6 @@ public class ImageStyleClassifier
 
     private (float Smoothness, float Complexity) AnalyzeTexture(Image<Rgb24> image)
     {
-        var varianceSum = 0f;
         var localVarianceSum = 0f;
         var sampleCount = 0;
         

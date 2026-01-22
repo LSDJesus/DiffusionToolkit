@@ -4,7 +4,6 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
-using System.Windows.Input;
 using Diffusion.Common;
 using Diffusion.Database.PostgreSQL.Models;
 using Diffusion.Toolkit.Classes;

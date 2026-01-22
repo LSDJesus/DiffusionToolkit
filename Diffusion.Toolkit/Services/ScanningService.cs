@@ -8,7 +8,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Dapper;
 using Diffusion.Common;
-using Diffusion.Common.Query;
 using Diffusion.Database.PostgreSQL;
 using Diffusion.Database.PostgreSQL.Models;
 using Diffusion.IO;
@@ -53,7 +52,7 @@ public class ScanningService
 
     public async Task CheckUnavailableFolders()
     {
-        if (ServiceLocator.MainModel.FoldersBusy) return;
+        if (ServiceLocator.MainModel == null || ServiceLocator.MainModel.FoldersBusy) return;
 
         await Task.Run(() =>
         {
@@ -176,11 +175,15 @@ public class ScanningService
                     {
                         if (folder.Id == 0)
                         {
-                            var dbEntity = ServiceLocator.DataStore.GetFolder(folder.Path);
-                            if (dbEntity != null)
+                            var dataStore = ServiceLocator.DataStore;
+                            if (dataStore != null)
                             {
-                                folder.IsScanned = true;
-                                folder.Id = dbEntity.Id;
+                                var dbEntity = dataStore.GetFolder(folder.Path);
+                                if (dbEntity != null)
+                                {
+                                    folder.IsScanned = true;
+                                    folder.Id = dbEntity.Id;
+                                }
                             }
                         }
                         ServiceLocator.FolderService.RefreshData();
@@ -216,12 +219,7 @@ public class ScanningService
             Logger.Log("ScanWatchedFolders: FolderService is null, aborting");
             return;
         }
-        
-        bool foldersUnavailable = false;
-        bool foldersRestored = false;
-
-        var unavailable = 0;
-        var added = 0;
+   
 
         ServiceLocator.ProgressService?.SetStatus(GetLocalizedText("Actions.Scanning.BeginScanning"));
 
@@ -254,7 +252,10 @@ public class ScanningService
                             break;
                         }
 
-                        ServiceLocator.ProgressService.SetStatus(gatheringFilesMessage.Replace("{path}", folder.Path));
+                        if (ServiceLocator.ProgressService != null)
+                        {
+                            ServiceLocator.ProgressService.SetStatus(gatheringFilesMessage.Replace("{path}", folder.Path));
+                        }
 
                         var ignoreFiles = updateImages ? null : folderImagesHashSet;
 
@@ -305,7 +306,7 @@ public class ScanningService
         finally
         {
             // Always clear status to prevent frozen progress bar
-            ServiceLocator.ProgressService.ClearStatus();
+            ServiceLocator.ProgressService?.ClearStatus();
         }
     }
 
@@ -326,7 +327,7 @@ public class ScanningService
         if (addedCount > 0)
         {
             Logger.Log($"ScanNewFolder: Quick scan added {addedCount} files. Starting background metadata extraction...");
-            ServiceLocator.ToastService.Toast($"{addedCount} images indexed. Extracting metadata in background...", "Scanning");
+            ServiceLocator.ToastService?.Toast($"{addedCount} images indexed. Extracting metadata in background...", "Scanning");
             
             // Refresh UI so quick-scanned images appear immediately
             ServiceLocator.SearchService.RefreshResults();
@@ -343,7 +344,10 @@ public class ScanningService
                     await DeepScanPendingImages(batchSize: 200, cancellationToken);
                     
                     Logger.Log("ScanNewFolder: Background metadata extraction complete");
-                    ServiceLocator.ToastService.Toast("Metadata extraction complete", "Scanning");
+                    if (ServiceLocator.ToastService != null)
+                    {
+                        ServiceLocator.ToastService.Toast("Metadata extraction complete", "Scanning");
+                    }
                     ServiceLocator.SearchService.RefreshResults();
                 }
                 catch (Exception ex)
@@ -355,7 +359,10 @@ public class ScanningService
         else
         {
             Logger.Log("ScanNewFolder: No new files found");
-            ServiceLocator.ToastService.Toast("No new images found", "Scanning");
+            if (ServiceLocator.ToastService != null)
+            {
+                ServiceLocator.ToastService.Toast("No new images found", "Scanning");
+            }
         }
     }
 
@@ -533,8 +540,8 @@ public class ScanningService
 
             // Extract embeddings (explicit + implicit matching)
             var embeddings = await EmbeddingExtractor.ExtractEmbeddingsAsync(
-                file.Prompt,
-                file.NegativePrompt);
+                file.Prompt ?? string.Empty,
+                file.NegativePrompt ?? string.Empty);
 
             if (embeddings?.Count > 0)
             {
@@ -963,7 +970,10 @@ public class ScanningService
         if (added == 0 && unavailable == 0)
         {
             var message = GetLocalizedText("Actions.Scanning.NoNewImages.Toast");
-            ServiceLocator.ToastService.Toast(message, scanComplete);
+            if (ServiceLocator.ToastService != null)
+            {
+                ServiceLocator.ToastService.Toast(message, scanComplete);
+            }
         }
         else
         {
@@ -989,7 +999,10 @@ public class ScanningService
 
             foreach (var message in messages.Where(m => !string.IsNullOrEmpty(m)))
             {
-                ServiceLocator.ToastService.Toast(message, scanComplete, 5);
+                if (ServiceLocator.ToastService != null)
+                {
+                    ServiceLocator.ToastService.Toast(message, scanComplete, 5);
+                }
             }
 
         }

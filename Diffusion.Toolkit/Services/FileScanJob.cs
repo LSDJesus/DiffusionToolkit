@@ -2,5 +2,5 @@
 
 public class FileScanJob
 {
-    public string Path { get; set; }
+    public required string Path { get; set; }
 }

@@ -584,7 +584,8 @@ public class WatcherService : IDisposable
 
                 if (!string.IsNullOrEmpty(modelPath) && File.Exists(modelPath))
                 {
-                    _captionService = new JoyCaptionService(modelPath, clipPath);
+                    var mmProjPath = clipPath ?? string.Empty;
+                    _captionService = new JoyCaptionService(modelPath, mmProjPath);
                 }
             }
             else if (_settings?.CaptionProvider == CaptionProviderType.OpenAICompatible)
@@ -595,7 +596,8 @@ public class WatcherService : IDisposable
 
                 if (!string.IsNullOrEmpty(baseUrl))
                 {
-                    _captionService = new HttpCaptionService(baseUrl, model, apiKey);
+                    var safeModel = model ?? "default-model";
+                    _captionService = new HttpCaptionService(baseUrl, safeModel, apiKey);
                 }
             }
             

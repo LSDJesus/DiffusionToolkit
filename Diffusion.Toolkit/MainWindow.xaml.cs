@@ -28,19 +28,14 @@ using System.Runtime.InteropServices;
 using System.Windows.Interop;
 using System.Diagnostics;
 using System.Text.Json.Serialization;
-using System.Text.RegularExpressions;
 using Diffusion.Civitai.Models;
 using WPFLocalizeExtension.Engine;
-using Diffusion.Toolkit.Controls;
 using System.Windows.Input;
-using System.Windows.Markup;
-using System.Xml;
 using Diffusion.Toolkit.Services;
 using Diffusion.Toolkit.Common;
 using Diffusion.Toolkit.Configuration;
 using Settings = Diffusion.Toolkit.Configuration.Settings;
 using Diffusion.Database.PostgreSQL.Models;
-using Image = System.Windows.Controls.Image;
 using System.Windows.Media;
 using SixLabors.ImageSharp;
 using Size = System.Windows.Size;
@@ -52,23 +47,23 @@ namespace Diffusion.Toolkit
     /// </summary>
     public partial class MainWindow : BorderlessWindow
     {
-        private readonly MainModel _model;
-        private NavigatorService _navigatorService;
+        private readonly MainModel? _model;
+        private NavigatorService? _navigatorService;
 
-        private PostgreSQLDataStore _dataStore => ServiceLocator.DataStore;
-        private Settings _settings;
+        private PostgreSQLDataStore? _dataStore => ServiceLocator.DataStore;
+        private Settings? _settings;
 
 
 
-        private Configuration<Settings> _configuration;
+        private Configuration<Settings>? _configuration;
         //private Toolkit.Settings? _settings;
 
 
-        private Search _search;
-        private Pages.Settings _settingsPage;
-        private Pages.Models _models;
+        private Search? _search;
+        private Pages.Settings? _settingsPage;
+        private Pages.Models? _models;
         private bool _tipsOpen;
-        private MessagePopupManager _messagePopupManager;
+        private MessagePopupManager? _messagePopupManager;
 
         public MainWindow()
         {
@@ -115,7 +110,7 @@ namespace Diffusion.Toolkit
                 _model.RenameFileCommand = new AsyncCommand<string>((o) => RenameImageEntry());
                 _model.OpenWithCommand = new AsyncCommand<string>((o) => OpenWith(this, o));
                 _model.Rescan = new AsyncCommand<object>(RescanTask);
-                _model.Rebuild = new AsyncCommand<object>(RebuildTask);
+                _model.Rebuild = new AsyncCommand<object?>(RebuildTask);
 
                 _model.ReloadHashes = new AsyncCommand<object>(async (o) =>
                 {
@@ -353,19 +348,34 @@ namespace Diffusion.Toolkit
             switch (s)
             {
                 case "Navigation.Folders":
-                    _model.Settings.NavigationSection.ShowFolders = !_model.Settings.NavigationSection.ShowFolders;
+                    if (_model != null && _model.Settings?.NavigationSection != null)
+                    {
+                        _model.Settings.NavigationSection.ShowFolders = !_model.Settings.NavigationSection.ShowFolders;
+                    }
                     break;
                 case "Navigation.Models":
-                    _model.Settings.NavigationSection.ShowModels = !_model.Settings.NavigationSection.ShowModels;
+                    if (_model != null && _model.Settings?.NavigationSection != null)
+                    {
+                        _model.Settings.NavigationSection.ShowModels = !_model.Settings.NavigationSection.ShowModels;
+                    }
                     break;
                 case "Navigation.Albums":
-                    _model.Settings.NavigationSection.ShowAlbums = !_model.Settings.NavigationSection.ShowAlbums;
+                    if (_model != null && _model.Settings?.NavigationSection != null)
+                    {
+                        _model.Settings.NavigationSection.ShowAlbums = !_model.Settings.NavigationSection.ShowAlbums;
+                    }
                     break;
                 case "Navigation.Queries":
-                    _model.Settings.NavigationSection.ShowQueries = !_model.Settings.NavigationSection.ShowQueries;
+                    if (_model != null && _model.Settings?.NavigationSection != null)
+                    {
+                        _model.Settings.NavigationSection.ShowQueries = !_model.Settings.NavigationSection.ShowQueries;
+                    }
                     break;
                 case "Navigation.ModelLibrary":
-                    _model.Settings.NavigationSection.ShowModelLibrary = !_model.Settings.NavigationSection.ShowModelLibrary;
+                    if (_model != null && _model.Settings?.NavigationSection != null)
+                    {
+                        _model.Settings.NavigationSection.ShowModelLibrary = !_model.Settings.NavigationSection.ShowModelLibrary;
+                    }
                     break;
             }
         }
@@ -1006,16 +1016,22 @@ namespace Diffusion.Toolkit
 
                         if (hasUpdate)
                         {
-                            var result = await _messagePopupManager.Show(GetLocalizedText("Main.Update.UpdateAvailable"), "Diffusion Toolkit", PopupButtons.YesNo);
-                            if (result == PopupResult.Yes)
+                            if (_messagePopupManager != null)
                             {
-                                CallUpdater();
+                                var result = await _messagePopupManager.Show(GetLocalizedText("Main.Update.UpdateAvailable"), "Diffusion Toolkit", PopupButtons.YesNo);
+                                if (result == PopupResult.Yes)
+                                {
+                                    CallUpdater();
+                                }
                             }
                         }
                     }
                     catch (Exception exception)
                     {
-                        await _messagePopupManager.Show(exception.Message, "Update error", PopupButtons.OK);
+                        if (_messagePopupManager != null)
+                        {
+                            await _messagePopupManager.Show(exception.Message, "Update error", PopupButtons.OK);
+                        }
                     }
                 });
             }
@@ -1040,9 +1056,12 @@ namespace Diffusion.Toolkit
                         // Wait for a bit, then show thumbnails
                         _ = Task.Delay(5000).ContinueWith(t =>
                         {
-                            ServiceLocator.SearchService.ExecuteSearch();
-                            ServiceLocator.MessageService.ShowMedium(GetLocalizedText("FirstScan.Message"),
-                                GetLocalizedText("FirstScan.Title"), PopupButtons.OK);
+                            ServiceLocator.SearchService?.ExecuteSearch();
+                            if (ServiceLocator.MessageService != null)
+                            {
+                                ServiceLocator.MessageService.ShowMedium(GetLocalizedText("FirstScan.Message"),
+                                    GetLocalizedText("FirstScan.Title"), PopupButtons.OK);
+                            }
                         });
                     }
 
@@ -1158,7 +1177,6 @@ namespace Diffusion.Toolkit
         //    }
         //}
 
-
         private void OnCurrentImageOpen(ImageViewModel obj)
         {
             //if (obj == null) return;
@@ -1248,15 +1266,15 @@ namespace Diffusion.Toolkit
         }
 
 
-        private void OnNavigate(object sender, NavigateEventArgs args)
+        private void OnNavigate(object? sender, NavigateEventArgs args)
         {
             _model.Page = args.TargetPage;
         }
 
 
         private ICollection<Model> _modelsCollection = new List<Model>();
-        private Prompts _prompts;
-        private Pages.FaceGallery _faceGallery;
+        private Prompts? _prompts;
+        private Pages.FaceGallery? _faceGallery;
         private bool _isLoadingModels = false;
 
         private void LoadModels()
@@ -1276,7 +1294,7 @@ namespace Diffusion.Toolkit
             try
             {
                 // Run the heavy file I/O operations on a background thread
-                var (modelsCollection, otherModels) = await Task.Run(() =>
+                var result = await Task.Run(() =>
                 {
                     ICollection<Model> models;
                     if (!string.IsNullOrEmpty(_settings.ModelRootPath) && Directory.Exists(_settings.ModelRootPath))
@@ -1320,7 +1338,8 @@ namespace Diffusion.Toolkit
                                             Filename = Path.GetFileNameWithoutExtension(path),
                                             Path = path,
                                             SHA256 = hash.Value.sha256,
-                                            IsLocal = true
+                                            IsLocal = true,
+                                            Hash = hash.Value.sha256 // Set Hash to SHA256 value or appropriate hash
                                         });
                                     }
                                 }
@@ -1359,6 +1378,7 @@ namespace Diffusion.Toolkit
                                         others.Add(new Model()
                                         {
                                             Filename = Path.GetFileNameWithoutExtension(versionFile.Name),
+                                            Path = versionFile.Name, // Set Path to the file name or appropriate value
                                             Hash = versionFile.Hashes.AutoV1,
                                             SHA256 = versionFile.Hashes.SHA256,
                                         });
@@ -1373,7 +1393,10 @@ namespace Diffusion.Toolkit
                     }
 
                     return (models, others);
-                });
+                }, System.Threading.CancellationToken.None);
+
+                ICollection<Model> modelsCollection = result.Item1;
+                List<Model> otherModels = result.Item2;
 
                 _modelsCollection = modelsCollection;
                 _allModels = _modelsCollection.Concat(otherModels).ToList();

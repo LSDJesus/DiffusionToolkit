@@ -8,12 +8,12 @@ namespace Diffusion.Updater
     public partial class Form1 : Form
     {
         private bool _finished = false;
-        private Release _selectedRelease;
+        private Release? _selectedRelease;
         private bool _updateSuccessful;
-        private UpdateChecker _updateChecker;
+        private UpdateChecker? _updateChecker;
 
-        private string _targetPath;
-        private string _exePath;
+        private string? _targetPath;
+        private string? _exePath;
         public Form1()
         {
             InitializeComponent();
@@ -51,8 +51,16 @@ namespace Diffusion.Updater
                 {
                     _selectedRelease = _updateChecker.LatestRelease;
 
-                    textBoxNotes.Text = $"A new version is available. Do you want to update?\r\n\r\n{_selectedRelease.name}\r\n{new string('=', _selectedRelease.name.Length)}\r\n\r\n{_selectedRelease.body}\r\n\r\n";
-                    buttonOK.Enabled = true;
+                    if (_selectedRelease != null)
+                    {
+                        textBoxNotes.Text = $"A new version is available. Do you want to update?\r\n\r\n{_selectedRelease.name}\r\n{new string('=', _selectedRelease.name.Length)}\r\n\r\n{_selectedRelease.body}\r\n\r\n";
+                        buttonOK.Enabled = true;
+                    }
+                    else
+                    {
+                        textBoxNotes.Text = "A new version is available, but release information could not be loaded.";
+                        buttonOK.Enabled = false;
+                    }
                 }
                 else
                 {
@@ -90,6 +98,9 @@ namespace Diffusion.Updater
 
             Log($"Downloading {url}...");
 
+            if (_updateChecker == null)
+                throw new InvalidOperationException("UpdateChecker is not initialized.");
+
             var stream = await _updateChecker.Client.DownloadAsync(url, token);
 
             var tempFile = Path.GetTempFileName();
@@ -102,7 +113,6 @@ namespace Diffusion.Updater
 
                 progressBar1.Value = 0;
 
-                int counter = 0;
 
                 using (var tempfs = new FileStream(tempFile, FileMode.Create, FileAccess.Write))
                 {
@@ -125,6 +135,9 @@ namespace Diffusion.Updater
 
                 Log($"Extracting...");
 
+                if (_targetPath == null)
+                    throw new InvalidOperationException("Target path is not set.");
+
                 using (var zip = ZipFile.Open(tempFile, ZipArchiveMode.Read))
                 {
                     zip.ExtractToDirectory(_targetPath, true);
@@ -144,14 +157,14 @@ namespace Diffusion.Updater
             if (_finished)
             {
                 Close();
-                if (_updateSuccessful)
+                if (_updateSuccessful && !string.IsNullOrEmpty(_exePath))
                 {
                     Process.Start(_exePath);
                 }
             }
             else
             {
-                _updateChecker.Cancel();
+                _updateChecker?.Cancel();
             }
         }
 
@@ -179,6 +192,12 @@ namespace Diffusion.Updater
                 buttonOK.Enabled = false;
 
                 TryKillProcess();
+
+                if (_selectedRelease == null || _selectedRelease.assets == null || !_selectedRelease.assets.Any() || _updateChecker == null)
+                {
+                    MessageBox.Show("Update information is incomplete or missing.", "Diffusion Updater", MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
+                    return;
+                }
 
                 await TryUpdate(_selectedRelease.assets[0], _updateChecker.CancellationToken);
 

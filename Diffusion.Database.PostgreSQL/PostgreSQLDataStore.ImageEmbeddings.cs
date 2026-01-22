@@ -34,7 +34,7 @@ public partial class PostgreSQLDataStore : IEmbeddingRegistry
             if (!imageId.HasValue)
                 return;
 
-            await InsertImageEmbeddingsAsync(imageId.Value, embeddings, cancellationToken);
+            await InsertImageEmbeddingsAsync(imageId.Value, embeddings ?? new List<(string Name, decimal Weight, bool IsImplicit)>(), cancellationToken);
         }
         catch (Exception ex)
         {
@@ -50,7 +50,7 @@ public partial class PostgreSQLDataStore : IEmbeddingRegistry
         List<(string Name, decimal Weight, bool IsImplicit)> embeddings,
         CancellationToken cancellationToken = default)
     {
-        if (embeddings?.Count == 0)
+        if (embeddings == null || embeddings.Count == 0)
             return;
 
         try
@@ -318,12 +318,12 @@ public partial class PostgreSQLDataStore : IEmbeddingRegistry
                 sql, new { EmbeddingName = embeddingName })
                 .ConfigureAwait(false);
 
-            return result;
+            return result ?? new EmbeddingRegistryDto();
         }
         catch (Exception ex)
         {
             Logger.Log($"GetEmbeddingMetadataAsync failed: {ex.Message}");
-            return null;
+            return new EmbeddingRegistryDto();
         }
     }
 }
@@ -335,7 +335,7 @@ public class ImageEmbeddingDto
 {
     public int Id { get; set; }
     public int ImageId { get; set; }
-    public string EmbeddingName { get; set; }
+    public string? EmbeddingName { get; set; }
     public decimal Weight { get; set; } = 1.0m;
     public bool IsImplicit { get; set; }
     public DateTime CreatedAt { get; set; }
@@ -346,7 +346,7 @@ public class ImageEmbeddingDto
 /// </summary>
 public class EmbeddingStatistic
 {
-    public string EmbeddingName { get; set; }
+    public string? EmbeddingName { get; set; }
     public int ImageCount { get; set; }
     public decimal AverageWeight { get; set; }
     public int ImplicitCount { get; set; }
@@ -360,14 +360,14 @@ public class EmbeddingRegistryDto
 {
     public int Id { get; set; }
     public int? CivitaiId { get; set; }
-    public string EmbeddingName { get; set; }
-    public string Description { get; set; }
-    public string TriggerPhrase { get; set; }
-    public string BaseModel { get; set; }
-    public string[] TrainedWords { get; set; }
+    public string? EmbeddingName { get; set; }
+    public string? Description { get; set; }
+    public string? TriggerPhrase { get; set; }
+    public string? BaseModel { get; set; }
+    public string[]? TrainedWords { get; set; }
     public bool Nsfw { get; set; }
-    public string Author { get; set; }
-    public string CivitaiMetadata { get; set; }
+    public string? Author { get; set; }
+    public string? CivitaiMetadata { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 }

@@ -11,11 +11,17 @@ namespace Diffusion.Toolkit.Services;
 
 public class ProgressService
 {
-    private CancellationTokenSource _progressCancellationTokenSource;
-    private Dispatcher _dispatcher => ServiceLocator.Dispatcher;
+    private CancellationTokenSource? _progressCancellationTokenSource;
+    private Dispatcher _dispatcher
+    {
+        get
+        {
+            return ServiceLocator.Dispatcher ?? throw new InvalidOperationException("ServiceLocator.Dispatcher is not initialized.");
+        }
+    }
 
     private SemaphoreSlim _syncLock = new SemaphoreSlim(1, 1);
-    public CancellationToken CancellationToken => _progressCancellationTokenSource.Token;
+    public CancellationToken CancellationToken => _progressCancellationTokenSource?.Token ?? CancellationToken.None;
 
     private string GetLocalizedText(string key)
     {
@@ -31,7 +37,10 @@ public class ProgressService
         await _syncLock.WaitAsync();
         try
         {
-            ServiceLocator.MainModel.HasQueued = true;
+            if (ServiceLocator.MainModel != null)
+            {
+                ServiceLocator.MainModel.HasQueued = true;
+            }
         }
         finally
         {
@@ -44,7 +53,7 @@ public class ProgressService
         await _syncLock.WaitAsync();
         try
         {
-            if (ServiceLocator.MainModel.IsBusy)
+            if (ServiceLocator.MainModel != null && ServiceLocator.MainModel.IsBusy)
             {
                 await ServiceLocator.MessageService.Show(GetLocalizedText("Common.MessageBox.OperationInProgress"), GetLocalizedText("Common.MessageBox.Title"), PopupButtons.OK);
                 return false;
@@ -52,7 +61,13 @@ public class ProgressService
 
             _progressCancellationTokenSource = new CancellationTokenSource();
 
-            _dispatcher.Invoke(() => { ServiceLocator.MainModel.IsBusy = true; });
+            _dispatcher.Invoke(() =>
+            {
+                if (ServiceLocator.MainModel != null)
+                {
+                    ServiceLocator.MainModel.IsBusy = true;
+                }
+            });
 
             return true;
         }
@@ -66,13 +81,16 @@ public class ProgressService
     {
         _dispatcher.Invoke(() =>
         {
-            ServiceLocator.MainModel.IsBusy = false;
+            if (ServiceLocator.MainModel != null)
+            {
+                ServiceLocator.MainModel.IsBusy = false;
+            }
         });
     }
 
     public async Task WaitForCompletion()
     {
-        while (ServiceLocator.MainModel.IsBusy)
+        while (ServiceLocator.MainModel != null && ServiceLocator.MainModel.IsBusy)
         {
             await Task.Delay(500);
         }
@@ -80,7 +98,7 @@ public class ProgressService
 
     public void Cancel()
     {
-        _progressCancellationTokenSource.Cancel();
+        _progressCancellationTokenSource?.Cancel();
     }
 
     public async Task<bool> CancelTask()
@@ -89,7 +107,7 @@ public class ProgressService
 
         if (dialogResult == PopupResult.Yes)
         {
-            _progressCancellationTokenSource.Cancel();
+            _progressCancellationTokenSource?.Cancel();
             return true;
         }
 
@@ -100,8 +118,11 @@ public class ProgressService
     {
         _dispatcher.Invoke(() =>
         {
-            ServiceLocator.MainModel.TotalProgress = count;
-            ServiceLocator.MainModel.CurrentProgress = 0;
+            if (ServiceLocator.MainModel != null)
+            {
+                ServiceLocator.MainModel.TotalProgress = count;
+                ServiceLocator.MainModel.CurrentProgress = 0;
+            }
         });
     }
 
@@ -109,7 +130,10 @@ public class ProgressService
     {
         _dispatcher.Invoke(() =>
         {
-            ServiceLocator.MainModel.TotalProgress = 0;
+            if (ServiceLocator.MainModel != null)
+            {
+                ServiceLocator.MainModel.TotalProgress = 0;
+            }
         });
     }
 
@@ -119,7 +143,10 @@ public class ProgressService
     {
         _dispatcher.Invoke(() =>
         {
-            ServiceLocator.MainModel.TotalProgress += count;
+            if (ServiceLocator.MainModel != null)
+            {
+                ServiceLocator.MainModel.TotalProgress += count;
+            }
         });
     }
 
@@ -127,12 +154,15 @@ public class ProgressService
     {
         _dispatcher.Invoke(() =>
         {
-            ServiceLocator.MainModel.CurrentProgress += count;
-            //if (ServiceLocator.MainModel.CurrentProgress == ServiceLocator.MainModel.ProgressTarget)
-            //{
-            //    ClearProgress();
-            //    CompleteTask();
-            //}
+            if (ServiceLocator.MainModel != null)
+            {
+                ServiceLocator.MainModel.CurrentProgress += count;
+                //if (ServiceLocator.MainModel.CurrentProgress == ServiceLocator.MainModel.ProgressTarget)
+                //{
+                //    ClearProgress();
+                //    CompleteTask();
+                //}
+            }
         });
     }
 
@@ -145,10 +175,13 @@ public class ProgressService
     {
         _dispatcher.Invoke(() =>
         {
-            ServiceLocator.MainModel.CurrentProgress = value;
-            if (statusFormat != null)
+            if (ServiceLocator.MainModel != null)
             {
-                ServiceLocator.MainModel.Status = statusFormat.Replace("{current}", value.ToString()).Replace("{total}", ServiceLocator.MainModel.TotalProgress.ToString());
+                ServiceLocator.MainModel.CurrentProgress = value;
+                if (statusFormat != null)
+                {
+                    ServiceLocator.MainModel.Status = statusFormat.Replace("{current}", value.ToString()).Replace("{total}", ServiceLocator.MainModel.TotalProgress.ToString());
+                }
             }
         });
     }
@@ -157,8 +190,11 @@ public class ProgressService
     {
         _dispatcher.Invoke(() =>
         {
-            ServiceLocator.MainModel.TotalProgress = 100;
-            ServiceLocator.MainModel.CurrentProgress = 0;
+            if (ServiceLocator.MainModel != null)
+            {
+                ServiceLocator.MainModel.TotalProgress = 100;
+                ServiceLocator.MainModel.CurrentProgress = 0;
+            }
         });
     }
 
@@ -166,7 +202,10 @@ public class ProgressService
     {
         _dispatcher.Invoke(() =>
         {
-            ServiceLocator.MainModel.Status = status;
+            if (ServiceLocator.MainModel != null)
+            {
+                ServiceLocator.MainModel.Status = status;
+            }
         });
     }
 
@@ -174,7 +213,10 @@ public class ProgressService
     {
         _dispatcher.Invoke(() =>
         {
-            ServiceLocator.MainModel.Status = "";
+            if (ServiceLocator.MainModel != null)
+            {
+                ServiceLocator.MainModel.Status = "";
+            }
         });
     }
 }

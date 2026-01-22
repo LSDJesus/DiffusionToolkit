@@ -86,15 +86,16 @@ public static class SearchControlModelExtensions
         model.UseUnavailable = filter.UseUnavailable;
         model.Unavailable = filter.Unavailable;
 
-        model.NodeFilters = new ObservableCollection<Controls.NodeFilter>(filter.NodeFilters.Select(d => new Controls.NodeFilter()
-        {
-            IsActive = d.IsActive,
-            Operation = d.Operation,
-            Node = d.Node,
-            Property = d.Property,
-            Comparison = d.Comparison,
-            Value = d.Value,
-        }));
+        model.NodeFilters = new ObservableCollection<Controls.NodeFilter>(
+            (filter.NodeFilters ?? Enumerable.Empty<NodeFilter>()).Select(d => new Controls.NodeFilter()
+            {
+                IsActive = d.IsActive,
+                Operation = d.Operation,
+                Node = d.Node,
+                Property = d.Property,
+                Comparison = d.Comparison,
+                Value = d.Value,
+            }));
 
         return model;
     }

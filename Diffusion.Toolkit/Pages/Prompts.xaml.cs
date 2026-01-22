@@ -8,16 +8,12 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Controls;
 using System.Windows.Input;
-using Diffusion.Database;
 using Diffusion.Database.PostgreSQL;
-using Diffusion.Database.PostgreSQL.Models;
 using PgUsedPrompt = Diffusion.Database.PostgreSQL.UsedPrompt;
 using Diffusion.Toolkit.Classes;
-using Diffusion.Toolkit.Common;
 using Diffusion.Toolkit.Controls;
 using Diffusion.Toolkit.Models;
 using Diffusion.Toolkit.Services;
-using Diffusion.Toolkit.Thumbnails;
 
 namespace Diffusion.Toolkit.Pages
 {
@@ -26,9 +22,9 @@ namespace Diffusion.Toolkit.Pages
     /// </summary>
     public partial class Prompts : NavigationPage
     {
-        private PostgreSQLDataStore _dataStore => ServiceLocator.DataStore;
-        private Configuration.Settings _settings => ServiceLocator.Settings;
-        private PromptsModel _model;
+        private PostgreSQLDataStore? _dataStore => ServiceLocator.DataStore;
+        private Configuration.Settings? _settings => ServiceLocator.Settings;
+        private PromptsModel _model = null!;
         private bool _isLoaded;
 
         public Prompts() : base("prompts")
@@ -55,8 +51,6 @@ namespace Diffusion.Toolkit.Pages
 
             _model.PropertyChanged += ModelOnPropertyChanged;
         }
-
-        public Configuration.Settings Settings { get; set; }
 
         private void ModelOnPropertyChanged(object? sender, PropertyChangedEventArgs e)
         {
@@ -91,7 +85,7 @@ namespace Diffusion.Toolkit.Pages
             Task.Run(() =>
             {
                 _model.IsBusy = true;
-                var prompts = _dataStore.SearchPrompts(_model.PromptQuery, _model.FullTextPrompt, _model.PromptDistance);
+                var prompts = _dataStore?.SearchPrompts(_model.PromptQuery, _model.FullTextPrompt, _model.PromptDistance) ?? Enumerable.Empty<PgUsedPrompt>();
                 _model.Prompts = new ObservableCollection<PgUsedPrompt>(prompts);
                 _model.IsBusy = false;
             });
@@ -102,7 +96,7 @@ namespace Diffusion.Toolkit.Pages
             Task.Run(() =>
             {
                 _model.IsBusy = true;
-                var prompts = _dataStore.SearchNegativePrompts(_model.NegativePromptQuery, _model.NegativeFullTextPrompt, _model.NegativePromptDistance);
+                var prompts = _dataStore?.SearchNegativePrompts(_model.NegativePromptQuery, _model.NegativeFullTextPrompt, _model.NegativePromptDistance) ?? Enumerable.Empty<PgUsedPrompt>();
                 _model.NegativePrompts = new ObservableCollection<PgUsedPrompt>(prompts);
                 _model.IsBusy = false;
             });
@@ -122,8 +116,8 @@ namespace Diffusion.Toolkit.Pages
 
             _model.PromptsResults.ResultStatus = "Loading...";
 
-            var count = _dataStore.CountPrompt(query);
-            var size = _dataStore.CountPromptFileSize(query);
+            var count = _dataStore?.CountPrompt(query) ?? 0;
+            var size = _dataStore?.CountPromptFileSize(query) ?? 0;
 
             _model.PromptsResults.IsEmpty = count == 0;
 
@@ -132,7 +126,7 @@ namespace Diffusion.Toolkit.Pages
                 //_model.CurrentImage.;
             }
 
-            _model.PromptsResults.Pages = count / _settings.PageSize + (count % _settings.PageSize > 1 ? 1 : 0);
+            _model.PromptsResults.Pages = count / (_settings?.PageSize ?? 100) + (count % (_settings?.PageSize ?? 100) > 1 ? 1 : 0);
 
             float fsize = size;
 
@@ -182,6 +176,8 @@ namespace Diffusion.Toolkit.Pages
 
         private void LoadMatches()
         {
+            if (_model.SelectedPrompt == null) return;
+
             Dispatcher.Invoke(() =>
             {
                 _model.IsBusy = true;
@@ -206,12 +202,11 @@ namespace Diffusion.Toolkit.Pages
 
             if (showImages)
             {
-                matches = _dataStore
-                    .SearchPrompt(query, _settings.PageSize,
-                        _settings.PageSize * (page - 1),
+                matches = _dataStore?.SearchPrompt(query, _settings?.PageSize ?? 100,
+                        (_settings?.PageSize ?? 100) * (page - 1),
                         _model.PromptsResults.SortBy,
                         _model.PromptsResults.SortDirection
-                    );
+                    ) ?? Enumerable.Empty<ImageView>();
             }
 
 

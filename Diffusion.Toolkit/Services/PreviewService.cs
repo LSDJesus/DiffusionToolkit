@@ -8,7 +8,7 @@ public class PreviewService
 {
     private PreviewWindow? _previewWindow;
 
-    private Window _owner;
+    private Window? _owner;
 
     public void SetOwner(Window owner)
     {

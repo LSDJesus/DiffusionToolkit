@@ -6,7 +6,6 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
-using System.Windows.Input;
 using Diffusion.Common;
 using Diffusion.IO;
 using Diffusion.Toolkit.Configuration;
@@ -21,10 +20,10 @@ public class ScanCompletionEvent
 
 public class MetadataScannerService
 {
-    private Channel<FileScanJob> _channel;
+    private Channel<FileScanJob>? _channel;
     private Channel<FileScanJob> _queueChannel = Channel.CreateUnbounded<FileScanJob>();
 
-    private CancellationTokenSource _cancellationTokenSource;
+    private CancellationTokenSource? _cancellationTokenSource;
 
     private readonly int _degreeOfParallelism = 2;
 
@@ -38,40 +37,44 @@ public class MetadataScannerService
         if (!dt.IsStarted)
         {
             // Fire-and-forget: continuation runs asynchronously after database write completes
-            _ = dt.Task.ContinueWith(d =>
+            if (dt.Task != null)
             {
-                var message = new List<string>();
-                if (d.Result.Added > 0)
+                _ = dt.Task.ContinueWith(d =>
                 {
-                    message.Add($"{d.Result.Added} images added");
-                }
-                if (d.Result.Updated > 0)
-                {
-                    message.Add($"{d.Result.Updated} images updated");
-                }
-                if (d.Result is { Added: 0, Updated: 0 })
-                {
-                    message.Add("No images were found");
-                }
-
-                var toast = string.Join("\r\n", message);
-
-                ServiceLocator.ToastService.Toast(toast, "");
-                scanCompletionEvent?.OnDatabaseWriteCompleted?.Invoke();
-                ServiceLocator.ProgressService.CompleteTask();
-                ServiceLocator.ProgressService.ClearProgress();
-                ServiceLocator.ProgressService.SetStatus("");
-
-                _ = ServiceLocator.FolderService.LoadFolders().ContinueWith(d =>
-                {
-                    if (ServiceLocator.Settings.AutoRefresh)
+                    var message = new List<string>();
+                    if (d.Result.Added > 0)
                     {
-                        ServiceLocator.SearchService.RefreshResults();
+                        message.Add($"{d.Result.Added} images added");
                     }
+                    if (d.Result.Updated > 0)
+                    {
+                        message.Add($"{d.Result.Updated} images updated");
+                    }
+                    if (d.Result is { Added: 0, Updated: 0 })
+                    {
+                        message.Add("No images were found");
+                    }
+
+                    var toast = string.Join("\r\n", message);
+
+                    if (ServiceLocator.ToastService != null)
+                    {
+                        ServiceLocator.ToastService.Toast(toast, "");
+                    }
+                    scanCompletionEvent?.OnDatabaseWriteCompleted?.Invoke();
+                    ServiceLocator.ProgressService.CompleteTask();
+                    ServiceLocator.ProgressService.ClearProgress();
+                    ServiceLocator.ProgressService.SetStatus("");
+
+                    _ = ServiceLocator.FolderService.LoadFolders().ContinueWith(d =>
+                    {
+                        if (ServiceLocator.Settings != null && ServiceLocator.Settings.AutoRefresh)
+                        {
+                            ServiceLocator.SearchService.RefreshResults();
+                        }
+                    });
                 });
-
-
-            });
+            }
         }
 
         var mt = StartAsync(cancellationToken);
@@ -80,17 +83,24 @@ public class MetadataScannerService
         if (!mt.IsStarted)
         {
             // Fire-and-forget: continuation runs asynchronously after metadata scan completes
-            _ = mt.Task.ContinueWith(d =>
+            if (mt.Task != null)
             {
-                scanCompletionEvent?.OnMetadataCompleted?.Invoke();
-                ServiceLocator.DatabaseWriterService.Complete();
-            });
+                _ = mt.Task.ContinueWith(d =>
+                {
+                    scanCompletionEvent?.OnMetadataCompleted?.Invoke();
+                    ServiceLocator.DatabaseWriterService.Complete();
+                });
+            }
         }
 
         var i = 0;
 
         foreach (var path in paths)
         {
+            if (_channel == null)
+            {
+                throw new InvalidOperationException("_channel is not initialized. Call StartAsync() before queuing jobs.");
+            }
             await _channel.Writer.WriteAsync(new FileScanJob() { Path = path });
 
             i++;
@@ -104,7 +114,10 @@ public class MetadataScannerService
         ServiceLocator.ProgressService.AddTotal(i);
 
 
-        _channel.Writer.Complete();
+        if (_channel != null)
+        {
+            _channel.Writer.Complete();
+        }
     }
 
     private bool _queueRunning;
@@ -130,7 +143,7 @@ public class MetadataScannerService
 
     private bool _isStarted;
     private bool _isCompleted;
-    private Task<int> _currentTask;
+    private Task<int>? _currentTask;
 
     public StartResult<int> StartAsync(CancellationToken token)
     {
@@ -173,13 +186,16 @@ public class MetadataScannerService
 
     public void Stop()
     {
-        _cancellationTokenSource.Cancel();
-        _channel.Writer.Complete();
+        _cancellationTokenSource?.Cancel();
+        _channel?.Writer.Complete();
     }
 
     public void Close()
     {
-        _channel.Writer.Complete();
+        if (_channel != null)
+        {
+            _channel.Writer.Complete();
+        }
     }
 
 
@@ -188,6 +204,12 @@ public class MetadataScannerService
         Debug.WriteLine($"Entering ProcessTaskAsync");
 
         var count = 0;
+
+        if (_channel == null)
+        {
+            Debug.WriteLine("_channel is null in ProcessTaskAsync");
+            return count;
+        }
 
         while (await _channel.Reader.WaitToReadAsync(token))
         {
@@ -201,32 +223,41 @@ public class MetadataScannerService
 
                     count++;
 
-                    // Only check for hash matches if hash is not null
-                    if (fileParameters.Hash != null)
+                    // Only check for hash matches if fileParameters and hash are not null
+                    if (fileParameters != null && fileParameters.Hash != null)
                     {
-                        var hashMatches = ServiceLocator.DataStore.GetImageIdByHash(fileParameters.Hash);
-
-                        if (hashMatches.Any())
+                        if (ServiceLocator.DataStore != null)
                         {
-                            var moved = hashMatches.FirstOrDefault(d => !File.Exists(d.Path));
+                            var hashMatches = ServiceLocator.DataStore.GetImageIdByHash(fileParameters.Hash);
 
-                            if (moved != null)
+                            if (hashMatches.Any())
                             {
-                                ServiceLocator.DataStore.UpdateImagePath(moved.Id, job.Path);
+                                var moved = hashMatches.FirstOrDefault(d => !File.Exists(d.Path));
 
-                                await ServiceLocator.DatabaseWriterService.QueueUpdateAsync(fileParameters, _settings.StoreMetadata, _settings.StoreWorkflow);
-                                continue;
+                                if (moved != null)
+                                {
+                                    ServiceLocator.DataStore.UpdateImagePath(moved.Id, job.Path);
+
+                                    await ServiceLocator.DatabaseWriterService.QueueUpdateAsync(fileParameters, _settings.StoreMetadata, _settings.StoreWorkflow);
+                                    continue;
+                                }
                             }
                         }
                     }
 
-                    if (ServiceLocator.DataStore.ImageExists(job.Path))
+                    if (ServiceLocator.DataStore != null && ServiceLocator.DataStore.ImageExists(job.Path))
                     {
-                        await ServiceLocator.DatabaseWriterService.QueueUpdateAsync(fileParameters, _settings.StoreMetadata, _settings.StoreWorkflow);
+                        if (fileParameters != null)
+                        {
+                            await ServiceLocator.DatabaseWriterService.QueueUpdateAsync(fileParameters, _settings.StoreMetadata, _settings.StoreWorkflow);
+                        }
                     }
                     else
                     {
-                        await ServiceLocator.DatabaseWriterService.QueueAddAsync(fileParameters, _settings.StoreMetadata, _settings.StoreWorkflow);
+                        if (fileParameters != null)
+                        {
+                            await ServiceLocator.DatabaseWriterService.QueueAddAsync(fileParameters, _settings.StoreMetadata, _settings.StoreWorkflow);
+                        }
                     }
                 }
                 else
@@ -268,7 +299,7 @@ public class MetadataScannerService
 
                     count++;
 
-                    if (fileParameters.Hash != null)
+                    if (fileParameters != null && fileParameters.Hash != null && ServiceLocator.DataStore != null)
                     {
                         var hashMatches = ServiceLocator.DataStore.GetImageIdByHash(fileParameters.Hash);
 
@@ -287,13 +318,19 @@ public class MetadataScannerService
                         }
                     }
 
-                    if (ServiceLocator.DataStore.ImageExists(job.Path))
+                    if (ServiceLocator.DataStore != null && ServiceLocator.DataStore.ImageExists(job.Path))
                     {
-                        await ServiceLocator.DatabaseWriterService.QueueAsync(fileParameters, QueueType.Update, _settings.StoreMetadata, _settings.StoreWorkflow);
+                        if (fileParameters != null)
+                        {
+                            await ServiceLocator.DatabaseWriterService.QueueAsync(fileParameters, QueueType.Update, _settings.StoreMetadata, _settings.StoreWorkflow);
+                        }
                     }
                     else
                     {
-                        await ServiceLocator.DatabaseWriterService.QueueAsync(fileParameters, QueueType.Add, _settings.StoreMetadata, _settings.StoreWorkflow);
+                        if (fileParameters != null)
+                        {
+                            await ServiceLocator.DatabaseWriterService.QueueAsync(fileParameters, QueueType.Add, _settings.StoreMetadata, _settings.StoreWorkflow);
+                        }
                     }
 
 
