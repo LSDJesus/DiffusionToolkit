@@ -198,7 +198,6 @@ public class MainModel : BaseNotify
         _toggleAutoAdvance = null!;
         _clearModelsCommand = null!;
         _toastMessage = string.Empty;
-        _showSettingsCommand = null!;
         _queries = new ObservableCollection<QueryModel>();
         _renameQueryCommand = null!;
         _removeQueryCommand = null!;

@@ -78,8 +78,27 @@ public partial class PostgreSQLDataStore
     {
         await using var conn = await OpenConnectionAsync().ConfigureAwait(false);
 
+        // Exclude vector columns to avoid "Reading as 'System.Object' is not supported for fields having DataTypeName 'public.vector'" error
         var sql = @"
-            SELECT i2.*
+            SELECT 
+                i2.id, i2.root_folder_id, i2.folder_id, i2.path, i2.file_name,
+                i2.prompt, i2.negative_prompt, i2.steps, i2.sampler, i2.cfg_scale,
+                i2.seed, i2.width, i2.height, i2.model_hash, i2.model,
+                i2.batch_size, i2.batch_pos, i2.created_date, i2.modified_date,
+                i2.custom_tags, i2.rating, i2.favorite, i2.for_deletion, i2.nsfw,
+                i2.unavailable, i2.aesthetic_score, i2.hyper_network, i2.hyper_network_strength,
+                i2.clip_skip, i2.ensd, i2.file_size, i2.no_metadata, i2.workflow, i2.workflow_id,
+                i2.has_error, i2.hash, i2.viewed_date, i2.touched_date,
+                i2.prompt_embedding_id, i2.negative_prompt_embedding_id, i2.image_embedding_id,
+                i2.metadata_hash, i2.embedding_source_id, i2.is_embedding_representative,
+                i2.needs_visual_embedding, i2.is_upscaled, i2.base_image_id,
+                i2.generated_tags, i2.loras, i2.vae, i2.refiner_model, i2.refiner_switch,
+                i2.upscaler, i2.upscale_factor, i2.hires_steps, i2.hires_upscaler,
+                i2.hires_upscale, i2.denoising_strength, i2.controlnets,
+                i2.ip_adapter, i2.ip_adapter_strength, i2.wildcards_used,
+                i2.generation_time_seconds, i2.scheduler,
+                i2.duration_ms, i2.video_codec, i2.audio_codec, i2.frame_rate,
+                i2.bitrate, i2.is_video
             FROM image i1
             JOIN image i2 ON 
                 i1.seed = i2.seed

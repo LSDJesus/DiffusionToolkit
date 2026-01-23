@@ -5,11 +5,9 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
-using Diffusion.Toolkit.Models;
 using Diffusion.Toolkit.Services;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Formats.Webp;
-using SixLabors.ImageSharp.Processing;
 using Dapper;
 
 namespace Diffusion.Toolkit.Windows
