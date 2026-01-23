@@ -1,6 +1,7 @@
--- Consolidated PostgreSQL Schema V1
+-- Consolidated PostgreSQL Schema - Current Production State
 -- Complete schema for Diffusion Toolkit with pgvector support
--- Combines all historical migrations (V1-V14) into single initial setup
+-- Includes: Base schema + Embeddings + Tagging + Captions + Civitai metadata
+-- Last updated: 2026-01-21
 
 -- Enable required extensions
 CREATE EXTENSION IF NOT EXISTS vector;
@@ -65,6 +66,17 @@ CREATE TABLE IF NOT EXISTS image (
     unavailable BOOLEAN DEFAULT FALSE,
     viewed_date TIMESTAMP,
     touched_date TIMESTAMP,
+    
+    -- Civitai metadata (from JSON sidecar files)
+    civitai_image_id BIGINT,
+    civitai_post_id BIGINT,
+    civitai_username VARCHAR(255),
+    civitai_nsfw_level VARCHAR(50),
+    civitai_browsing_level INTEGER,
+    civitai_base_model VARCHAR(255),
+    civitai_created_at TIMESTAMP,
+    civitai_image_url TEXT,
+    civitai_like_count INTEGER,
     
     -- Quality metrics
     aesthetic_score DECIMAL(4, 2),
@@ -421,3 +433,332 @@ CREATE TABLE IF NOT EXISTS thumbnail (
     created_at TIMESTAMP DEFAULT NOW(),
     UNIQUE(path, size)
 );
+
+-- =============================================================================
+-- DAAM (DIFFUSION ATTENTIVE ATTRIBUTION MAPS)
+-- =============================================================================
+-- Stores cross-attention heatmaps for semantic understanding of generated images
+
+CREATE TABLE IF NOT EXISTS daam_heatmap (
+    id SERIAL PRIMARY KEY,
+    image_id INTEGER NOT NULL REFERENCES image(id) ON DELETE CASCADE,
+    
+    -- Token information
+    token TEXT NOT NULL,
+    token_index INTEGER NOT NULL,
+    is_negative BOOLEAN DEFAULT FALSE,
+    
+    -- Heatmap data
+    heatmap_width INTEGER NOT NULL,
+    heatmap_height INTEGER NOT NULL,
+    heatmap_data BYTEA NOT NULL,
+    compression_type TEXT DEFAULT 'zlib',
+    
+    -- Statistical metadata
+    max_attention REAL NOT NULL,
+    mean_attention REAL NOT NULL,
+    total_attention REAL NOT NULL,
+    coverage_area REAL NOT NULL,
+    
+    -- Spatial bounds
+    bbox_x INTEGER,
+    bbox_y INTEGER,
+    bbox_width INTEGER,
+    bbox_height INTEGER,
+    
+    -- DAAM generation metadata
+    sampling_config JSONB,
+    timestep_range TEXT,
+    layer_aggregation TEXT DEFAULT 'mean',
+    
+    created_date TIMESTAMP DEFAULT NOW(),
+    CONSTRAINT unique_token_per_image UNIQUE (image_id, token_index, is_negative)
+);
+
+CREATE INDEX IF NOT EXISTS idx_daam_heatmap_image_id ON daam_heatmap(image_id);
+CREATE INDEX IF NOT EXISTS idx_daam_heatmap_token ON daam_heatmap(token);
+CREATE INDEX IF NOT EXISTS idx_daam_heatmap_is_negative ON daam_heatmap(is_negative);
+CREATE INDEX IF NOT EXISTS idx_daam_heatmap_max_attention ON daam_heatmap(max_attention DESC);
+
+CREATE TABLE IF NOT EXISTS daam_semantic_group (
+    id SERIAL PRIMARY KEY,
+    image_id INTEGER NOT NULL REFERENCES image(id) ON DELETE CASCADE,
+    
+    group_name TEXT NOT NULL,
+    member_tokens TEXT[] NOT NULL,
+    is_negative BOOLEAN DEFAULT FALSE,
+    
+    merged_heatmap_data BYTEA NOT NULL,
+    heatmap_width INTEGER NOT NULL,
+    heatmap_height INTEGER NOT NULL,
+    compression_type TEXT DEFAULT 'zlib',
+    
+    attention_density REAL NOT NULL,
+    total_attention REAL NOT NULL,
+    coverage_area REAL NOT NULL,
+    auto_weight REAL NOT NULL,
+    
+    bbox_x INTEGER,
+    bbox_y INTEGER,
+    bbox_width INTEGER,
+    bbox_height INTEGER,
+    
+    overlap_threshold REAL DEFAULT 0.9,
+    merge_count INTEGER DEFAULT 1,
+    
+    created_date TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_daam_semantic_group_image_id ON daam_semantic_group(image_id);
+CREATE INDEX IF NOT EXISTS idx_daam_semantic_group_name ON daam_semantic_group(group_name);
+CREATE INDEX IF NOT EXISTS idx_daam_semantic_group_density ON daam_semantic_group(attention_density DESC);
+
+CREATE TABLE IF NOT EXISTS daam_spatial_index (
+    id SERIAL PRIMARY KEY,
+    image_id INTEGER NOT NULL REFERENCES image(id) ON DELETE CASCADE,
+    token TEXT NOT NULL,
+    
+    grid_size INTEGER DEFAULT 4,
+    grid_cell_id INTEGER NOT NULL,
+    cell_attention REAL NOT NULL,
+    
+    CONSTRAINT unique_token_cell_per_image UNIQUE (image_id, token, grid_cell_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_daam_spatial_token ON daam_spatial_index(token);
+CREATE INDEX IF NOT EXISTS idx_daam_spatial_cell ON daam_spatial_index(grid_cell_id);
+CREATE INDEX IF NOT EXISTS idx_daam_spatial_attention ON daam_spatial_index(cell_attention DESC);
+
+-- DAAM helper functions
+CREATE OR REPLACE FUNCTION find_images_by_token_location(
+    query_token TEXT,
+    grid_cells INTEGER[],
+    min_attention REAL DEFAULT 0.3,
+    max_results INTEGER DEFAULT 100
+)
+RETURNS TABLE (
+    image_id INTEGER,
+    total_attention REAL,
+    coverage_cells INTEGER
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        dsi.image_id,
+        SUM(dsi.cell_attention) as total_attention,
+        COUNT(DISTINCT dsi.grid_cell_id) as coverage_cells
+    FROM 
+        daam_spatial_index dsi
+    WHERE 
+        dsi.token = query_token
+        AND dsi.grid_cell_id = ANY(grid_cells)
+        AND dsi.cell_attention >= min_attention
+    GROUP BY 
+        dsi.image_id
+    HAVING 
+        COUNT(DISTINCT dsi.grid_cell_id) >= 1
+    ORDER BY 
+        total_attention DESC
+    LIMIT max_results;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION get_daam_summary(query_image_id INTEGER)
+RETURNS TABLE (
+    token TEXT,
+    is_negative BOOLEAN,
+    max_attention REAL,
+    coverage_area REAL,
+    bbox TEXT
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        dh.token,
+        dh.is_negative,
+        dh.max_attention,
+        dh.coverage_area,
+        CONCAT(dh.bbox_x, ',', dh.bbox_y, ',', dh.bbox_width, ',', dh.bbox_height) as bbox
+    FROM 
+        daam_heatmap dh
+    WHERE 
+        dh.image_id = query_image_id
+    ORDER BY 
+        dh.max_attention DESC;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE VIEW daam_stats AS
+SELECT 
+    COUNT(DISTINCT image_id) as images_with_daam,
+    COUNT(*) as total_heatmaps,
+    COUNT(*) FILTER (WHERE is_negative = TRUE) as negative_heatmaps,
+    COUNT(*) FILTER (WHERE is_negative = FALSE) as positive_heatmaps,
+    AVG(mean_attention) as avg_mean_attention,
+    AVG(coverage_area) as avg_coverage_area,
+    (SELECT COUNT(*) FROM daam_semantic_group) as total_semantic_groups,
+    (SELECT AVG(merge_count) FROM daam_semantic_group) as avg_merge_count
+FROM daam_heatmap;
+
+-- =============================================================================
+-- FACE DETECTION
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS face_detection (
+    id SERIAL PRIMARY KEY,
+    image_id INTEGER NOT NULL REFERENCES image(id) ON DELETE CASCADE,
+    face_index INTEGER NOT NULL DEFAULT 0,
+    
+    -- Bounding box
+    x INTEGER NOT NULL DEFAULT 0,
+    y INTEGER NOT NULL DEFAULT 0,
+    width INTEGER NOT NULL DEFAULT 0,
+    height INTEGER NOT NULL DEFAULT 0,
+    
+    -- Detection metadata
+    confidence REAL NOT NULL DEFAULT 0.0,
+    quality_score REAL DEFAULT 0.0,
+    sharpness_score REAL DEFAULT 0.0,
+    
+    -- Head pose
+    pose_yaw REAL,
+    pose_pitch REAL,
+    pose_roll REAL,
+    
+    -- Cropped face image
+    face_crop BYTEA,
+    crop_width INTEGER DEFAULT 0,
+    crop_height INTEGER DEFAULT 0,
+    
+    -- Face landmarks (5-point)
+    landmarks JSONB,
+    
+    -- ArcFace embedding (512D)
+    arcface_embedding vector(512),
+    has_embedding BOOLEAN DEFAULT FALSE,
+    
+    -- Expression/Emotion
+    expression TEXT,
+    expression_confidence REAL,
+    
+    detection_model TEXT DEFAULT 'yolo11-face',
+    face_group_id INTEGER,
+    
+    detected_date TIMESTAMP DEFAULT NOW(),
+    processing_time_ms REAL DEFAULT 0.0
+);
+
+CREATE INDEX IF NOT EXISTS idx_face_detection_image_id ON face_detection(image_id);
+CREATE INDEX IF NOT EXISTS idx_face_detection_group_id ON face_detection(face_group_id);
+CREATE INDEX IF NOT EXISTS idx_face_detection_has_embedding ON face_detection(has_embedding) WHERE has_embedding = TRUE;
+CREATE INDEX IF NOT EXISTS idx_face_detection_embedding 
+    ON face_detection 
+    USING ivfflat (arcface_embedding vector_cosine_ops)
+    WITH (lists = 100)
+    WHERE arcface_embedding IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS face_group (
+    id SERIAL PRIMARY KEY,
+    name TEXT,
+    representative_face_id INTEGER REFERENCES face_detection(id) ON DELETE SET NULL,
+    
+    face_count INTEGER DEFAULT 0,
+    avg_confidence REAL DEFAULT 0.0,
+    avg_quality_score REAL DEFAULT 0.0,
+    thumbnail BYTEA,
+    
+    is_manual_group BOOLEAN DEFAULT FALSE,
+    cluster_cohesion REAL,
+    notes TEXT,
+    
+    created_date TIMESTAMP DEFAULT NOW(),
+    modified_date TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_face_group_name ON face_group(name) WHERE name IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_face_group_representative ON face_group(representative_face_id);
+
+CREATE TABLE IF NOT EXISTS face_group_member (
+    id SERIAL PRIMARY KEY,
+    face_group_id INTEGER NOT NULL REFERENCES face_group(id) ON DELETE CASCADE,
+    face_detection_id INTEGER NOT NULL REFERENCES face_detection(id) ON DELETE CASCADE,
+    similarity_score REAL DEFAULT 0.0,
+    added_date TIMESTAMP DEFAULT NOW(),
+    CONSTRAINT unique_face_in_group UNIQUE (face_detection_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_face_group_member_group ON face_group_member(face_group_id);
+CREATE INDEX IF NOT EXISTS idx_face_group_member_face ON face_group_member(face_detection_id);
+
+CREATE TABLE IF NOT EXISTS face_similarity (
+    face_id_1 INTEGER NOT NULL REFERENCES face_detection(id) ON DELETE CASCADE,
+    face_id_2 INTEGER NOT NULL REFERENCES face_detection(id) ON DELETE CASCADE,
+    cosine_similarity REAL,
+    computed_date TIMESTAMP DEFAULT NOW(),
+    PRIMARY KEY (face_id_1, face_id_2)
+);
+
+CREATE INDEX IF NOT EXISTS idx_face_similarity_face1 ON face_similarity(face_id_1);
+CREATE INDEX IF NOT EXISTS idx_face_similarity_face2 ON face_similarity(face_id_2);
+CREATE INDEX IF NOT EXISTS idx_face_similarity_score ON face_similarity(cosine_similarity DESC);
+
+-- Face detection trigger
+CREATE OR REPLACE FUNCTION update_face_group_stats()
+RETURNS TRIGGER AS $$
+BEGIN
+    UPDATE face_group
+    SET 
+        face_count = (SELECT COUNT(*) FROM face_group_member WHERE face_group_id = NEW.face_group_id),
+        avg_confidence = (
+            SELECT AVG(fd.confidence) 
+            FROM face_group_member fgm 
+            JOIN face_detection fd ON fgm.face_detection_id = fd.id 
+            WHERE fgm.face_group_id = NEW.face_group_id
+        ),
+        avg_quality_score = (
+            SELECT AVG(fd.quality_score) 
+            FROM face_group_member fgm 
+            JOIN face_detection fd ON fgm.face_detection_id = fd.id 
+            WHERE fgm.face_group_id = NEW.face_group_id
+        ),
+        modified_date = NOW()
+    WHERE id = NEW.face_group_id;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trigger_update_face_group_stats ON face_group_member;
+CREATE TRIGGER trigger_update_face_group_stats
+AFTER INSERT OR DELETE ON face_group_member
+FOR EACH ROW
+EXECUTE FUNCTION update_face_group_stats();
+
+CREATE OR REPLACE FUNCTION find_similar_faces(
+    query_face_id INTEGER,
+    similarity_threshold REAL DEFAULT 0.6,
+    max_results INTEGER DEFAULT 50
+)
+RETURNS TABLE (
+    face_id INTEGER,
+    image_id INTEGER,
+    similarity REAL
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        fd.id AS face_id,
+        fd.image_id,
+        1 - (qfd.arcface_embedding <=> fd.arcface_embedding) AS similarity
+    FROM 
+        face_detection qfd
+        CROSS JOIN face_detection fd
+    WHERE 
+        qfd.id = query_face_id
+        AND fd.id != query_face_id
+        AND fd.arcface_embedding IS NOT NULL
+        AND qfd.arcface_embedding IS NOT NULL
+        AND 1 - (qfd.arcface_embedding <=> fd.arcface_embedding) >= similarity_threshold
+    ORDER BY 
+        similarity DESC
+    LIMIT max_results;
+END;
+$$ LANGUAGE plpgsql;

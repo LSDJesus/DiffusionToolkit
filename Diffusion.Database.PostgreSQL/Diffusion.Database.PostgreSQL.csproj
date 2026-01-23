@@ -13,8 +13,6 @@
 
   <ItemGroup>
     <EmbeddedResource Include="PostgreSQLMigrations_V1_Schema.sql" />
-    <EmbeddedResource Include="PostgreSQLMigrations_FaceDetection.sql" />
-    <EmbeddedResource Include="PostgreSQLMigrations_DAAM.sql" />
   </ItemGroup>
 
   <ItemGroup>

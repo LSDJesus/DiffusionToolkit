@@ -4,13 +4,13 @@ using Dapper;
 namespace Diffusion.Database.PostgreSQL;
 
 /// <summary>
-/// PostgreSQL schema migrations with pgvector support
+/// PostgreSQL schema setup - Consolidated single-version approach
 /// </summary>
 public class PostgreSQLMigrations
 {
     private readonly NpgsqlConnection _connection;
     private readonly string _schema;
-    private const int CurrentVersion = 11;
+    private const int CurrentVersion = 1;
 
     public PostgreSQLMigrations(NpgsqlConnection connection, string schema = "public")
     {
@@ -34,18 +34,8 @@ public class PostgreSQLMigrations
             var currentVersion = await _connection.ExecuteScalarAsync<int?>(
                 "SELECT MAX(version) FROM schema_version;") ?? 0;
 
-            // Apply schema migrations in order
+            // Apply consolidated schema
             if (currentVersion < 1) await ApplyV1Async();
-            if (currentVersion < 2) await ApplyV2Async();
-            if (currentVersion < 3) await ApplyV3Async();
-            if (currentVersion < 4) await ApplyV4Async();
-            if (currentVersion < 5) await ApplyV5Async();
-            if (currentVersion < 6) await ApplyV6Async();
-            if (currentVersion < 7) await ApplyV7Async();
-            if (currentVersion < 8) await ApplyV8Async();
-            if (currentVersion < 9) await ApplyV9Async();
-            if (currentVersion < 10) await ApplyV10Async();
-            if (currentVersion < 11) await ApplyV11Async();
 
             // Only insert version if migrations were applied
             if (currentVersion < CurrentVersion)
@@ -67,8 +57,8 @@ public class PostgreSQLMigrations
     {
         try
         {
-            // Consolidated schema V1 - complete Diffusion Toolkit schema
-            // Combines all historical migrations (V1-V14) into single setup
+            // Consolidated schema - Complete Diffusion Toolkit schema
+            // Includes: Base tables, Embeddings, Tagging, Captions, Civitai, DAAM, Face Detection
             
             // Read SQL from embedded resource
             var assembly = System.Reflection.Assembly.GetExecutingAssembly();
@@ -91,18 +81,16 @@ public class PostgreSQLMigrations
                 throw new InvalidOperationException("Migration SQL is empty");
             }
             
-            Diffusion.Common.Logger.Log($"Executing V1 schema SQL ({sql.Length} chars)...");
+            Diffusion.Common.Logger.Log($"Executing consolidated schema SQL ({sql.Length} chars)...");
             await _connection.ExecuteAsync(sql);
             
             Diffusion.Common.Logger.Log("Creating indexes...");
-            // Create indexes
             await CreateIndexesAsync();
             
             Diffusion.Common.Logger.Log("Creating functions and triggers...");
-            // Create functions and triggers
             await CreateFunctionsAsync();
             
-            Diffusion.Common.Logger.Log("V1 migration completed successfully");
+            Diffusion.Common.Logger.Log("Schema setup completed successfully");
         }
         catch (Exception ex)
         {
@@ -113,231 +101,8 @@ public class PostgreSQLMigrations
     }
 
     /// <summary>
-    /// V2: Add tagging/captioning queue columns
+    /// Create database indexes for optimal query performance
     /// </summary>
-    private async Task ApplyV2Async()
-    {
-        try
-        {
-            Diffusion.Common.Logger.Log("Applying V2 migration: tagging/captioning queue columns...");
-            
-            var sql = @"
-                -- Add queue columns for background tagging/captioning
-                ALTER TABLE image ADD COLUMN IF NOT EXISTS needs_tagging BOOLEAN DEFAULT FALSE;
-                ALTER TABLE image ADD COLUMN IF NOT EXISTS needs_captioning BOOLEAN DEFAULT FALSE;
-                
-                -- Create indexes for efficient queue queries
-                CREATE INDEX IF NOT EXISTS idx_image_needs_tagging ON image (needs_tagging) WHERE needs_tagging = true;
-                CREATE INDEX IF NOT EXISTS idx_image_needs_captioning ON image (needs_captioning) WHERE needs_captioning = true;
-            ";
-            
-            await _connection.ExecuteAsync(sql);
-            
-            Diffusion.Common.Logger.Log("V2 migration completed successfully");
-        }
-        catch (Exception ex)
-        {
-            Diffusion.Common.Logger.Log($"ApplyV2Async failed: {ex.Message}");
-            Diffusion.Common.Logger.Log($"Stack: {ex.StackTrace}");
-            throw;
-        }
-    }
-
-    /// <summary>
-    /// V3: Fix image_embedding dimension (1024 → 1280 for CLIP-ViT-H/14)
-    /// </summary>
-    private async Task ApplyV3Async()
-    {
-        try
-        {
-            Diffusion.Common.Logger.Log("Applying V3 migration: Fix CLIP-ViT-H/14 embedding dimension + add needs_embedding...");
-            
-            var sql = @"
-                -- Add needs_embedding queue column
-                ALTER TABLE image ADD COLUMN IF NOT EXISTS needs_embedding BOOLEAN DEFAULT FALSE;
-                CREATE INDEX IF NOT EXISTS idx_image_needs_embedding ON image (needs_embedding) WHERE needs_embedding = true;
-                
-                -- Check if image_embedding column exists and has wrong dimension
-                DO $$ 
-                BEGIN
-                    -- Drop existing image_embedding if it's 1024D (wrong dimension)
-                    -- Note: This will delete any existing embeddings - they'll need to be regenerated
-                    IF EXISTS (
-                        SELECT 1 FROM information_schema.columns 
-                        WHERE table_name = 'image' 
-                        AND column_name = 'image_embedding'
-                    ) THEN
-                        -- Drop the old column (CASCADE drops the index too)
-                        ALTER TABLE image DROP COLUMN image_embedding CASCADE;
-                        
-                        -- Recreate with correct dimension
-                        ALTER TABLE image ADD COLUMN image_embedding vector(1280);
-                        
-                        -- Recreate the IVFFlat index for vector search
-                        CREATE INDEX idx_image_image_embedding ON image 
-                        USING ivfflat (image_embedding vector_cosine_ops) 
-                        WITH (lists = 100);
-                        
-                        RAISE NOTICE 'Updated image_embedding to 1280D (CLIP-ViT-H/14). Previous embeddings deleted.';
-                    ELSE
-                        RAISE NOTICE 'image_embedding column does not exist yet';
-                    END IF;
-                END $$;
-            ";
-            
-            await _connection.ExecuteAsync(sql);
-            
-            Diffusion.Common.Logger.Log("V3 migration completed successfully");
-        }
-        catch (Exception ex)
-        {
-            Diffusion.Common.Logger.Log($"ApplyV3Async failed: {ex.Message}");
-            Diffusion.Common.Logger.Log($"Stack: {ex.StackTrace}");
-            throw;
-        }
-    }
-
-    private async Task ApplyV4Async()
-    {
-        try
-        {
-            Diffusion.Common.Logger.Log("Applying V4 migration: Face detection tables...");
-            
-            var sql = @"
-                -- Face cluster table (groups of similar faces / characters)
-                CREATE TABLE IF NOT EXISTS face_cluster (
-                    id SERIAL PRIMARY KEY,
-                    label TEXT,
-                    representative_face_ids INTEGER[],
-                    face_count INTEGER DEFAULT 0,
-                    avg_quality_score REAL,
-                    avg_confidence REAL,
-                    cluster_thumbnail BYTEA,
-                    is_manual BOOLEAN DEFAULT FALSE,
-                    notes TEXT,
-                    created_at TIMESTAMP DEFAULT NOW(),
-                    updated_at TIMESTAMP DEFAULT NOW()
-                );
-
-                -- Face detection table (individual face detections)
-                CREATE TABLE IF NOT EXISTS face_detection (
-                    id SERIAL PRIMARY KEY,
-                    image_id INTEGER REFERENCES image(id) ON DELETE CASCADE,
-                    
-                    -- Bounding box
-                    bbox_x INTEGER,
-                    bbox_y INTEGER,
-                    bbox_width INTEGER,
-                    bbox_height INTEGER,
-                    
-                    -- Cropped face image (JPEG bytes)
-                    face_crop BYTEA,
-                    crop_width INTEGER,
-                    crop_height INTEGER,
-                    
-                    -- ArcFace embedding (512D)
-                    arcface_embedding vector(512),
-                    
-                    -- Detection metadata
-                    detection_model TEXT,
-                    confidence REAL,
-                    quality_score REAL,
-                    sharpness_score REAL,
-                    
-                    -- Head pose
-                    pose_yaw REAL,
-                    pose_pitch REAL,
-                    pose_roll REAL,
-                    
-                    -- Landmarks (5-point, stored as JSON)
-                    landmarks JSONB,
-                    
-                    -- Character labeling
-                    face_cluster_id INTEGER REFERENCES face_cluster(id) ON DELETE SET NULL,
-                    character_label TEXT,
-                    manual_label BOOLEAN DEFAULT FALSE,
-                    
-                    created_at TIMESTAMP DEFAULT NOW()
-                );
-
-                -- Face similarity pairs (pre-computed for fast lookups)
-                CREATE TABLE IF NOT EXISTS face_similarity (
-                    face_id_1 INTEGER REFERENCES face_detection(id) ON DELETE CASCADE,
-                    face_id_2 INTEGER REFERENCES face_detection(id) ON DELETE CASCADE,
-                    similarity_score REAL,
-                    PRIMARY KEY (face_id_1, face_id_2)
-                );
-
-                -- Face timeline (track same character across images)
-                CREATE TABLE IF NOT EXISTS face_timeline (
-                    id SERIAL PRIMARY KEY,
-                    cluster_id INTEGER REFERENCES face_cluster(id) ON DELETE CASCADE,
-                    image_id INTEGER REFERENCES image(id) ON DELETE CASCADE,
-                    face_id INTEGER REFERENCES face_detection(id) ON DELETE CASCADE,
-                    appearance_date TIMESTAMP,
-                    sequence_order INTEGER
-                );
-
-                -- Scene composition (multi-face analysis)
-                CREATE TABLE IF NOT EXISTS scene_composition (
-                    id SERIAL PRIMARY KEY,
-                    image_id INTEGER REFERENCES image(id) ON DELETE CASCADE UNIQUE,
-                    face_count INTEGER,
-                    characters_present TEXT[],
-                    spatial_layout TEXT,
-                    interaction_type TEXT,
-                    created_at TIMESTAMP DEFAULT NOW()
-                );
-
-                -- Add face-related columns to image table
-                ALTER TABLE image ADD COLUMN IF NOT EXISTS needs_face_detection BOOLEAN DEFAULT FALSE;
-                ALTER TABLE image ADD COLUMN IF NOT EXISTS face_count INTEGER DEFAULT 0;
-                ALTER TABLE image ADD COLUMN IF NOT EXISTS primary_character TEXT;
-                ALTER TABLE image ADD COLUMN IF NOT EXISTS characters_detected TEXT[];
-
-                -- Indexes for face detection
-                CREATE INDEX IF NOT EXISTS idx_face_detection_image_id ON face_detection(image_id);
-                CREATE INDEX IF NOT EXISTS idx_face_detection_cluster_id ON face_detection(face_cluster_id);
-                CREATE INDEX IF NOT EXISTS idx_face_detection_character_label ON face_detection(character_label);
-                CREATE INDEX IF NOT EXISTS idx_face_detection_confidence ON face_detection(confidence);
-                CREATE INDEX IF NOT EXISTS idx_face_detection_quality ON face_detection(quality_score);
-
-                -- Vector index for face similarity search (ArcFace 512D)
-                CREATE INDEX IF NOT EXISTS idx_face_arcface_embedding ON face_detection 
-                    USING ivfflat (arcface_embedding vector_cosine_ops) WITH (lists = 100);
-
-                -- Indexes for face cluster
-                CREATE INDEX IF NOT EXISTS idx_face_cluster_label ON face_cluster(label);
-                CREATE INDEX IF NOT EXISTS idx_face_cluster_face_count ON face_cluster(face_count);
-
-                -- Indexes for similarity pairs
-                CREATE INDEX IF NOT EXISTS idx_face_similarity_score ON face_similarity(similarity_score);
-
-                -- Indexes for timeline
-                CREATE INDEX IF NOT EXISTS idx_face_timeline_cluster_id ON face_timeline(cluster_id);
-                CREATE INDEX IF NOT EXISTS idx_face_timeline_image_id ON face_timeline(image_id);
-
-                -- Index for image face columns
-                CREATE INDEX IF NOT EXISTS idx_image_needs_face_detection ON image(needs_face_detection) WHERE needs_face_detection = true;
-                CREATE INDEX IF NOT EXISTS idx_image_face_count ON image(face_count);
-                CREATE INDEX IF NOT EXISTS idx_image_primary_character ON image(primary_character);
-
-                -- GIN index for character array search
-                CREATE INDEX IF NOT EXISTS idx_image_characters_detected ON image USING GIN(characters_detected);
-            ";
-            
-            await _connection.ExecuteAsync(sql);
-            
-            Diffusion.Common.Logger.Log("V4 migration completed successfully");
-        }
-        catch (Exception ex)
-        {
-            Diffusion.Common.Logger.Log($"ApplyV4Async failed: {ex.Message}");
-            Diffusion.Common.Logger.Log($"Stack: {ex.StackTrace}");
-            throw;
-        }
-    }
-
     private async Task CreateIndexesAsync()
     {
         var sql = @"
