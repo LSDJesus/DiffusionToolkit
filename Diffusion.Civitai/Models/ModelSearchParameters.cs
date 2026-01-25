@@ -13,19 +13,19 @@ public class ModelSearchParameters
     /// <summary>
     /// Search query to filter models by name
     /// </summary>
-    public string? Query { get; set; }
+    public string Query { get; set; }
     /// <summary>
     /// Search query to filter models by tag
     /// </summary>
-    public string? Tag { get; set; }
+    public string Tag { get; set; }
     /// <summary>
     /// Search query to filter models by user
     /// </summary>
-    public string? Username { get; set; }
+    public string Username { get; set; }
     /// <summary>
     /// The type of model you want to filter with. If none is specified, it will return all types
     /// </summary>
-    public List<ModelType>? Types { get; set; }
+    public List<ModelType> Types { get; set; }
     /// <summary>
     /// The order in which you wish to sort the results
     /// </summary>

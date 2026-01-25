@@ -1,5 +1,10 @@
-﻿using System.Collections.ObjectModel;
+﻿using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Globalization;
+using System.Windows.Data;
 using System.Windows.Input;
+using Diffusion.Database.PostgreSQL.Models;
 using Diffusion.Toolkit.Models;
 using PgAlbum = Diffusion.Database.PostgreSQL.Models.Album;
 
@@ -7,11 +12,11 @@ namespace Diffusion.Toolkit;
 
 public class AlbumSortModel : BaseNotify
 {
-    private ObservableCollection<PgAlbum> _albums = new ObservableCollection<PgAlbum>();
-    private ObservableCollection<PgAlbum> _sortedAlbums = new ObservableCollection<PgAlbum>();
+    private ObservableCollection<PgAlbum> _albums;
+    private ObservableCollection<PgAlbum> _sortedAlbums;
     private PgAlbum? _selectedAlbum;
-    private string _sortAlbumsBy = string.Empty;
-    public ICommand? Escape { get; set; }
+    private string _sortAlbumsBy;
+    public ICommand Escape { get; set; }
 
     public string SortAlbumsBy
     {
@@ -36,6 +41,6 @@ public class AlbumSortModel : BaseNotify
         get => _sortedAlbums;
         set => SetField(ref _sortedAlbums, value);
     }
-    public ICommand? MoveUpCommand { get; set; }
-    public ICommand? MoveDownCommand { get; set; }
+    public ICommand MoveUpCommand { get; set; }
+    public ICommand MoveDownCommand { get; set; }
 }

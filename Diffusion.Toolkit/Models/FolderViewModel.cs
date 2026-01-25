@@ -1,6 +1,8 @@
 ﻿using Diffusion.Toolkit.Services;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.Windows.Navigation;
 
 namespace Diffusion.Toolkit.Models;
 
@@ -11,7 +13,7 @@ public class FolderViewModel : BaseNotify
     private bool _hasChildren;
     private bool _visible;
     private bool _isSelected;
-    private string _name = string.Empty;
+    private string _name;
     private bool _isArchived;
     private bool _isExcluded;
     private bool _isRecursive;
@@ -21,7 +23,7 @@ public class FolderViewModel : BaseNotify
     private ObservableCollection<FolderViewModel>? _children;
     private bool _isHome;
 
-    public MainModel MainModel => ServiceLocator.MainModel!;
+    public MainModel MainModel => ServiceLocator.MainModel;
 
     public int Id { get; set; }
 
@@ -58,7 +60,7 @@ public class FolderViewModel : BaseNotify
     }
 
     public int Depth { get; set; }
-    public string Path { get; set; } = string.Empty;
+    public string Path { get; set; }
 
     public string Name
     {

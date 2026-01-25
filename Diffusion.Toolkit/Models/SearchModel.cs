@@ -3,6 +3,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Input;
+using Diffusion.Common;
 using Diffusion.Database.PostgreSQL.Models;
 using Diffusion.Toolkit.Common;
 using Diffusion.Toolkit.Controls;
@@ -12,26 +13,26 @@ namespace Diffusion.Toolkit.Models;
 
 public class SearchModel : BaseNotify
 {
-    private readonly MainModel _mainModel = null!;
+    private readonly MainModel _mainModel;
     private ObservableCollection<ImageEntry>? _images;
     private ImageEntry? _selectedImage;
     //public object _rowLock = new object();
     private int _totalFiles;
     private int _currentPosition;
 
-    private ICommand _searchCommand = null!;
-    private string _searchText = string.Empty;
+    private ICommand _searchCommand;
+    private string _searchText;
 
     private int _page;
     private bool _isEmpty;
     private int _pages;
-    private string _results = string.Empty;
-    private string _resultStatus = string.Empty;
-    private string _searchHint = string.Empty;
+    private string _results;
+    private string _resultStatus;
+    private string _searchHint;
     private ImageViewModel? _currentImage;
     private float _imageOpacity;
     private bool _hideIcons;
-    private ObservableCollection<string> _searchHistory = null!;
+    private ObservableCollection<string> _searchHistory;
 
     private ICommand? _refresh;
     private ICommand? _focusSearch;
@@ -39,36 +40,36 @@ public class SearchModel : BaseNotify
     private ICommand? _showDropDown;
     private ICommand? _hideDropDown;
     private ICommand? _copyFiles;
-    private ICommand _showFilter = null!;
-    private ICommand _hideFilter = null!;
-    private ICommand _clearSearch = null!;
+    private ICommand _showFilter;
+    private ICommand _hideFilter;
+    private ICommand _clearSearch;
     private bool _isFilterVisible;
-    private FilterControlModel _filter = null!;
-    private ICommand _filterCommand = null!;
-    private ICommand _clearCommand = null!;
-    private string _sortBy = string.Empty;
-    private string _sortDirection = string.Empty;
-    private ICommand _openCommand = null!;
-    private ICommand _goHome = null!;
+    private FilterControlModel _filter;
+    private ICommand _filterCommand;
+    private ICommand _clearCommand;
+    private string _sortBy;
+    private string _sortDirection;
+    private ICommand _openCommand;
+    private ICommand _goHome;
     private ViewMode _currentViewMode;
-    private string _folderPath = string.Empty;
-    private ICommand _goUp = null!;
-    private string _album = string.Empty;
-    private ObservableCollection<Album> _albums = null!;
-    private ICommand _pageChangedCommand = null!;
-    private IEnumerable<OptionValue> _sortOptions = null!;
-    private IEnumerable<OptionValue> _sortOrderOptions = null!;
+    private string _folderPath;
+    private ICommand _goUp;
+    private string _album;
+    private ObservableCollection<Album> _albums;
+    private ICommand _pageChangedCommand;
+    private IEnumerable<OptionValue> _sortOptions;
+    private IEnumerable<OptionValue> _sortOrderOptions;
 
-    private NavigationSection _navigationSection = null!;
-    private MetadataSection _metadataSection = null!;
+    private NavigationSection _navigationSection;
+    private MetadataSection _metadataSection;
     private bool _isBusy;
-    private ICommand _showSearchSettings = null!;
+    private ICommand _showSearchSettings;
     private bool _isSearchSettingsVisible;
-    private string _currentMode = string.Empty;
+    private string _currentMode;
     private bool _isSearchHelpVisible;
-    private ICommand _showSearchHelp = null!;
-    private Style _searchHelpStyle = null!;
-    private string _searchHelpMarkdown = string.Empty;
+    private ICommand _showSearchHelp;
+    private Style _searchHelpStyle;
+    private string _searchHelpMarkdown;
     private bool _hasNoImagePaths;
 
     public SearchModel()
@@ -85,40 +86,21 @@ public class SearchModel : BaseNotify
         _sortDirection = "Z-A";
         _isFilterVisible = false;
         _searchText = "";
-        _refresh = DefaultCommand.Instance;
         MetadataSection = new MetadataSection();
         NavigationSection = new NavigationSection();
         SearchSettings = new SearchSettings();
         PropertyChanged += OnPropertyChanged;
-    }
-    
-    // DefaultCommand stub for ICommand fallback
-    public class DefaultCommand : ICommand
-    {
-        public static DefaultCommand Instance { get; } = new DefaultCommand();
-    
-        public event System.EventHandler? CanExecuteChanged;
-    
-        public bool CanExecute(object? parameter) => false;
-    
-        public void Execute(object? parameter) { }
     }
 
     private void OnPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(CurrentImage))
         {
-            if (ServiceLocator.MainModel != null && CurrentImage != null)
-            {
-                ServiceLocator.MainModel.CurrentImage = CurrentImage;
-            }
+            ServiceLocator.MainModel.CurrentImage = CurrentImage;
         }
         if (e.PropertyName == nameof(SelectedImageEntry))
         {
-            if (ServiceLocator.MainModel != null && SelectedImageEntry != null)
-            {
-                ServiceLocator.MainModel.SelectedImageEntry = SelectedImageEntry;
-            }
+            ServiceLocator.MainModel.SelectedImageEntry = SelectedImageEntry;
         }
     }
 
@@ -141,7 +123,7 @@ public class SearchModel : BaseNotify
     //    SearchSettings = new SearchSettings();
     //}
 
-    public MainModel MainModel => ServiceLocator.MainModel ?? throw new System.InvalidOperationException("MainModel is not initialized.");
+    public MainModel MainModel => ServiceLocator.MainModel;
 
     public ObservableCollection<ImageEntry>? Images
     {
@@ -264,37 +246,37 @@ public class SearchModel : BaseNotify
 
     public ICommand Refresh
     {
-        get => _refresh ?? DefaultCommand.Instance;
+        get => _refresh;
         set => SetField(ref _refresh, value);
     }
 
     public ICommand FocusSearch
     {
-        get => _focusSearch ?? DefaultCommand.Instance;
+        get => _focusSearch;
         set => SetField(ref _focusSearch, value);
     }
 
     public string ModeName
     {
-        get => _modeName ?? string.Empty;
+        get => _modeName;
         set => SetField(ref _modeName, value);
     }
 
     public ICommand ShowDropDown
     {
-        get => _showDropDown ?? DefaultCommand.Instance;
+        get => _showDropDown;
         set => SetField(ref _showDropDown, value);
     }
 
     public ICommand HideDropDown
     {
-        get => _hideDropDown ?? DefaultCommand.Instance;
+        get => _hideDropDown;
         set => SetField(ref _hideDropDown, value);
     }
 
     public ICommand CopyFiles
     {
-        get => _copyFiles ?? DefaultCommand.Instance;
+        get => _copyFiles;
         set => SetField(ref _copyFiles, value);
     }
 

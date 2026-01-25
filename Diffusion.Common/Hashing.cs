@@ -40,7 +40,7 @@ public static class StreamExtensions
             // Finalize the hash
             sha256.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
 
-            return sha256.Hash!;
+            return sha256.Hash;
         }
     }
 }

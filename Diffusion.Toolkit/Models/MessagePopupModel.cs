@@ -5,13 +5,13 @@ namespace Diffusion.Toolkit.Models;
 
 public class MessagePopupModel : BaseNotify
 {
-    private ICommand _okCommand = null!;
+    private ICommand _okCommand;
     private bool _isVisible;
-    private string _message = string.Empty;
-    private string _title = string.Empty;
-    private ICommand _cancelCommand = null!;
-    private ICommand _yesCommand = null!;
-    private ICommand _noCommand = null!;
+    private string _message;
+    private string _title;
+    private ICommand _cancelCommand;
+    private ICommand _yesCommand;
+    private ICommand _noCommand;
     private bool _hasOk;
     private bool _hasCancel;
     private bool _hasYes;
@@ -19,7 +19,7 @@ public class MessagePopupModel : BaseNotify
 
     private double _height;
     private double _width;
-    private UIElement _placementTarget = null!;
+    private UIElement _placementTarget;
     private string? _input;
     private bool _showInput;
 

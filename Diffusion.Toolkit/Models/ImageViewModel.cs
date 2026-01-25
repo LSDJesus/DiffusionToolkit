@@ -1,4 +1,6 @@
-﻿using Diffusion.Toolkit.Classes;
+﻿using Diffusion.Database.PostgreSQL.Models;
+using Diffusion.Toolkit.Classes;
+using Diffusion.Toolkit.Controls;
 using System.Collections.Generic;
 using System.Windows.Input;
 using System.Windows.Media.Imaging;
@@ -10,24 +12,24 @@ namespace Diffusion.Toolkit.Models;
 
 public class ImageViewModel : BaseNotify
 {
-    private ICommand _copyOthersCommand = null!;
-    private ICommand _copyNegativePromptCommand = null!;
-    private ICommand _copyPathCommand = null!;
-    private ICommand _copyPromptCommand = null!;
-    private ICommand _copyParametersCommand = null!;
-    private ICommand _showInExplorerCommand = null!;
-    private ICommand _showInThumbnails = null!;
-    private ICommand _deleteCommand = null!;
-    private ICommand _favoriteCommand = null!;
+    private ICommand _copyOthersCommand;
+    private ICommand _copyNegativePromptCommand;
+    private ICommand _copyPathCommand;
+    private ICommand _copyPromptCommand;
+    private ICommand _copyParametersCommand;
+    private ICommand _showInExplorerCommand;
+    private ICommand _showInThumbnails;
+    private ICommand _deleteCommand;
+    private ICommand _favoriteCommand;
 
     private BitmapSource? _image;
 
-    private string _path = string.Empty;
-    private string _prompt = string.Empty;
-    private string _negativePrompt = string.Empty;
-    private string _otherParameters = string.Empty;
-    private string _modelName = string.Empty;
-    private string _date = string.Empty;
+    private string _path;
+    private string _prompt;
+    private string _negativePrompt;
+    private string _otherParameters;
+    private string _modelName;
+    private string _date;
 
     private bool _favorite;
     private int? _rating;
@@ -36,11 +38,11 @@ public class ImageViewModel : BaseNotify
 
     private bool _isParametersVisible;
     private long _seed;
-    private string _modelHash = string.Empty;
-    private ICommand _toggleParameters = null!;
+    private string _modelHash;
+    private ICommand _toggleParameters;
     private string? _aestheticScore;
-    private ICommand _searchModelCommand = null!;
-    private IEnumerable<PgAlbum> _albums = new List<PgAlbum>();
+    private ICommand _searchModelCommand;
+    private IEnumerable<PgAlbum> _albums;
     private decimal _cfgScale;
     private int _height;
     private int _width;
@@ -48,13 +50,13 @@ public class ImageViewModel : BaseNotify
     private string? _sampler;
     private bool _isLoading;
     private bool _isMessageVisible;
-    private string _message = string.Empty;
-    private ICommand _openAlbumCommand = null!;
-    private ICommand _removeFromAlbumCommand = null!;
+    private string _message;
+    private ICommand _openAlbumCommand;
+    private ICommand _removeFromAlbumCommand;
     private string? _workflow;
-    private IReadOnlyCollection<Node> _nodes = new List<Node>();
+    private IReadOnlyCollection<Node> _nodes;
     private bool _hasError;
-    private string _errorMessage = string.Empty;
+    private string _errorMessage;
     private string? _tags;
     private string? _caption;
     private bool _hasTags;
@@ -75,7 +77,7 @@ public class ImageViewModel : BaseNotify
         //ShowInExplorerCommand = new RelayCommand<object>(ServiceLocator.ContextMenuService.ShowInExplorer);
     }
 
-    public MainModel MainModel => ServiceLocator.MainModel!;
+    public MainModel MainModel => ServiceLocator.MainModel;
 
     public int Id { get; set; }
 
@@ -100,19 +102,19 @@ public class ImageViewModel : BaseNotify
     public string? Prompt
     {
         get => _prompt;
-        set => SetField(ref _prompt, value ?? string.Empty);
+        set => SetField(ref _prompt, value);
     }
 
     public string? NegativePrompt
     {
         get => _negativePrompt;
-        set => SetField(ref _negativePrompt, value ?? string.Empty);
+        set => SetField(ref _negativePrompt, value);
     }
 
     public string? OtherParameters
     {
         get => _otherParameters;
-        set => SetField(ref _otherParameters, value ?? string.Empty);
+        set => SetField(ref _otherParameters, value);
     }
 
     public decimal CFGScale
@@ -258,7 +260,7 @@ public class ImageViewModel : BaseNotify
     public string? ModelHash
     {
         get => _modelHash;
-        set => SetField(ref _modelHash, value ?? string.Empty);
+        set => SetField(ref _modelHash, value);
     }
 
     public string? AestheticScore

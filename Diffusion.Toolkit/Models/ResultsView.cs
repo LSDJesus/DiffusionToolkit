@@ -1,5 +1,4 @@
-﻿using System;
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.Windows.Input;
 using Diffusion.Toolkit.Services;
 
@@ -24,20 +23,15 @@ public class ResultsView : BaseNotify
 
     public ResultsView()
     {
-        _images = new ObservableCollection<ImageEntry>();
-        _results = string.Empty;
-        _sortBy = "Date";
-        _sortDirection = "DESC";
-        _resultStatus = "Select a prompt";
-        _pageChangedCommand = null!;
-        _copyFiles = null!;
-        _openCommand = null!;
+        SortBy = "Date";
+        SortDirection = "DESC";
+        ResultStatus = "Select a prompt";
     }
 
     public ObservableCollection<ImageEntry>? Images
     {
         get => _images;
-        set => SetField(ref _images, value ?? new ObservableCollection<ImageEntry>());
+        set => SetField(ref _images, value);
     }
 
     public bool IsBusy
@@ -52,7 +46,7 @@ public class ResultsView : BaseNotify
         set => SetField(ref _isPromptsBusy, value);
     }
 
-    public MainModel MainModel => ServiceLocator.MainModel ?? throw new InvalidOperationException("MainModel is not initialized.");
+    public MainModel MainModel => ServiceLocator.MainModel;
 
     public int Page
     {

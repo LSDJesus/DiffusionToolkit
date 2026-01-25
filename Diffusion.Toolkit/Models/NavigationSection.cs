@@ -14,7 +14,7 @@ public class NavigationSection : BaseNotify
     private bool _showAlbums;
     private bool _showQueries;
     private bool _showModelLibrary;
-    private FoldersSection _foldersSection;
+    private FoldersSection? _foldersSection;
     private double _folderHeight;
     private double _albumHeight;
     private double _modelHeight;
@@ -23,7 +23,7 @@ public class NavigationSection : BaseNotify
 
     public NavigationSection()
     {
-        _foldersSection = new FoldersSection();
+        FoldersSection = new FoldersSection();
     }
 
     public bool ShowFolders

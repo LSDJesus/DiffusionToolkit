@@ -6,7 +6,7 @@ namespace Diffusion.Toolkit.Models;
 
 public class SearchSettings : BaseNotify
 {
-    private string _includeNodeProperties = string.Empty;
+    private string _includeNodeProperties;
     private bool _searchNodes;
     private bool _searchRawData;
     private bool _searchAllProperties;

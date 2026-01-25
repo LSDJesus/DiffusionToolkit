@@ -12,17 +12,14 @@ namespace Diffusion.Toolkit.Services;
 public class ExternalApplicationsService
 {
 
-    public IReadOnlyCollection<ExternalApplication>? ExternalApplications =>
-        ServiceLocator.Settings?.ExternalApplications;
+    public IReadOnlyCollection<ExternalApplication> ExternalApplications =>
+        ServiceLocator.Settings.ExternalApplications;
 
-    public bool HasExternalApplications => ServiceLocator.Settings?.ExternalApplications is { Count: > 0 };
+    public bool HasExternalApplications => ServiceLocator.Settings.ExternalApplications is { Count: > 0 };
 
     public async Task OpenWith(object sender, int index)
     {
-        if (HasExternalApplications
-            && ServiceLocator.Settings?.ExternalApplications != null
-            && index > 0
-            && index <= ServiceLocator.Settings.ExternalApplications.Count)
+        if (HasExternalApplications && index <= ServiceLocator.Settings.ExternalApplications.Count)
         {
             await OpenWith(sender, ServiceLocator.Settings.ExternalApplications[index - 1]);
         }
@@ -37,7 +34,7 @@ public class ExternalApplicationsService
             args = externalApplication.CommandLineArgs;
         }
 
-        var images = string.Join(" ", ((ServiceLocator.MainModel?.SelectedImages) ?? Enumerable.Empty<ImageEntry>()).Select(d => $"\"{d.Path}\""));
+        var images = string.Join(" ", ServiceLocator.MainModel.SelectedImages.Select(d => $"\"{d.Path}\""));
 
         var appPath = externalApplication.Path;
 
@@ -71,10 +68,7 @@ public class ExternalApplicationsService
         }
         else
         {
-            if (ServiceLocator.MessageService != null)
-            {
-                await ServiceLocator.MessageService.ShowMedium($"Failed to launch the application {externalApplication.Name}.\r\n\r\nPath not found", "Error opening External Application", PopupButtons.OK);
-            }
+            await ServiceLocator.MessageService.ShowMedium($"Failed to launch the application {externalApplication.Name}.\r\n\r\nPath not found", "Error opening External Application", PopupButtons.OK);
         }
     }
 }

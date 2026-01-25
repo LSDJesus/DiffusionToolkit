@@ -35,29 +35,19 @@ public class ContextMenuService
 
     private void BuildOpenWithContextMenu()
     {
-        if (ServiceLocator.MainModel != null)
-        {
-            ServiceLocator.MainModel.OpenWithMenuItems = new ObservableCollection<Control>();
-        }
-        else
-        {
-            return;
-        }
+        ServiceLocator.MainModel.OpenWithMenuItems = new ObservableCollection<Control>();
 
         if (ServiceLocator.ExternalApplicationsService.HasExternalApplications)
         {
             var window = ServiceLocator.WindowService.CurrentWindow;
 
             var index = 1;
-            var externalApplications = ServiceLocator.ExternalApplicationsService.ExternalApplications;
-            if (externalApplications != null)
+            foreach (var externalApplication in ServiceLocator.ExternalApplicationsService.ExternalApplications)
             {
-                foreach (var externalApplication in externalApplications)
+                var menuItem = new MenuItem()
                 {
-                    var menuItem = new MenuItem()
-                    {
-                        Header = externalApplication.Name,
-                    };
+                    Header = externalApplication.Name,
+                };
 
                 menuItem.InputGestureText = index switch
                 {
@@ -73,8 +63,7 @@ public class ContextMenuService
 
                 index++;
 
-                    ServiceLocator.MainModel.OpenWithMenuItems.Add(menuItem);
-                }
+                ServiceLocator.MainModel.OpenWithMenuItems.Add(menuItem);
             }
 
          
@@ -100,7 +89,7 @@ public class ContextMenuService
 
     }
 
-    private ImageViewModel? CurrentImage => ServiceLocator.MainModel?.CurrentImage;
+    private ImageViewModel CurrentImage => ServiceLocator.MainModel.CurrentImage;
 
 
     public void CopyPath(object obj)
@@ -108,62 +97,61 @@ public class ContextMenuService
         if (CurrentImage?.Path == null) return;
         var p = CurrentImage.Path;
         Clipboard.SetDataObject(p, true);
-        ServiceLocator.ToastService?.Toast("Copied path to clipboard", "");
+        ServiceLocator.ToastService.Toast("Copied path to clipboard", "");
     }
 
     public void CopyPrompt(object obj)
     {
-        if (CurrentImage == null || CurrentImage.Prompt == null) return;
+        if (CurrentImage.Prompt == null) return;
         var p = CurrentImage.Prompt;
         Clipboard.SetDataObject(p, true);
-        ServiceLocator.ToastService?.Toast("Copied prompt to clipboard", "");
+        ServiceLocator.ToastService.Toast("Copied prompt to clipboard", "");
     }
 
     public void CopyNegative(object obj)
     {
-        if (CurrentImage == null || CurrentImage.NegativePrompt == null) return;
+        if (CurrentImage.NegativePrompt == null) return;
         var p = CurrentImage.NegativePrompt;
         Clipboard.SetDataObject(p, true);
-        ServiceLocator.ToastService?.Toast("Copied negative prompt to clipboard", "");
+        ServiceLocator.ToastService.Toast("Copied negative prompt to clipboard", "");
     }
 
     public void CopySeed(object obj)
     {
-        if (CurrentImage == null) return;
+        if (CurrentImage.Seed == null) return;
         var p = CurrentImage.Seed.ToString();
         Clipboard.SetDataObject(p, true);
-        ServiceLocator.ToastService?.Toast("Copied seed to clipboard", "");
+        ServiceLocator.ToastService.Toast("Copied seed to clipboard", "");
     }
 
     public void CopyHash(object obj)
     {
-        if (CurrentImage == null || CurrentImage.ModelHash == null) return;
+        if (CurrentImage.ModelHash == null) return;
         var p = CurrentImage.ModelHash;
         Clipboard.SetDataObject(p, true);
-        ServiceLocator.ToastService?.Toast("Copied hash to clipboard", "");
+        ServiceLocator.ToastService.Toast("Copied hash to clipboard", "");
     }
 
     public void CopyParameters(object obj)
     {
-        if (CurrentImage == null) return;
         var p = CurrentImage.Prompt;
         var n = CurrentImage.NegativePrompt;
         var o = CurrentImage.OtherParameters;
         var parameters = $"{p}\r\n\r\nNegative prompt: {n}\r\n{o}";
 
         Clipboard.SetDataObject(parameters, true);
-        ServiceLocator.ToastService?.Toast("Copied all parameters to clipboard", "");
+        ServiceLocator.ToastService.Toast("Copied all parameters to clipboard", "");
     }
 
     public void CopyOthers(object obj)
     {
-        if (CurrentImage == null || CurrentImage.OtherParameters == null) return;
+        if (CurrentImage.OtherParameters == null) return;
 
         var o = CurrentImage.OtherParameters;
 
         Clipboard.SetDataObject(o, true);
 
-        ServiceLocator.ToastService?.Toast("Copied other parameters to clipboard", "");
+        ServiceLocator.ToastService.Toast("Copied other parameters to clipboard", "");
     }
 
 }

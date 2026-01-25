@@ -8,14 +8,14 @@ namespace Diffusion.Toolkit.Services;
 
 public class SearchService
 {
-    public event EventHandler<string>? SortBy;
-    public event EventHandler<string>? SortOrder;
-    public event EventHandler<SearchFilter>? SearchFilter;
-    public event EventHandler<FolderViewModel>? OpenFolder;
-    public event EventHandler<string>? OpenPath;
-    public event EventHandler? Search;
-    public event EventHandler? Refresh;
-    public event EventHandler<SearchView>? View;
+    public event EventHandler<string> SortBy;
+    public event EventHandler<string> SortOrder;
+    public event EventHandler<SearchFilter> SearchFilter;
+    public event EventHandler<FolderViewModel> OpenFolder;
+    public event EventHandler<string> OpenPath;
+    public event EventHandler Search;
+    public event EventHandler Refresh;
+    public event EventHandler<SearchView> View;
 
     public void SetSortBy(string value)
     {

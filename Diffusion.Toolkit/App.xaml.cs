@@ -41,7 +41,7 @@ namespace Diffusion.Toolkit
             e.Handled = true; // Prevent crash
         }
 
-        private void OnUnobservedTaskException(object? sender, System.Threading.Tasks.UnobservedTaskExceptionEventArgs e)
+        private void OnUnobservedTaskException(object sender, System.Threading.Tasks.UnobservedTaskExceptionEventArgs e)
         {
             var ex = e.Exception.Flatten();
             var innerEx = ex.InnerExceptions.FirstOrDefault() ?? ex;

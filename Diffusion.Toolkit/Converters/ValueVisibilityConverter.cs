@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Diffusion.Toolkit.Models;
+using System;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Data;
@@ -11,9 +12,7 @@ public class ValueVisibilityConverter : IValueConverter
     {
         if (value == null) return Visibility.Hidden;
 
-        var valueString = value?.ToString();
-        var parameterString = parameter?.ToString();
-        return string.Equals(valueString, parameterString, StringComparison.Ordinal) ? Visibility.Visible : Visibility.Hidden;
+        return value.ToString().Equals(parameter) ? Visibility.Visible : Visibility.Hidden;
     }
 
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)

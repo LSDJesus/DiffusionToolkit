@@ -8,7 +8,7 @@ public class AlbumModel : BaseNotify, IAlbumInfo
     private bool _isTicked;
     private bool _isSelected;
     private int _imageCount;
-    private string _name = string.Empty;
+    private string _name;
 
     public int Id { get; set; }
 

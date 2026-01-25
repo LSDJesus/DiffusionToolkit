@@ -19,7 +19,7 @@ namespace Diffusion.Toolkit.Pages
     /// </summary>
     public partial class Models : NavigationPage
     {
-        private Configuration.Settings _settings => ServiceLocator.Settings!;
+        private Configuration.Settings _settings => ServiceLocator.Settings;
 
         private ModelsModel _model;
 
@@ -33,7 +33,7 @@ namespace Diffusion.Toolkit.Pages
             DataContext = _model;
         }
 
-        public Action<Model>? OnModelUpdated { get; set; }
+        public Action<Model> OnModelUpdated { get; set; }
 
         private void ModelOnPropertyChanged(object? sender, PropertyChangedEventArgs e)
         {
@@ -67,7 +67,7 @@ namespace Diffusion.Toolkit.Pages
                 Path = m.Path,
                 Filename = m.Filename,
                 Hash = m.Hash,
-                SHA256 = m.SHA256 ?? string.Empty,
+                SHA256 = m.SHA256,
             }).ToList();
 
             UpdateFilteredModels();
@@ -85,7 +85,7 @@ namespace Diffusion.Toolkit.Pages
                 Dispatcher.Invoke(() =>
                 {
                     model.SHA256 = hash;
-                    OnModelUpdated?.Invoke(new Model() { Path = model.Path, Filename = model.Filename, Hash = model.Hash, SHA256 = hash });
+                    OnModelUpdated?.Invoke(new Model() { Path = model.Path, SHA256 = hash });
                     if (!string.IsNullOrEmpty(_settings.HashCache) && File.Exists(_settings.HashCache))
                     {
                         var hashes = JsonSerializer.Deserialize<Hashes>(File.ReadAllText(_settings.HashCache));
@@ -97,30 +97,27 @@ namespace Diffusion.Toolkit.Pages
 
                         var key = "checkpoint/" + model.Path;
 
-                        if (hashes != null && hashes.hashes != null)
+                        if (hashes.hashes.TryGetValue(key, out var hashInfo))
                         {
-                            if (hashes.hashes.TryGetValue(key, out var hashInfo))
-                            {
-                                hashInfo.sha256 = hash;
-                                hashInfo.mtime = mTime.TotalSeconds;
-                            }
-                            else
-                            {
-                                hashes.hashes.Add(key, new HashInfo()
-                                {
-                                    sha256 = hash,
-                                    mtime = mTime.TotalSeconds
-                                });
-                            }
-
-                            var json = JsonSerializer.Serialize(hashes, new JsonSerializerOptions()
-                            {
-                                WriteIndented = true,
-
-                            });
-
-                            File.WriteAllText(_settings.HashCache, json);
+                            hashInfo.sha256 = hash;
+                            hashInfo.mtime = mTime.TotalSeconds;
                         }
+                        else
+                        {
+                            hashes.hashes.Add(key, new HashInfo()
+                            {
+                                sha256 = hash,
+                                mtime = mTime.TotalSeconds
+                            });
+                        }
+
+                        var json = JsonSerializer.Serialize(hashes, new JsonSerializerOptions()
+                        {
+                            WriteIndented = true,
+                            
+                        });
+
+                        File.WriteAllText(_settings.HashCache, json);
                     }
 
                 });

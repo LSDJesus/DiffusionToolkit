@@ -13,7 +13,7 @@ namespace Diffusion.Toolkit.Pages
         public void StartNavigateCursor()
         {
             if (isPaging) return;
-            if (_startIndex == -1 && _model.SelectedImageEntry != null && _model.Images != null)
+            if (_startIndex == -1 && _model.SelectedImageEntry != null)
             {
                 _startIndex = _model.Images.IndexOf(_model.SelectedImageEntry);
             }

@@ -6,7 +6,9 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Threading;
 using Diffusion.Common;
+using Diffusion.Common.Query;
 using Diffusion.Database.PostgreSQL.Models;
 using Diffusion.Toolkit.Localization;
 using Diffusion.Toolkit.Models;
@@ -16,9 +18,9 @@ namespace Diffusion.Toolkit.Services;
 
 public class NamePath
 {
-    public string? Name { get; set; }
-    public string? Path{ get; set; }
-    public string? FileName { get; set; }
+    public string Name { get; set; }
+    public string Path{ get; set; }
+    public string FileName { get; set; }
 }
 
 public class FileService
@@ -40,7 +42,7 @@ public class FileService
         //});
         _debounceUpdateViewed = Utility.Debounce<int>((id) =>
         {
-            ServiceLocator.DataStore?.UpdateViewed(id);
+            ServiceLocator.DataStore.UpdateViewed(id);
         }, 2000);
 
         //Task.Run(() => _viewedChannel.ConsumeAsync());
@@ -48,12 +50,12 @@ public class FileService
 
     private string GetLocalizedText(string key)
     {
-        return JsonLocalizationProvider.Instance.GetLocalizedObject(key, null, CultureInfo.InvariantCulture)?.ToString() ?? string.Empty;
+        return (string)JsonLocalizationProvider.Instance.GetLocalizedObject(key, null, CultureInfo.InvariantCulture);
     }
 
     public void Delete(string path)
     {
-        if (ServiceLocator.Settings != null && ServiceLocator.Settings.PermanentlyDelete)
+        if (ServiceLocator.Settings.PermanentlyDelete)
         {
             File.Delete(path);
         }
@@ -86,10 +88,7 @@ public class FileService
 
                 ServiceLocator.ProgressService.SetProgress(count, $"Deleting {filename}");
 
-                if (ServiceLocator.DataStore != null)
-                {
-                    ServiceLocator.DataStore.RemoveImage(imagePath.Id);
-                }
+                ServiceLocator.DataStore.RemoveImage(imagePath.Id);
 
                 ServiceLocator.FileService.Delete(imagePath.Path);
 
@@ -134,10 +133,7 @@ public class FileService
             await ServiceLocator.MessageService.Show($"The operation was cancelled.", "Empty recycle bin", PopupButtons.OK);
         }
 
-        if (ServiceLocator.ToastService != null)
-        {
-            ServiceLocator.ToastService.Toast($"{count} images were deleted", "Empty recycle bin");
-        }
+        ServiceLocator.ToastService.Toast($"{count} images were deleted", "Empty recycle bin");
 
 
 
@@ -158,76 +154,54 @@ public class FileService
 
         if (result == PopupResult.OK)
         {
-            if (newName != null)
+            newName = newName.Trim();
+
+            if (FileUtility.IsValidFilename(newName))
             {
-                newName = newName.Trim();
+                var newFilename = $"{newName}{extension}";
+                var newPath = Path.Combine(oldPath, newFilename);
 
-                if (FileUtility.IsValidFilename(newName))
+                try
                 {
-                    var newFilename = $"{newName}{extension}";
-                    var newPath = oldPath != null ? Path.Combine(oldPath, newFilename) : newFilename;
+                    ServiceLocator.FolderService.DisableWatchers();
+                    File.Move(path, newPath);
 
-                    try
-                    {
-                        ServiceLocator.FolderService.DisableWatchers();
-                        File.Move(path, newPath);
+                    ServiceLocator.DataStore.UpdateImageFilename(imageId, newPath, newFilename);
 
-                        if (ServiceLocator.DataStore != null)
-                        {
-                            ServiceLocator.DataStore.UpdateImageFilename(imageId, newPath, newFilename);
-                        }
+                    ServiceLocator.MainModel.CurrentImageEntry.Path = newPath;
+                    ServiceLocator.MainModel.CurrentImageEntry.FileName = newFilename;
+                    ServiceLocator.MainModel.CurrentImageEntry.Name = newFilename;
+                    ServiceLocator.MainModel.CurrentImage.Path = newPath;
 
-                        if (ServiceLocator.MainModel != null && ServiceLocator.MainModel.CurrentImageEntry != null)
-                        {
-                            ServiceLocator.MainModel.CurrentImageEntry.Path = newPath;
-                            ServiceLocator.MainModel.CurrentImageEntry.FileName = newFilename;
-                            ServiceLocator.MainModel.CurrentImageEntry.Name = newFilename;
-                        }
-                        if (ServiceLocator.MainModel != null && ServiceLocator.MainModel.CurrentImage != null)
-                        {
-                            ServiceLocator.MainModel.CurrentImage.Path = newPath;
-                        }
-
-                        return (true, new NamePath() { Name = newName, FileName = newFilename, Path = newPath });
-                    }
-                    catch (Exception e)
-                    {
-                        Logger.Log(e.Message + "\r\n" + e.StackTrace);
-                        MessageBox.Show(window, e.Message, GetLocalizedText("Actions.Files.Rename.Error.Title"),
-                            MessageBoxButton.OK, MessageBoxImage.Error);
-                    }
-                    finally
-                    {
-                        ServiceLocator.FolderService.EnableWatchers();
-                    }
-
-                    return (false, null);
                 }
-                else
+                catch (Exception e)
                 {
-                    await ServiceLocator.MessageService.Show(GetLocalizedText("Actions.Files.Rename.Invalid.Message"),
-                        title, PopupButtons.OK);
-                    return (false, null);
+                    Logger.Log(e.Message + "\r\n" + e.StackTrace);
+                    MessageBox.Show(window, e.Message, GetLocalizedText("Actions.Files.Rename.Error.Title"),
+                        MessageBoxButton.OK, MessageBoxImage.Error);
                 }
+                finally
+                {
+                    ServiceLocator.FolderService.EnableWatchers();
+                }
+
+                return (true, new NamePath() { Name = newName, FileName = newFilename, Path = newPath });
             }
             else
             {
                 await ServiceLocator.MessageService.Show(GetLocalizedText("Actions.Files.Rename.Invalid.Message"),
                     title, PopupButtons.OK);
-                return (false, null);
             }
+
         }
-        else
-        {
-            await ServiceLocator.MessageService.Show(GetLocalizedText("Actions.Files.Rename.Invalid.Message"),
-                title, PopupButtons.OK);
-            return (false, null);
-        }
+
+        return (false, null);
     }
 
     public async Task RemoveImagesTaggedForDeletion()
     {
-        var files = ServiceLocator.DataStore?.GetImagesTaggedForDeletion()?.ToList() ?? new List<ImagePath>();
+        var files = ServiceLocator.DataStore.GetImagesTaggedForDeletion().ToList();
+        var count = 0;
 
         var title = GetLocalizedText("Actions.Delete.Caption");
 
@@ -238,7 +212,7 @@ public class FileService
             return;
         }
 
-        var message = (ServiceLocator.Settings != null && ServiceLocator.Settings.PermanentlyDelete)
+        var message = ServiceLocator.Settings.PermanentlyDelete
             ? GetLocalizedText("Actions.Delete.PermanentlyDelete.Message")
             : GetLocalizedText("Actions.Delete.Delete.Message");
 
@@ -283,9 +257,7 @@ public class FileService
 
                     var moved = 0;
 
-                    var folderCache = ServiceLocator.DataStore != null
-                        ? ServiceLocator.DataStore.GetFolders().ToDictionary(d => d.Path)
-                        : new Dictionary<string, Folder>();
+                    var folderCache = ServiceLocator.DataStore.GetFolders().ToDictionary(d => d.Path);
 
                     var message = GetLocalizedText("Actions.Files.Move.Message");
 
@@ -334,17 +306,11 @@ public class FileService
 
                             if (remove)
                             {
-                                if (ServiceLocator.DataStore != null)
-                                {
-                                    ServiceLocator.DataStore.RemoveImage(image.Id);
-                                }
+                                ServiceLocator.DataStore.RemoveImage(image.Id);
                             }
                             else
                             {
-                                if (ServiceLocator.DataStore != null)
-                                {
-                                    ServiceLocator.DataStore.MoveImage(image.Id, newPath, folderCache);
-                                }
+                                ServiceLocator.DataStore.MoveImage(image.Id, newPath, folderCache);
                             }
 
                             var moved1 = moved;
@@ -357,17 +323,11 @@ public class FileService
                         }
                         else
                         {
-                            if (ServiceLocator.MainModel != null)
-                            {
-                                ServiceLocator.MainModel.TotalProgress--;
-                            }
+                            ServiceLocator.MainModel.TotalProgress--;
                         }
                     }
 
-                    if (ServiceLocator.ToastService != null)
-                    {
-                        ServiceLocator.ToastService.Toast(GetLocalizedText("Actions.Files.Move.Success").Replace("{count}", $"{moved}"), "");
-                    }
+                    ServiceLocator.ToastService.Toast(GetLocalizedText("Actions.Files.Move.Success").Replace("{count}", $"{moved}"), "");
                 }
                 catch (Exception e)
                 {
@@ -391,10 +351,8 @@ public class FileService
 
     public bool IsRegisteredExtension(string path)
     {
-        return ServiceLocator.Settings != null &&
-               ServiceLocator.Settings.FileExtensions != null &&
-               ServiceLocator.Settings.FileExtensions.IndexOf(Path.GetExtension(path),
-                   StringComparison.InvariantCultureIgnoreCase) > -1;
+        return ServiceLocator.Settings.FileExtensions.IndexOf(Path.GetExtension(path),
+            StringComparison.InvariantCultureIgnoreCase) > -1;
     }
 
 

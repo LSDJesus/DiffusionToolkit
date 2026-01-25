@@ -4,10 +4,10 @@ namespace Diffusion.Toolkit.Pages;
 
 public class ModelViewModel : BaseNotify
 {
-    private string _sha256 = string.Empty;
-    private string _hash = string.Empty;
-    public string Path { get; set; } = string.Empty;
-    public string Filename { get; set; } = string.Empty;
+    private string _sha256;
+    private string _hash;
+    public string Path { get; set; }
+    public string Filename { get; set; }
 
     public string Hash
     {

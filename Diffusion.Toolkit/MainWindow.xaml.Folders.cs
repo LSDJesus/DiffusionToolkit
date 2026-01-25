@@ -1,10 +1,15 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Diffusion.Common;
+using Diffusion.Common.Query;
 using Diffusion.Toolkit.Classes;
 using Diffusion.Toolkit.Models;
 using Diffusion.Toolkit.Services;
+using Diffusion.Toolkit.Thumbnails;
+using Path = System.IO.Path;
 
 namespace Diffusion.Toolkit
 {

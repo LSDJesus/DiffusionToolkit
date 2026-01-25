@@ -1,5 +1,7 @@
 ﻿using System.Collections.ObjectModel;
+using Diffusion.Database;
 using Diffusion.Toolkit.Services;
+using MdXaml.LinkActions;
 using PgUsedPrompt = Diffusion.Database.PostgreSQL.UsedPrompt;
 
 namespace Diffusion.Toolkit.Models;
@@ -19,14 +21,11 @@ public class PromptsModel : BaseNotify
     
     public PromptsModel()
     {
-        _prompts = new ObservableCollection<PgUsedPrompt>();
-        _negativePrompts = new ObservableCollection<PgUsedPrompt>();
-        _promptQuery = string.Empty;
         _promptsResults = new ResultsView();
         _negativePromptsResults = new ResultsView();
     }
 
-    public MainModel MainModel => ServiceLocator.MainModel!;
+    public MainModel MainModel => ServiceLocator.MainModel;
     public ObservableCollection<PgUsedPrompt> Prompts
     {
         get => _prompts;

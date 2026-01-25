@@ -37,7 +37,7 @@ namespace Diffusion.Common
 
                 return false;
             }
-            catch (Exception)
+            catch (Exception e)
             {
                 obj = default(T);
 
@@ -61,10 +61,7 @@ namespace Diffusion.Common
         public void Save(T obj)
         {
             var path = Path.GetDirectoryName(_settingsPath);
-            if (!string.IsNullOrEmpty(path) && !Directory.Exists(path))
-            {
-                Directory.CreateDirectory(path);
-            }
+            if (!Directory.Exists(path)) Directory.CreateDirectory(path);
 
             var options = new JsonSerializerOptions
             {

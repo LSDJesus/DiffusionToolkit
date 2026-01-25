@@ -1,4 +1,3 @@
-using System;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -18,7 +17,7 @@ public class UpdateChecker
 
     public CancellationToken CancellationToken => _cts.Token;
 
-    public Release? LatestRelease { get; private set; }
+    public Release LatestRelease { get; private set; }
 
     public UpdateChecker()
     {
@@ -29,9 +28,6 @@ public class UpdateChecker
     private async Task<Release> GetLatestRelease()
     {
         var releases = await Client.GetReleases(_cts.Token);
-
-        if (releases == null || !releases.Any())
-            throw new InvalidOperationException("No releases found from GitHub.");
 
         return releases.OrderByDescending(r => r.published_at).First();
     }

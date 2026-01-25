@@ -10,7 +10,7 @@ namespace Diffusion.Toolkit.Themes
 
         private const string RegistryValueName = "AppsUseLightTheme";
 
-        public static string CurrentTheme { get; private set; } = "Light";
+        public static string CurrentTheme { get; private set; }
 
         public static void ChangeTheme(string themeName)
         {

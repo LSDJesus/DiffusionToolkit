@@ -5,7 +5,7 @@ namespace Diffusion.Toolkit.Services
 {
     public class NotificationService
     {
-        public event EventHandler<string>? Notify;
+        public event EventHandler<string> Notify;
 
         public void SetNotification(string text)
         {

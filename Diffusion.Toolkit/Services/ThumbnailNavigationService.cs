@@ -5,10 +5,10 @@ namespace Diffusion.Toolkit.Services;
 
 public class ThumbnailNavigationService
 {
-    public event EventHandler? Previous;
-    public event EventHandler? Next;
-    public event EventHandler? PreviousPage;
-    public event EventHandler? NextPage;
+    public event EventHandler Previous;
+    public event EventHandler Next;
+    public event EventHandler PreviousPage;
+    public event EventHandler NextPage;
 
 
     public void MovePrevious()
