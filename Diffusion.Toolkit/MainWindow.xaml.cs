@@ -75,7 +75,7 @@ namespace Diffusion.Toolkit
 
 
                 _configuration = new Configuration<Settings>(AppInfo.SettingsPath, AppInfo.IsPortable);
-
+                ServiceLocator.SetConfiguration(_configuration);
 
                 //Thread.CurrentThread.CurrentCulture = CultureInfo.GetCultureInfo("fr-FR");
                 //Thread.CurrentThread.CurrentUICulture = CultureInfo.GetCultureInfo("fr-FR");

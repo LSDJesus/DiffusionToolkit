@@ -29,10 +29,11 @@ public partial class PostgreSQLDataStore
         
         if (imageList.Count == 0) return 0;
 
-        // Build field list excluding user-defined metadata
+        // Build field list excluding user-defined metadata and auto-generated columns
         var exclude = new string[]
         {
             nameof(Image.Id),
+            nameof(Image.ImageUuid),  // Excluded - database generates via gen_random_uuid()
             nameof(Image.CustomTags),
             nameof(Image.Rating),
             nameof(Image.Workflow),
@@ -122,8 +123,7 @@ public partial class PostgreSQLDataStore
         // Exclude user-defined metadata from updates
         var exclude = new string[]
         {
-            nameof(Image.Id),
-            nameof(Image.CustomTags),
+            nameof(Image.Id),            nameof(Image.ImageUuid),  // Excluded - immutable UUID set on creation            nameof(Image.CustomTags),
             nameof(Image.Rating),
             nameof(Image.Favorite),
             nameof(Image.ForDeletion),

@@ -654,6 +654,12 @@ namespace Diffusion.Toolkit.Pages
                 // Only show notification and refresh if schema actually changed
                 if (oldSchema != schema)
                 {
+                    // Save the schema change immediately (persists across restarts)
+                    ServiceLocator.Configuration?.Save(_settings);
+                    
+                    // Clear folder cache to load folders from new schema
+                    ServiceLocator.FolderService?.ClearCache();
+                    
                     // Refresh the search results to show images from new schema
                     ServiceLocator.SearchService?.RefreshResults();
                     

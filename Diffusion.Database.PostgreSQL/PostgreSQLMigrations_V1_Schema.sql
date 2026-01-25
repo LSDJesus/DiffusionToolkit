@@ -113,7 +113,6 @@ CREATE TABLE IF NOT EXISTS image (
     location_id UUID,
     image_type VARCHAR(50),
     status VARCHAR(20),
-    generation_time_seconds DECIMAL(6, 2),
     comfyui_workflow VARCHAR(100),
     error_message TEXT,
     
@@ -260,6 +259,7 @@ CREATE TABLE IF NOT EXISTS folder (
     is_root BOOLEAN DEFAULT FALSE,
     recursive BOOLEAN DEFAULT FALSE,
     watched BOOLEAN DEFAULT FALSE,
+    schema_name TEXT,
     created_at TIMESTAMP DEFAULT NOW()
 );
 

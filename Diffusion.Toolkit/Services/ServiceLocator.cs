@@ -56,9 +56,11 @@ public class ServiceLocator
     private static BackgroundFaceDetectionService? _backgroundFaceDetectionService;
     private static GpuResourceOrchestrator? _gpuResourceOrchestrator;
     private static GlobalProcessingOrchestrator? _globalProcessingOrchestrator;
+    private static Configuration<Settings>? _configuration;
 
     public static PostgreSQLDataStore? DataStore => _dataStore; // Primary PostgreSQL database
     public static Settings? Settings => _settings;
+    public static Configuration<Settings>? Configuration => _configuration;
     public static ToastService? ToastService { get; set; }
     public static Dispatcher? Dispatcher { get; set; }
     public static BackgroundTaggingService? BackgroundTaggingService => _backgroundTaggingService;
@@ -112,6 +114,11 @@ public class ServiceLocator
     public static void SetSettings(Settings? settings)
     {
         _settings = settings;
+    }
+
+    public static void SetConfiguration(Configuration<Settings>? configuration)
+    {
+        _configuration = configuration;
     }
 
     public static void SetNavigatorService(NavigatorService navigatorService)
