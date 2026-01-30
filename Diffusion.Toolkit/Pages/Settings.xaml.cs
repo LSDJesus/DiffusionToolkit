@@ -655,6 +655,13 @@ namespace Diffusion.Toolkit.Pages
                 _settings.DatabaseSchema = schema;
                 _dataStore.CurrentSchema = schema;
                 
+                // Also update the active database profile's schema so it persists across restarts
+                var activeProfile = _settings.DatabaseProfiles.FirstOrDefault(p => p.Name == _settings.ActiveDatabaseProfile);
+                if (activeProfile != null)
+                {
+                    activeProfile.Schema = schema;
+                }
+                
                 // Only show notification and refresh if schema actually changed
                 if (oldSchema != schema)
                 {
@@ -713,6 +720,92 @@ namespace Diffusion.Toolkit.Pages
             {
                 MessageBox.Show($"Failed to create schema: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
                 Logger.Log($"Schema creation error: {ex}");
+            }
+        }
+
+        private async void DeleteSchema_Click(object sender, RoutedEventArgs e)
+        {
+            var currentSchema = _settings.DatabaseSchema;
+            
+            if (currentSchema == "public")
+            {
+                MessageBox.Show("Cannot delete the 'public' schema. It is the default PostgreSQL schema.", 
+                    "Cannot Delete", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+            
+            var result = MessageBox.Show(
+                $"Are you sure you want to delete the schema '{currentSchema}'?\n\n" +
+                "⚠️ WARNING: This will permanently delete ALL images, folders, albums, and other data in this schema!\n\n" +
+                "This action cannot be undone.",
+                "Delete Schema",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning);
+                
+            if (result != MessageBoxResult.Yes)
+                return;
+                
+            // Double-confirm for safety
+            var confirmResult = MessageBox.Show(
+                $"Type 'DELETE' to confirm deletion of schema '{currentSchema}'.\n\nAre you absolutely sure?",
+                "Confirm Deletion",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Stop);
+                
+            if (confirmResult != MessageBoxResult.Yes)
+                return;
+            
+            try
+            {
+                Logger.Log($"Deleting schema: {currentSchema}");
+                
+                // Switch to public schema first
+                _settings.DatabaseSchema = "public";
+                _dataStore.CurrentSchema = "public";
+                
+                // Also update the active database profile's schema
+                var activeProfile = _settings.DatabaseProfiles.FirstOrDefault(p => p.Name == _settings.ActiveDatabaseProfile);
+                if (activeProfile != null)
+                {
+                    activeProfile.Schema = "public";
+                }
+                
+                // Drop the schema
+                await _dataStore.DropSchemaAsync(currentSchema);
+                Logger.Log($"Schema {currentSchema} deleted");
+                
+                // Remove from ComboBox
+                var comboBox = FindName("SchemaComboBox") as ComboBox;
+                if (comboBox != null)
+                {
+                    var itemToRemove = comboBox.Items.Cast<ComboBoxItem>().FirstOrDefault(i => i.Tag as string == currentSchema);
+                    if (itemToRemove != null)
+                    {
+                        comboBox.Items.Remove(itemToRemove);
+                    }
+                    
+                    // Select public
+                    var publicItem = comboBox.Items.Cast<ComboBoxItem>().FirstOrDefault(i => i.Tag as string == "public");
+                    if (publicItem != null)
+                    {
+                        comboBox.SelectedItem = publicItem;
+                    }
+                }
+                
+                // Save settings
+                ServiceLocator.Configuration?.Save(_settings);
+                
+                // Refresh
+                ServiceLocator.FolderService?.ClearCache();
+                ServiceLocator.SearchService?.RefreshResults();
+                
+                MessageBox.Show($"Schema '{currentSchema}' deleted successfully. Switched to 'public' schema.", 
+                    "Success", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Failed to delete schema: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                Logger.Log($"Schema deletion error: {ex}");
             }
         }
 

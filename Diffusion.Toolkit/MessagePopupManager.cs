@@ -7,6 +7,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Threading;
+using Diffusion.Common;
 using Diffusion.Toolkit.Controls;
 using Diffusion.Toolkit.Models;
 
@@ -127,15 +128,19 @@ public class MessagePopupManager
 
     public Task<PopupResult> Show(string message, string title, PopupButtons buttons, int timeout = 0)
     {
+        Logger.Log($"MessagePopupManager.Show: Starting - title={title}, buttons={buttons}");
         return _dispatcher.Invoke(() =>
         {
+            Logger.Log($"MessagePopupManager.Show: Inside dispatcher - setting host visible");
             _host.Visibility = Visibility.Visible;
             var popup = new MessagePopup(this, _placementTarget, timeout);
             _popups.Add(popup);
             _host.Children.Add(popup);
+            Logger.Log($"MessagePopupManager.Show: Popup created and added to host, showing popup");
             return popup.Show(message, title, buttons, GetDefaultResult(buttons))
                 .ContinueWith(t =>
                 {
+                    Logger.Log($"MessagePopupManager.Show: Popup completed with result={t.Result}");
                     _dispatcher.Invoke(() => { _host.Visibility = Visibility.Hidden; });
                     return t.Result;
                 });

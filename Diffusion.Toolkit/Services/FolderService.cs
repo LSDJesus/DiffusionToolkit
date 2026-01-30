@@ -297,33 +297,38 @@ namespace Diffusion.Toolkit.Services
         {
             ClearCache();
 
-            var folders = ServiceLocator.DataStore.GetFoldersView().ToList();
+            // Do all the heavy work on background thread
+            var folders = await Task.Run(() => ServiceLocator.DataStore.GetFoldersView().ToList());
+            
+            // Build lookup dictionary on background thread
+            var lookup = await Task.Run(() => folders.ToDictionary(d => d.Path.ToLower()));
+            
+            // Build root folder view models on background thread
+            var rootFolderViewModels = await Task.Run(() => 
+                folders.Where(d => d.IsRoot).Select(folder => new FolderViewModel()
+                {
+                    Id = folder.Id,
+                    HasChildren = folder.HasChildren > 0,
+                    Visible = true,
+                    Depth = 0,
+                    Name = GetFolderName(folder),
+                    Path = folder.Path,
+                    IsArchived = folder.Archived,
+                    IsExcluded = folder.Excluded,
+                    IsRecursive = folder.Recursive,
+                    IsUnavailable = !Directory.Exists(folder.Path),
+                    IsScanned = true
+                }).ToList());
 
+            // Only do the UI update on the UI thread - this should be fast now
             _dispatcher.Invoke(() =>
                 {
                     if (ServiceLocator.MainModel.Folders == null || ServiceLocator.MainModel.Folders.Count == 0)
                     {
-                        ServiceLocator.MainModel.Folders = new ObservableCollection<FolderViewModel>(folders.Where(d => d.IsRoot).Select(folder => new FolderViewModel()
-                        {
-                            Id = folder.Id,
-                            HasChildren = folder.HasChildren > 0,
-                            Visible = true,
-                            Depth = 0,
-                            Name = GetFolderName(folder),
-                            Path = folder.Path,
-                            IsArchived = folder.Archived,
-                            IsExcluded = folder.Excluded,
-                            IsRecursive = folder.Recursive,
-                            IsUnavailable = !Directory.Exists(folder.Path),
-                            IsScanned = true
-                        }));
+                        ServiceLocator.MainModel.Folders = new ObservableCollection<FolderViewModel>(rootFolderViewModels);
                     }
                     else
                     {
-                        var comparer = new PathComparer();
-
-                        var lookup = folders.ToDictionary(d => d.Path.ToLower());
-
                         var currentVisualRootFolders = ServiceLocator.MainModel.Folders.Where(d => d.Depth == 0).ToList();
 
                         // Start at each root folder
@@ -756,20 +761,47 @@ namespace Diffusion.Toolkit.Services
 
                 if (result == PopupResult.Yes)
                 {
-                    var filesToScan = new List<string>();
-
                     if (await ServiceLocator.ProgressService.TryStartTask())
                     {
                         var cancellationToken = ServiceLocator.ProgressService.CancellationToken;
 
-                        foreach (var folder in addedRootFolders)
+                        // Run file discovery and scanning entirely in background to keep UI responsive
+                        _ = Task.Run(async () =>
                         {
-                            filesToScan.AddRange(await ServiceLocator.ScanningService.GetFilesToScan(folder.Path, folder.Recursive, new HashSet<string>(), cancellationToken));
-                        }
+                            try
+                            {
+                                var filesToScan = new List<string>();
+                                
+                                foreach (var folder in addedRootFolders)
+                                {
+                                    if (cancellationToken.IsCancellationRequested) break;
+                                    filesToScan.AddRange(await ServiceLocator.ScanningService.GetFilesToScan(folder.Path, folder.Recursive, new HashSet<string>(), cancellationToken));
+                                }
 
-                        // Use two-phase scanning: quick scan first for immediate visibility
-                        Logger.Log($"Starting two-phase scan for {filesToScan.Count} new files...");
-                        await ServiceLocator.ScanningService.ScanNewFolder(filesToScan, cancellationToken);
+                                if (cancellationToken.IsCancellationRequested)
+                                {
+                                    Logger.Log("Folder scan cancelled during file discovery");
+                                    ServiceLocator.ProgressService.CompleteTask();
+                                    return;
+                                }
+
+                                // Use two-phase scanning: quick scan first for immediate visibility
+                                Logger.Log($"Starting two-phase scan for {filesToScan.Count} new files...");
+                                await ServiceLocator.ScanningService.ScanNewFolder(filesToScan, cancellationToken);
+                            }
+                            catch (OperationCanceledException)
+                            {
+                                Logger.Log("Folder scan cancelled");
+                            }
+                            catch (Exception ex)
+                            {
+                                Logger.Log($"Folder scan error: {ex.Message}");
+                            }
+                            finally
+                            {
+                                ServiceLocator.ProgressService.CompleteTask();
+                            }
+                        }, cancellationToken);
                     }
                 }
 
@@ -1180,15 +1212,41 @@ namespace Diffusion.Toolkit.Services
 
         public async Task<bool> ShowRemoveFolderDialog(FolderViewModel folder)
         {
+            Logger.Log($"ShowRemoveFolderDialog: Starting for folder {folder.Path}, Depth={folder.Depth}, IsUnavailable={folder.IsUnavailable}");
+            
             // Use appropriate title/message based on whether this is a root folder
             var isRoot = folder.Depth == 0;
             var title = GetLocalizedText(isRoot ? "Actions.RootFolders.Remove.Title" : "Actions.Folders.Remove.Title");
             var messageKey = isRoot ? "Actions.RootFolders.Remove.Message" : "Actions.Folders.Remove.Message";
 
-            var result = await ServiceLocator.MessageService.Show(GetLocalizedText(messageKey).Replace("{folder}", folder.Name), title, PopupButtons.YesNo);
+            PopupResult result;
+            
+            // For unavailable (externally deleted) folders, skip confirmation - they need cleanup anyway
+            if (folder.IsUnavailable)
+            {
+                Logger.Log($"ShowRemoveFolderDialog: Folder is unavailable, skipping confirmation dialog");
+                result = PopupResult.Yes;
+            }
+            else
+            {
+                Logger.Log($"ShowRemoveFolderDialog: Showing dialog with title={title}");
+                Logger.Log($"ShowRemoveFolderDialog: MessageService is {(ServiceLocator.MessageService == null ? "NULL" : "available")}");
+                try
+                {
+                    result = await ServiceLocator.MessageService.Show(GetLocalizedText(messageKey).Replace("{folder}", folder.Name), title, PopupButtons.YesNo);
+                    Logger.Log($"ShowRemoveFolderDialog: Dialog result = {result}");
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log($"ShowRemoveFolderDialog: EXCEPTION showing dialog: {ex.Message}");
+                    Logger.Log($"ShowRemoveFolderDialog: Stack: {ex.StackTrace}");
+                    return false;
+                }
+            }
 
             if (result == PopupResult.Yes)
             {
+                Logger.Log($"ShowRemoveFolderDialog: Removing folder ID={folder.Id}");
                 ServiceLocator.DataStore.RemoveFolder(folder.Id);
 
                 // Remove watcher if this is a root folder (root folders can have watchers)
@@ -1203,6 +1261,7 @@ namespace Diffusion.Toolkit.Services
 
                 return true;
             }
+            Logger.Log($"ShowRemoveFolderDialog: User cancelled or said No");
             return false;
         }
 

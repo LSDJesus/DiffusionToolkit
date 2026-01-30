@@ -118,17 +118,29 @@ public partial class PostgreSQLDataStore : IDisposable
     public async Task<NpgsqlConnection> OpenConnectionAsync()
     {
         var conn = await _dataSource.OpenConnectionAsync().ConfigureAwait(false);
-        // search_path is set automatically via UsePhysicalConnectionInitializer in constructor
+        // Always ensure search_path is correct (pooled connections may have stale settings)
+        if (!string.IsNullOrEmpty(_currentSchema))
+        {
+            await using var cmd = new NpgsqlCommand($"SET search_path TO {_currentSchema}, public;", conn);
+            await cmd.ExecuteNonQueryAsync();
+        }
         return conn;
     }
 
     /// <summary>
     /// Opens a synchronous connection (for compatibility with existing code)
-    /// Search path is set automatically via UsePhysicalConnectionInitializer
+    /// Always sets search_path to ensure correct schema is used
     /// </summary>
     public NpgsqlConnection OpenConnection()
     {
-        return _dataSource.OpenConnection();
+        var conn = _dataSource.OpenConnection();
+        // Always ensure search_path is correct (pooled connections may have stale settings)
+        if (!string.IsNullOrEmpty(_currentSchema))
+        {
+            using var cmd = new NpgsqlCommand($"SET search_path TO {_currentSchema}, public;", conn);
+            cmd.ExecuteNonQuery();
+        }
+        return conn;
     }
     
     /// <summary>
@@ -289,6 +301,34 @@ public partial class PostgreSQLDataStore : IDisposable
         {
             Logger.Log($"CreateSchemaWithTables: Error - {ex}");
             throw new InvalidOperationException($"Failed to create schema '{schemaName}'", ex);
+        }
+    }
+
+    /// <summary>
+    /// Drop a schema and all its contents (CASCADE)
+    /// </summary>
+    public async Task DropSchemaAsync(string schemaName)
+    {
+        if (schemaName == "public")
+        {
+            throw new InvalidOperationException("Cannot drop the 'public' schema");
+        }
+        
+        await using var conn = await OpenConnectionAsync().ConfigureAwait(false);
+
+        try
+        {
+            Logger.Log($"DropSchemaAsync: Dropping schema '{schemaName}' CASCADE");
+            
+            // Drop the schema and all its contents
+            await conn.ExecuteAsync($"DROP SCHEMA IF EXISTS \"{schemaName}\" CASCADE;").ConfigureAwait(false);
+            
+            Logger.Log($"DropSchemaAsync: Schema '{schemaName}' dropped successfully");
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"DropSchemaAsync: Error - {ex}");
+            throw new InvalidOperationException($"Failed to drop schema '{schemaName}'", ex);
         }
     }
 

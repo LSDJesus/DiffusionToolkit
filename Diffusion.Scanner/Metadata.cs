@@ -112,6 +112,68 @@ public class Metadata
         return FileType.Other;
     }
 
+    /// <summary>
+    /// Decode EXIF User Comment that may be UTF-16LE encoded with UNICODE prefix.
+    /// EXIF User Comment format: 8-byte encoding identifier + data
+    /// - "UNICODE\0" (8 bytes) = UTF-16LE
+    /// - "ASCII\0\0\0" (8 bytes) = ASCII  
+    /// - "\0\0\0\0\0\0\0\0" (8 bytes) = undefined (treat as UTF-8)
+    /// </summary>
+    private static string DecodeExifUserComment(byte[] rawBytes)
+    {
+        if (rawBytes == null || rawBytes.Length < 8)
+            return string.Empty;
+
+        // Check for UNICODE prefix (UTF-16LE)
+        if (rawBytes.Length >= 8 && 
+            rawBytes[0] == 'U' && rawBytes[1] == 'N' && rawBytes[2] == 'I' && 
+            rawBytes[3] == 'C' && rawBytes[4] == 'O' && rawBytes[5] == 'D' && 
+            rawBytes[6] == 'E' && rawBytes[7] == 0)
+        {
+            // UTF-16LE encoded - skip the 8-byte prefix
+            return Encoding.Unicode.GetString(rawBytes, 8, rawBytes.Length - 8).TrimEnd('\0');
+        }
+
+        // Check for ASCII prefix
+        if (rawBytes.Length >= 8 &&
+            rawBytes[0] == 'A' && rawBytes[1] == 'S' && rawBytes[2] == 'C' &&
+            rawBytes[3] == 'I' && rawBytes[4] == 'I')
+        {
+            return Encoding.ASCII.GetString(rawBytes, 8, rawBytes.Length - 8).TrimEnd('\0');
+        }
+
+        // Check for undefined/null prefix (common for UTF-8)
+        if (rawBytes.Length >= 8 && rawBytes.Take(8).All(b => b == 0))
+        {
+            return Encoding.UTF8.GetString(rawBytes, 8, rawBytes.Length - 8).TrimEnd('\0');
+        }
+
+        // No recognized prefix - try UTF-8 on the whole thing
+        return Encoding.UTF8.GetString(rawBytes).TrimEnd('\0');
+    }
+
+    /// <summary>
+    /// Try to get raw User Comment bytes from an EXIF directory and decode properly
+    /// </summary>
+    private static string? TryGetUserCommentFromDirectory(Directory directory)
+    {
+        if (directory is MetadataExtractor.Formats.Exif.ExifSubIfdDirectory exifDir)
+        {
+            // Tag 0x9286 is the User Comment tag in EXIF
+            const int userCommentTag = 0x9286;
+            
+            if (exifDir.ContainsTag(userCommentTag))
+            {
+                var rawBytes = exifDir.GetByteArray(userCommentTag);
+                if (rawBytes != null && rawBytes.Length > 8)
+                {
+                    return DecodeExifUserComment(rawBytes);
+                }
+            }
+        }
+        return null;
+    }
+
 
 
     public static FileParameters? ReadFromFile(string file)
@@ -747,7 +809,12 @@ public class Metadata
                                             }
                                             else
                                             {
-                                                if (tag.Description.StartsWith("{\"prompt\":"))
+                                                // Check for Civitai embedded JSON format
+                                                if (tag.Description.StartsWith("{\"civitai\":") || tag.Description.StartsWith("{\n\"civitai\":"))
+                                                {
+                                                    fileParameters = ReadCivitaiEmbeddedMetadata(tag.Description);
+                                                }
+                                                else if (tag.Description.StartsWith("{\"prompt\":"))
                                                 {
                                                     format = MetaFormat.ComfyUI;
                                                     var tempParameters =  ReadComfyUIParameters(tag.Description, true);
@@ -793,7 +860,78 @@ public class Metadata
 
                     try
                     {
-                        fileParameters = ReadAutomatic1111Parameters(file, directories);
+                        // First check for Civitai embedded JSON in EXIF User Comment
+                        // Note: Civitai images may use UTF-16LE encoding with UNICODE prefix
+                        foreach (var directory in directories)
+                        {
+                            if (directory.Name == "Exif SubIFD")
+                            {
+                                // Try to get properly decoded User Comment (handles UTF-16LE)
+                                var userComment = TryGetUserCommentFromDirectory(directory);
+                                
+                                if (!string.IsNullOrEmpty(userComment))
+                                {
+                                    var trimmed = userComment.TrimStart();
+                                    
+                                    // Check for Civitai embedded JSON format
+                                    if (trimmed.StartsWith("{\"civitai\":") || 
+                                        trimmed.StartsWith("{\n\"civitai\":") ||
+                                        trimmed.StartsWith("{ \"civitai\":") ||
+                                        trimmed.StartsWith("{\"original_metadata\":"))
+                                    {
+                                        fileParameters = ReadCivitaiEmbeddedMetadata(userComment);
+                                        if (fileParameters != null)
+                                        {
+                                            break;
+                                        }
+                                    }
+                                    // Check for ComfyUI format
+                                    else if (trimmed.StartsWith("{\"prompt\":"))
+                                    {
+                                        fileParameters = ReadComfyUIParameters(userComment, true);
+                                        if (fileParameters != null)
+                                        {
+                                            break;
+                                        }
+                                    }
+                                    // Fall back to A1111 format
+                                    else
+                                    {
+                                        fileParameters = ReadA111Parameters(userComment);
+                                        if (fileParameters != null)
+                                        {
+                                            break;
+                                        }
+                                    }
+                                }
+                                
+                                // Fallback: try tag.Description for backwards compatibility
+                                if (fileParameters == null)
+                                {
+                                    foreach (var tag in directory.Tags)
+                                    {
+                                        if (tag.Name == "User Comment" && !string.IsNullOrEmpty(tag.Description))
+                                        {
+                                            var desc = tag.Description.TrimStart();
+                                            if (desc.StartsWith("{\"civitai\":") || 
+                                                desc.StartsWith("{\n\"civitai\":") ||
+                                                desc.StartsWith("{ \"civitai\":"))
+                                            {
+                                                fileParameters = ReadCivitaiEmbeddedMetadata(tag.Description);
+                                                if (fileParameters != null) break;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            if (fileParameters != null) break;
+                        }
+                        
+                        // Fall back to A1111 format if Civitai wasn't found
+                        if (fileParameters == null)
+                        {
+                            fileParameters = ReadAutomatic1111Parameters(file, directories);
+                        }
                     }
                     catch (Exception e)
                     {
@@ -912,6 +1050,227 @@ public class Metadata
             {
                 Logger.Log($"Failed to read txt sidecar {txtSidecarPath}: {ex.Message}");
             }
+        }
+    }
+
+    /// <summary>
+    /// Safely get a string value from a JSON element that might be a number or string
+    /// </summary>
+    private static string? SafeGetString(JsonElement element)
+    {
+        return element.ValueKind switch
+        {
+            JsonValueKind.String => element.GetString(),
+            JsonValueKind.Number => element.GetRawText(), // Convert number to string
+            JsonValueKind.True => "true",
+            JsonValueKind.False => "false",
+            JsonValueKind.Null => null,
+            _ => element.GetRawText() // Fallback to raw JSON text
+        };
+    }
+
+    /// <summary>
+    /// Parse Civitai embedded metadata from image User Comment
+    /// Format: {"civitai": {...}, "original_metadata": {...}}
+    /// </summary>
+    private static FileParameters? ReadCivitaiEmbeddedMetadata(string jsonContent)
+    {
+        try
+        {
+            var fp = new FileParameters();
+            var root = JsonDocument.Parse(jsonContent);
+            var json = root.RootElement;
+
+            // Check for "civitai" wrapper object
+            if (!json.TryGetProperty("civitai", out var civitaiObj))
+            {
+                return null;
+            }
+
+            // Extract Civitai-specific metadata from civitai object
+            if (civitaiObj.TryGetProperty("id", out var idProp) && idProp.ValueKind == JsonValueKind.Number)
+            {
+                fp.CivitaiImageId = idProp.GetInt64();
+            }
+
+            if (civitaiObj.TryGetProperty("postId", out var postIdProp) && postIdProp.ValueKind == JsonValueKind.Number)
+            {
+                fp.CivitaiPostId = postIdProp.GetInt64();
+            }
+
+            if (civitaiObj.TryGetProperty("username", out var usernameProp))
+            {
+                fp.CivitaiUsername = SafeGetString(usernameProp);
+            }
+
+            if (civitaiObj.TryGetProperty("nsfwLevel", out var nsfwLevelProp))
+            {
+                fp.CivitaiNsfwLevel = SafeGetString(nsfwLevelProp);
+            }
+
+            if (civitaiObj.TryGetProperty("browsingLevel", out var browsingLevelProp) && browsingLevelProp.ValueKind == JsonValueKind.Number)
+            {
+                fp.CivitaiBrowsingLevel = browsingLevelProp.GetInt32();
+            }
+
+            if (civitaiObj.TryGetProperty("baseModel", out var baseModelProp))
+            {
+                fp.CivitaiBaseModel = SafeGetString(baseModelProp);
+            }
+
+            if (civitaiObj.TryGetProperty("createdAt", out var createdAtProp))
+            {
+                var createdAtStr = createdAtProp.GetString();
+                if (DateTime.TryParse(createdAtStr, out var createdAt))
+                {
+                    fp.CivitaiCreatedAt = createdAt;
+                }
+            }
+
+            if (civitaiObj.TryGetProperty("url", out var urlProp))
+            {
+                fp.CivitaiImageUrl = urlProp.GetString();
+            }
+
+            // Get dimensions from top-level civitai object
+            if (civitaiObj.TryGetProperty("width", out var widthProp) && widthProp.ValueKind == JsonValueKind.Number)
+            {
+                fp.Width = widthProp.GetInt32();
+            }
+
+            if (civitaiObj.TryGetProperty("height", out var heightProp) && heightProp.ValueKind == JsonValueKind.Number)
+            {
+                fp.Height = heightProp.GetInt32();
+            }
+
+            // Extract stats
+            if (civitaiObj.TryGetProperty("stats", out var statsProp) && statsProp.ValueKind == JsonValueKind.Object)
+            {
+                if (statsProp.TryGetProperty("likeCount", out var likeCountProp) && likeCountProp.ValueKind == JsonValueKind.Number)
+                {
+                    fp.CivitaiLikeCount = likeCountProp.GetInt32();
+                }
+            }
+
+            // Extract generation metadata from "meta" object inside civitai
+            if (civitaiObj.TryGetProperty("meta", out var metaProp) && metaProp.ValueKind == JsonValueKind.Object)
+            {
+                if (metaProp.TryGetProperty("prompt", out var promptProp))
+                {
+                    fp.Prompt = SafeGetString(promptProp);
+                }
+
+                if (metaProp.TryGetProperty("negativePrompt", out var negPromptProp))
+                {
+                    fp.NegativePrompt = SafeGetString(negPromptProp);
+                }
+
+                if (metaProp.TryGetProperty("steps", out var stepsProp) && stepsProp.ValueKind == JsonValueKind.Number)
+                {
+                    fp.Steps = stepsProp.GetInt32();
+                }
+
+                if (metaProp.TryGetProperty("cfgScale", out var cfgProp) && cfgProp.ValueKind == JsonValueKind.Number)
+                {
+                    fp.CFGScale = cfgProp.GetDecimal();
+                }
+
+                if (metaProp.TryGetProperty("sampler", out var samplerProp))
+                {
+                    fp.Sampler = SafeGetString(samplerProp);
+                }
+
+                if (metaProp.TryGetProperty("seed", out var seedProp) && seedProp.ValueKind == JsonValueKind.Number)
+                {
+                    fp.Seed = seedProp.GetInt64();
+                }
+
+                // Model info - try both "Model" (with capital) and "model"
+                if (metaProp.TryGetProperty("Model", out var modelProp))
+                {
+                    fp.Model = SafeGetString(modelProp);
+                }
+                else if (metaProp.TryGetProperty("model", out modelProp))
+                {
+                    fp.Model = SafeGetString(modelProp);
+                }
+
+                // Model hash
+                if (metaProp.TryGetProperty("Model hash", out var modelHashProp))
+                {
+                    fp.ModelHash = SafeGetString(modelHashProp);
+                }
+
+                // VAE
+                if (metaProp.TryGetProperty("VAE", out var vaeProp))
+                {
+                    fp.Vae = SafeGetString(vaeProp);
+                }
+
+                // Parse Size field "1337x1337" for dimensions if not already set
+                if ((fp.Width == 0 || fp.Height == 0) && metaProp.TryGetProperty("Size", out var sizeProp))
+                {
+                    var sizeStr = sizeProp.GetString();
+                    if (!string.IsNullOrEmpty(sizeStr) && sizeStr.Contains('x'))
+                    {
+                        var parts = sizeStr.Split('x');
+                        if (parts.Length == 2 && int.TryParse(parts[0], out var w) && int.TryParse(parts[1], out var h))
+                        {
+                            fp.Width = w;
+                            fp.Height = h;
+                        }
+                    }
+                }
+
+                // Extract LoRAs from resources array
+                if (metaProp.TryGetProperty("resources", out var resourcesProp) && resourcesProp.ValueKind == JsonValueKind.Array)
+                {
+                    var loras = new List<LoraInfo>();
+                    foreach (var resource in resourcesProp.EnumerateArray())
+                    {
+                        if (resource.TryGetProperty("type", out var typeProp) && typeProp.GetString() == "lora")
+                        {
+                            if (resource.TryGetProperty("name", out var nameProp))
+                            {
+                                var loraName = nameProp.GetString();
+                                if (!string.IsNullOrEmpty(loraName))
+                                {
+                                    loras.Add(new LoraInfo { Name = loraName, Strength = 1.0m });
+                                }
+                            }
+                        }
+                    }
+                    if (loras.Count > 0)
+                    {
+                        fp.Loras = loras;
+                    }
+                }
+
+                // Also check for hashes object for LoRAs
+                if ((fp.Loras == null || fp.Loras.Count == 0) && metaProp.TryGetProperty("hashes", out var hashesProp) && hashesProp.ValueKind == JsonValueKind.Object)
+                {
+                    var loras = new List<LoraInfo>();
+                    foreach (var prop in hashesProp.EnumerateObject())
+                    {
+                        if (prop.Name.StartsWith("lora:"))
+                        {
+                            var loraName = prop.Name.Substring(5); // Remove "lora:" prefix
+                            loras.Add(new LoraInfo { Name = loraName, Strength = 1.0m });
+                        }
+                    }
+                    if (loras.Count > 0)
+                    {
+                        fp.Loras = loras;
+                    }
+                }
+            }
+
+            return fp;
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"Failed to parse Civitai embedded metadata: {ex.Message}");
+            return null;
         }
     }
 

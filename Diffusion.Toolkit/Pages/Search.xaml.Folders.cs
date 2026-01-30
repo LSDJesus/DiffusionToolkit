@@ -223,14 +223,26 @@ namespace Diffusion.Toolkit.Pages
             }
             else if (e.ChangedButton == MouseButton.Right)
             {
-                if (selectedFolders.Contains(folder))
+                if (!selectedFolders.Contains(folder))
                 {
-                    return;
+                    ServiceLocator.FolderService.ClearSelection();
+                    folder.IsSelected = true;
                 }
 
-                ServiceLocator.FolderService.ClearSelection();
-
-                folder.IsSelected = true;
+                // Recalculate menu properties based on updated selection (single folder after right-click)
+                _model.NavigationSection.FoldersSection.CanCreateFolder = isAvailable;
+                _model.NavigationSection.FoldersSection.CanDelete = !isRoot && isAvailable;
+                _model.NavigationSection.FoldersSection.CanRename = !isRoot && isAvailable;
+                _model.NavigationSection.FoldersSection.CanRemove = true; // Single folder is now selected
+                _model.NavigationSection.FoldersSection.CanShowInExplorer = isAvailable;
+                _model.NavigationSection.FoldersSection.CanArchive = isScanned && isAvailable && !isExcluded && !isArchived;
+                _model.NavigationSection.FoldersSection.CanUnarchive = isScanned && isAvailable && !isExcluded && isArchived;
+                _model.NavigationSection.FoldersSection.CanArchiveTree = isScanned && isAvailable && !isExcluded;
+                _model.NavigationSection.FoldersSection.CanUnarchiveTree = isScanned && isAvailable && !isExcluded;
+                _model.NavigationSection.FoldersSection.CanExclude = !isRoot && isAvailable && !isExcluded;
+                _model.NavigationSection.FoldersSection.CanUnexclude = !isRoot && isAvailable && isExcluded;
+                _model.NavigationSection.FoldersSection.CanExcludeTree = !isRoot && isAvailable;
+                _model.NavigationSection.FoldersSection.CanUnexcludeTree = !isRoot && isAvailable;
             }
 
         }

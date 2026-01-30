@@ -40,36 +40,42 @@ public class MetadataScannerService
             // Fire-and-forget: continuation runs asynchronously after database write completes
             _ = dt.Task.ContinueWith(d =>
             {
-                var message = new List<string>();
-                if (d.Result.Added > 0)
+                try
                 {
-                    message.Add($"{d.Result.Added} images added");
-                }
-                if (d.Result.Updated > 0)
-                {
-                    message.Add($"{d.Result.Updated} images updated");
-                }
-                if (d.Result is { Added: 0, Updated: 0 })
-                {
-                    message.Add("No images were found");
-                }
-
-                var toast = string.Join("\r\n", message);
-
-                ServiceLocator.ToastService.Toast(toast, "");
-                scanCompletionEvent?.OnDatabaseWriteCompleted?.Invoke();
-                ServiceLocator.ProgressService.CompleteTask();
-                ServiceLocator.ProgressService.ClearProgress();
-                ServiceLocator.ProgressService.SetStatus("");
-
-                _ = ServiceLocator.FolderService.LoadFolders().ContinueWith(d =>
-                {
-                    if (ServiceLocator.Settings.AutoRefresh)
+                    var message = new List<string>();
+                    if (d.Result?.Added > 0)
                     {
-                        ServiceLocator.SearchService.RefreshResults();
+                        message.Add($"{d.Result.Added} images added");
                     }
-                });
+                    if (d.Result?.Updated > 0)
+                    {
+                        message.Add($"{d.Result.Updated} images updated");
+                    }
+                    if (d.Result is { Added: 0, Updated: 0 })
+                    {
+                        message.Add("No images were found");
+                    }
 
+                    var toast = string.Join("\r\n", message);
+
+                    ServiceLocator.ToastService?.Toast(toast, "");
+                    scanCompletionEvent?.OnDatabaseWriteCompleted?.Invoke();
+                    ServiceLocator.ProgressService?.CompleteTask();
+                    ServiceLocator.ProgressService?.ClearProgress();
+                    ServiceLocator.ProgressService?.SetStatus("");
+
+                    _ = ServiceLocator.FolderService?.LoadFolders()?.ContinueWith(d =>
+                    {
+                        if (ServiceLocator.Settings?.AutoRefresh == true)
+                        {
+                            ServiceLocator.SearchService?.RefreshResults();
+                        }
+                    });
+                }
+                catch (System.Exception ex)
+                {
+                    Logger.Log($"MetadataScannerService.QueueBatchAsync error in ContinueWith: {ex.Message}");
+                }
 
             });
         }

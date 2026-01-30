@@ -53,6 +53,18 @@ public class WatcherService : IDisposable
     // Schema-aware folder cache for routing files to correct schema
     private Dictionary<string, string> _folderSchemaCache = new();
     private readonly object _schemaCacheLock = new();
+    
+    // Statistics counters for batch reporting
+    private int _statsNewImages = 0;
+    private int _statsSuccessfulImports = 0;
+    private int _statsFailedImports = 0;
+    private int _statsSkippedImages = 0;
+    private int _statsFaceDetections = 0;
+    private int _statsTaggings = 0;
+    private int _statsCaptions = 0;
+    private DateTime _lastStatsReport = DateTime.UtcNow;
+    private readonly object _statsLock = new();
+    private readonly TimeSpan _statsReportInterval = TimeSpan.FromSeconds(30); // Report every 30 seconds
 
     public int HttpPort { get; set; } = 19284; // Default port for Watcher API
 
@@ -118,11 +130,14 @@ public class WatcherService : IDisposable
 
         try
         {
-            // Load watched folders from database
-            var folders = _dataStore.GetFolders().Where(f => f.IsRoot).ToList();
+            // Load watched folders from ALL schemas (public + civitai_downloads)
+            var folders = _dataStore.GetAllSchemasFolders().Where(f => f.IsRoot).ToList();
+            
+            Logger.Log($"WatcherService: Loading {folders.Count} root folders from all schemas");
             
             foreach (var folder in folders)
             {
+                Logger.Log($"WatcherService: Watching {folder.Path} (schema: {folder.SchemaName ?? "public"})");
                 StartWatchingFolder(folder.Path);
             }
 
@@ -616,21 +631,21 @@ public class WatcherService : IDisposable
 
             var image = await _dataStore.GetImageByIdAsync(imageId);
             if (image == null) return;
-
-            Logger.Log($"Background processing face detection for image {imageId}: {image.Path}");
             
             var result = await _faceDetectionService.ProcessImageAsync(image.Path);
             if (result.Faces.Any())
             {
                 await _dataStore.StoreFaceDetections(imageId, result.Faces);
-                Logger.Log($"Detected {result.Faces.Count} faces in image {imageId}");
+                lock (_statsLock) { _statsFaceDetections += result.Faces.Count; }
             }
             
             await _dataStore.SetNeedsFaceDetection(new List<int> { imageId }, false);
+            ReportStatisticsIfNeeded();
         }
         catch (Exception ex)
         {
             Logger.Log($"Error in background face detection for image {imageId}: {ex.Message}");
+            lock (_statsLock) { _statsFailedImports++; }
         }
     }
 
@@ -643,8 +658,6 @@ public class WatcherService : IDisposable
 
             var image = await _dataStore.GetImageByIdAsync(imageId);
             if (image == null) return;
-
-            Logger.Log($"Background processing tagging for image {imageId}: {image.Path}");
 
             var allTags = new HashSet<string>();
 
@@ -669,10 +682,13 @@ public class WatcherService : IDisposable
             }
 
             await _dataStore.SetNeedsTagging(new List<int> { imageId }, false);
+            lock (_statsLock) { _statsTaggings++; }
+            ReportStatisticsIfNeeded();
         }
         catch (Exception ex)
         {
             Logger.Log($"Error in background tagging for image {imageId}: {ex.Message}");
+            lock (_statsLock) { _statsFailedImports++; }
         }
     }
 
@@ -686,8 +702,6 @@ public class WatcherService : IDisposable
             var image = await _dataStore.GetImageByIdAsync(imageId);
             if (image == null) return;
 
-            Logger.Log($"Background processing captioning for image {imageId}: {image.Path}");
-
             var result = await _captionService.CaptionImageAsync(image.Path);
             if (!string.IsNullOrEmpty(result.Caption))
             {
@@ -695,10 +709,59 @@ public class WatcherService : IDisposable
             }
 
             await _dataStore.SetNeedsCaptioning(new List<int> { imageId }, false);
+            lock (_statsLock) { _statsCaptions++; }
+            ReportStatisticsIfNeeded();
         }
         catch (Exception ex)
         {
             Logger.Log($"Error in background captioning for image {imageId}: {ex.Message}");
+            lock (_statsLock) { _statsFailedImports++; }
+        }
+    }
+
+    /// <summary>
+    /// Report statistics summary if enough time has passed
+    /// </summary>
+    private void ReportStatisticsIfNeeded()
+    {
+        lock (_statsLock)
+        {
+            var timeSinceLastReport = DateTime.UtcNow - _lastStatsReport;
+            
+            if (timeSinceLastReport >= _statsReportInterval)
+            {
+                var totalProcessed = _statsNewImages + _statsSuccessfulImports + _statsFailedImports + _statsSkippedImages;
+                
+                if (totalProcessed > 0 || _statsFaceDetections > 0 || _statsTaggings > 0 || _statsCaptions > 0)
+                {
+                    var summary = $"Stats ({(int)timeSinceLastReport.TotalSeconds}s): " +
+                                  $"New={_statsNewImages}, Success={_statsSuccessfulImports}, " +
+                                  $"Skipped={_statsSkippedImages}";
+                    
+                    // Only show failed count (details logged separately above)
+                    if (_statsFailedImports > 0)
+                    {
+                        summary += $", Failed={_statsFailedImports} (see errors above)";
+                    }
+                    
+                    if (_statsFaceDetections > 0 || _statsTaggings > 0 || _statsCaptions > 0)
+                    {
+                        summary += $" | AI: Faces={_statsFaceDetections}, Tags={_statsTaggings}, Captions={_statsCaptions}";
+                    }
+                    
+                    Logger.Log(summary);
+                }
+                
+                // Reset counters
+                _statsNewImages = 0;
+                _statsSuccessfulImports = 0;
+                _statsFailedImports = 0;
+                _statsSkippedImages = 0;
+                _statsFaceDetections = 0;
+                _statsTaggings = 0;
+                _statsCaptions = 0;
+                _lastStatsReport = DateTime.UtcNow;
+            }
         }
     }
 
@@ -831,12 +894,13 @@ public class WatcherService : IDisposable
                     
                     // Pre-populate folder cache to avoid queries during COPY operation
                     var rootFolderCache = conn.Query<DBModels.Folder>(
-                        "SELECT id, parent_id, root_folder_id, path, image_count, scanned_date, unavailable, archived, excluded, is_root, schema_name FROM folder")
+                        $"SELECT id, parent_id, root_folder_id, path, image_count, scanned_date, unavailable, archived, excluded, is_root, schema_name FROM {schema}.folder")
                         .ToDictionary(f => f.Path, f => f);
                     
                     _dataStore.QuickAddImages(conn, fileInfoList, rootFolderCache, _cts.Token);
                     
-                    Logger.Log($"Quick-scanned {fileInfoList.Count} files to schema '{schema}'");
+                    lock (_statsLock) { _statsNewImages += fileInfoList.Count; }
+                    ReportStatisticsIfNeeded();
                 }
                 catch (Exception ex)
                 {
@@ -865,11 +929,15 @@ public class WatcherService : IDisposable
         {
             using var conn = _dataStore.OpenConnection();
             
+            // Search BOTH public and civitai_downloads schemas for the folder
             // Find the longest matching folder path (handles nested folders)
-            // Use LIKE with % to match folder and all subfolders
             var schema = conn.QuerySingleOrDefault<string>(@"
                 SELECT schema_name 
-                FROM folder 
+                FROM (
+                    SELECT schema_name, path FROM public.folder
+                    UNION ALL
+                    SELECT schema_name, path FROM civitai_downloads.folder
+                ) all_folders
                 WHERE @filePath LIKE path || '%'
                 ORDER BY length(path) DESC 
                 LIMIT 1",
@@ -905,7 +973,8 @@ public class WatcherService : IDisposable
                 // Skip if already fully processed (scan_phase = 1)
                 if (currentPhase == 1)
                 {
-                    Logger.Log($"Skipping metadata extraction for {Path.GetFileName(file)} - already processed");
+                    lock (_statsLock) { _statsSkippedImages++; }
+                    ReportStatisticsIfNeeded();
                     return;
                 }
                 
@@ -935,10 +1004,14 @@ public class WatcherService : IDisposable
                     }
                     // Note: AutoEmbeddingOnScan not yet supported in WatcherSettings
                 }
+                
+                lock (_statsLock) { _statsSuccessfulImports++; }
+                ReportStatisticsIfNeeded();
             }
             catch (Exception ex)
             {
                 Logger.Log($"Error extracting metadata for {file}: {ex.Message}");
+                lock (_statsLock) { _statsFailedImports++; }
             }
         });
     }

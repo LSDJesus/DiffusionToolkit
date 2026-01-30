@@ -99,7 +99,7 @@ public partial class PostgreSQLDataStore
 
             var sql = @"
                 INSERT INTO face_detection (
-                    image_id, face_index, x, y, width, height,
+                    image_id, face_index, bbox_x, bbox_y, bbox_width, bbox_height,
                     confidence, quality_score, sharpness_score,
                     pose_yaw, pose_pitch, pose_roll,
                     face_crop, crop_width, crop_height,
@@ -114,10 +114,10 @@ public partial class PostgreSQLDataStore
                     @detectionModel, NOW()
                 )
                 ON CONFLICT (image_id, face_index) DO UPDATE SET
-                    x = EXCLUDED.x,
-                    y = EXCLUDED.y,
-                    width = EXCLUDED.width,
-                    height = EXCLUDED.height,
+                    bbox_x = EXCLUDED.bbox_x,
+                    bbox_y = EXCLUDED.bbox_y,
+                    bbox_width = EXCLUDED.bbox_width,
+                    bbox_height = EXCLUDED.bbox_height,
                     confidence = EXCLUDED.confidence,
                     quality_score = EXCLUDED.quality_score,
                     sharpness_score = EXCLUDED.sharpness_score,

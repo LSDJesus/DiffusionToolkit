@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Threading;
+using Diffusion.Common;
 using Diffusion.Toolkit.Localization;
 using Diffusion.Toolkit.Models;
 using static System.Windows.Forms.VisualStyles.VisualStyleElement;
@@ -24,6 +25,7 @@ public class ProgressService
 
     public ProgressService()
     {
+        _progressCancellationTokenSource = new CancellationTokenSource();
     }
 
     public async Task StartTask()
@@ -85,15 +87,35 @@ public class ProgressService
 
     public async Task<bool> CancelTask()
     {
-        var dialogResult = await ServiceLocator.MessageService.Show(GetLocalizedText("Common.MessageBox.ConfirmCancelOperation"), GetLocalizedText("Common.MessageBox.Cancel"), PopupButtons.YesNo);
-
-        if (dialogResult == PopupResult.Yes)
+        try
         {
+            if (ServiceLocator.MessageService == null)
+            {
+                // No message service available - just cancel immediately
+                _progressCancellationTokenSource.Cancel();
+                return true;
+            }
+
+            var dialogResult = await ServiceLocator.MessageService.Show(
+                GetLocalizedText("Common.MessageBox.ConfirmCancelOperation"), 
+                GetLocalizedText("Common.MessageBox.Cancel"), 
+                PopupButtons.YesNo);
+
+            if (dialogResult == PopupResult.Yes)
+            {
+                _progressCancellationTokenSource.Cancel();
+                return true;
+            }
+
+            return false;
+        }
+        catch (Exception ex)
+        {
+            Logger.Log($"Error in CancelTask: {ex.Message}");
+            // Cancel anyway if there's an error
             _progressCancellationTokenSource.Cancel();
             return true;
         }
-
-        return false;
     }
 
     public void InitializeProgress(int count)
@@ -125,7 +147,7 @@ public class ProgressService
 
     public void AddProgress(int count)
     {
-        _dispatcher.Invoke(() =>
+        _dispatcher.BeginInvoke(() =>
         {
             ServiceLocator.MainModel.CurrentProgress += count;
             //if (ServiceLocator.MainModel.CurrentProgress == ServiceLocator.MainModel.ProgressTarget)
@@ -143,7 +165,7 @@ public class ProgressService
     /// <param name="statusFormat">A string that with tokens {current} and {total}</param>
     public void SetProgress(int value, string? statusFormat = null)
     {
-        _dispatcher.Invoke(() =>
+        _dispatcher.BeginInvoke(() =>
         {
             ServiceLocator.MainModel.CurrentProgress = value;
             if (statusFormat != null)
@@ -164,7 +186,7 @@ public class ProgressService
 
     public void SetStatus(string status)
     {
-        _dispatcher.Invoke(() =>
+        _dispatcher.BeginInvoke(() =>
         {
             ServiceLocator.MainModel.Status = status;
         });
@@ -172,7 +194,7 @@ public class ProgressService
 
     public void ClearStatus()
     {
-        _dispatcher.Invoke(() =>
+        _dispatcher.BeginInvoke(() =>
         {
             ServiceLocator.MainModel.Status = "";
         });

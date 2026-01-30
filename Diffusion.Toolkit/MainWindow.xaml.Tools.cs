@@ -14,9 +14,12 @@ namespace Diffusion.Toolkit
     {
         private async Task<bool> CheckIfQueryEmpty(string title)
         {
-            if (_search.QueryOptions.IsEmpty)
+            if (_search == null || _search.QueryOptions == null || _search.QueryOptions.IsEmpty)
             {
-                await _messagePopupManager.Show("Query cannot be empty", title, PopupButtons.OK);
+                if (_messagePopupManager != null)
+                {
+                    await _messagePopupManager.Show("Query cannot be empty", title, PopupButtons.OK);
+                }
                 return false;
             }
 

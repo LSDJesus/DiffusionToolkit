@@ -252,7 +252,7 @@ public partial class PostgreSQLDataStore
         }
 
         // Pre-load ALL folder and root_folder mappings AFTER folders are created
-        var allFolders = conn.Query<(int id, int root_folder_id)>("SELECT id, root_folder_id FROM folder")
+        var allFolders = conn.Query<(int id, int root_folder_id)>($"SELECT id, root_folder_id FROM {Table("folder")}")
             .ToDictionary(f => f.id, f => f.root_folder_id);
 
         // Build a path-to-folder lookup from the cache
@@ -316,7 +316,7 @@ public partial class PostgreSQLDataStore
 
             // Bulk insert from temp table into main table (handles conflicts)
             var inserted = conn.Execute($@"
-                INSERT INTO image (
+                INSERT INTO {Table("image")} (
                     path, file_name, file_size, created_date, modified_date, 
                     folder_id, root_folder_id, scan_phase, no_metadata, has_error, 
                     width, height, steps, cfg_scale, seed, batch_size, batch_pos, 
@@ -332,8 +332,8 @@ public partial class PostgreSQLDataStore
             // Fix the sequence after bulk insert to prevent ID gaps
             if (inserted > 0)
             {
-                var maxId = conn.ExecuteScalar<int?>("SELECT MAX(id) FROM image") ?? 0;
-                conn.Execute($"SELECT setval('image_id_seq', {maxId}, true)");
+                var maxId = conn.ExecuteScalar<int?>($"SELECT MAX(id) FROM {Table("image")}") ?? 0;
+                conn.Execute($"SELECT setval('{_currentSchema}.image_id_seq', {maxId}, true)");
                 Logger.Log($"Updated image_id_seq to {maxId} after inserting {inserted} images");
             }
 
@@ -367,7 +367,7 @@ public partial class PostgreSQLDataStore
     {
         using var conn = OpenConnection();
         
-        var query = "SELECT path FROM image WHERE scan_phase = 0";
+        var query = $"SELECT path FROM {Table("image")} WHERE scan_phase = 0";
         
         if (folderId.HasValue)
         {
@@ -377,6 +377,106 @@ public partial class PostgreSQLDataStore
         query += " LIMIT @limit";
 
         return conn.Query<string>(query, new { folderId, limit });
+    }
+
+    /// <summary>
+    /// ULTRA-FAST: Insert images using only paths (no FileInfo required)
+    /// This is the fastest possible Stage 2 - just get images visible in UI
+    /// File size/dates populated later during metadata scan
+    /// </summary>
+    public int QuickAddImagePathsOnly(NpgsqlConnection conn, IReadOnlyList<string> paths, Dictionary<string, Folder> folderCache, CancellationToken cancellationToken)
+    {
+        if (paths.Count == 0) return 0;
+
+        // Ensure all folders exist first
+        var uniqueFolderPaths = paths
+            .Select(p => Path.GetDirectoryName(p))
+            .Where(p => !string.IsNullOrEmpty(p))
+            .Distinct()
+            .ToList();
+
+        foreach (var folderPath in uniqueFolderPaths)
+        {
+            if (cancellationToken.IsCancellationRequested) return 0;
+            EnsureFolderExists(conn, folderPath!, folderCache, out _);
+        }
+
+        // Reload folder mappings after creating folders
+        var allFolders = conn.Query<(int id, int root_folder_id)>($"SELECT id, root_folder_id FROM {Table("folder")}")
+            .ToDictionary(f => f.id, f => f.root_folder_id);
+
+        var pathToFolderInfo = new Dictionary<string, (int folderId, int rootFolderId)>();
+        foreach (var kvp in folderCache)
+        {
+            if (allFolders.TryGetValue(kvp.Value.Id, out var rootFolderId))
+            {
+                pathToFolderInfo[kvp.Key] = (kvp.Value.Id, rootFolderId);
+            }
+        }
+
+        var tempTableName = $"temp_paths_{Guid.NewGuid():N}";
+        
+        try
+        {
+            // Minimal temp table - just paths and folder IDs
+            conn.Execute($@"
+                CREATE TEMP TABLE {tempTableName} (
+                    path TEXT,
+                    file_name TEXT,
+                    folder_id INT,
+                    root_folder_id INT
+                )");
+
+            // COPY just paths (much faster than with FileInfo data)
+            using (var writer = conn.BeginBinaryImport($"COPY {tempTableName} (path, file_name, folder_id, root_folder_id) FROM STDIN (FORMAT BINARY)"))
+            {
+                foreach (var path in paths)
+                {
+                    if (cancellationToken.IsCancellationRequested) break;
+
+                    var dirName = Path.GetDirectoryName(path);
+                    var fileName = Path.GetFileName(path);
+
+                    if (dirName == null || !pathToFolderInfo.TryGetValue(dirName, out var folderInfo))
+                        continue;
+
+                    writer.StartRow();
+                    writer.Write(path, NpgsqlTypes.NpgsqlDbType.Text);
+                    writer.Write(fileName, NpgsqlTypes.NpgsqlDbType.Text);
+                    writer.Write(folderInfo.folderId, NpgsqlTypes.NpgsqlDbType.Integer);
+                    writer.Write(folderInfo.rootFolderId, NpgsqlTypes.NpgsqlDbType.Integer);
+                }
+                writer.Complete();
+            }
+
+            // Insert with minimal columns - defaults for everything else
+            var inserted = conn.Execute($@"
+                INSERT INTO {Table("image")} (
+                    path, file_name, folder_id, root_folder_id, 
+                    scan_phase, no_metadata, has_error, 
+                    file_size, width, height, steps, cfg_scale, seed, batch_size, batch_pos, 
+                    favorite, for_deletion, nsfw, unavailable,
+                    created_date, modified_date
+                )
+                SELECT 
+                    path, file_name, folder_id, root_folder_id,
+                    0, false, false,
+                    0, 0, 0, 0, 0, 0, 0, 0,
+                    false, false, false, false,
+                    NOW(), NOW()
+                FROM {tempTableName}
+                ON CONFLICT (path) DO NOTHING");
+
+            conn.Execute($"DROP TABLE IF EXISTS {tempTableName}");
+            
+            return inserted;
+        }
+        catch (Exception e)
+        {
+            Logger.Log($"QuickAddImagePathsOnly error: {e.Message}");
+            try { conn.Execute($"DROP TABLE IF EXISTS {tempTableName}"); } catch { }
+            throw;
+        }
     }
 
     /// <summary>

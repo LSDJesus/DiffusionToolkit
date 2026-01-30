@@ -197,7 +197,30 @@ public class ScanningService
     {
         var excludePaths = ServiceLocator.FolderService.ExcludedOrArchivedFolderPaths;
 
-        return await Task.Run(() => MetadataScanner.GetFiles(path, _settings.FileExtensions, ignoreFiles, recursive, excludePaths, cancellationToken).ToList());
+        return await Task.Run(() => 
+        {
+            ServiceLocator.ProgressService.SetStatus($"Discovering files in {Path.GetFileName(path)}...");
+            
+            var files = new List<string>();
+            var lastUpdate = DateTime.UtcNow;
+            
+            foreach (var file in MetadataScanner.GetFiles(path, _settings.FileExtensions, ignoreFiles, recursive, excludePaths, cancellationToken))
+            {
+                if (cancellationToken.IsCancellationRequested) break;
+                
+                files.Add(file);
+                
+                // Update status every 500ms to avoid UI spam
+                if ((DateTime.UtcNow - lastUpdate).TotalMilliseconds > 500)
+                {
+                    ServiceLocator.ProgressService.SetStatus($"Discovering files... {files.Count:N0} found");
+                    lastUpdate = DateTime.UtcNow;
+                }
+            }
+            
+            Logger.Log($"GetFilesToScan: Discovered {files.Count} files in {path}");
+            return files;
+        }, cancellationToken);
     }
 
     public async Task ScanWatchedFolders(bool updateImages, bool reportIfNone, CancellationToken cancellationToken)
@@ -273,7 +296,7 @@ public class ScanningService
             if (!updateImages)
             {
                 Logger.Log($"ScanWatchedFolders: Entering QUICK SCAN path with {filesToScan.Count} files");
-                var addedCount = await QuickScanFiles(filesToScan, cancellationToken);
+                var addedCount = await QuickScanFilesOptimized(filesToScan, cancellationToken);
 
                 if (addedCount > 0)
                 {
@@ -310,45 +333,51 @@ public class ScanningService
     }
 
     /// <summary>
-    /// Scan a newly added folder with two-phase approach:
-    /// Phase 1: Quick scan for immediate visibility
-    /// Phase 2: Automatic background deep scan for metadata
+    /// Scan a newly added folder with three-stage approach:
+    /// Stage 1: Ultra-fast filesystem enumeration (already done by caller)
+    /// Stage 2: Batch DB insert with periodic UI refresh for thumbnails
+    /// Stage 3: Background metadata extraction (lazy/on-demand)
     /// </summary>
     public async Task ScanNewFolder(List<string> filePaths, CancellationToken cancellationToken)
     {
         if (filePaths.Count == 0) return;
 
-        Logger.Log($"ScanNewFolder: Starting two-phase scan for {filePaths.Count} files");
+        Logger.Log($"ScanNewFolder: Starting three-stage scan for {filePaths.Count} files");
 
-        // Phase 1: Quick scan - adds files with basic info immediately
-        var addedCount = await QuickScanFiles(filePaths, cancellationToken);
+        // Stage 2: Fast DB insert with periodic UI refresh
+        var addedCount = await QuickScanFilesOptimized(filePaths, cancellationToken);
 
         if (addedCount > 0)
         {
-            Logger.Log($"ScanNewFolder: Quick scan added {addedCount} files. Starting background metadata extraction...");
-            ServiceLocator.ToastService.Toast($"{addedCount} images indexed. Extracting metadata in background...", "Scanning");
+            Logger.Log($"ScanNewFolder: Indexed {addedCount} files");
+            ServiceLocator.ToastService.Toast($"{addedCount:N0} images indexed. Metadata will be extracted on demand.", "Scanning");
             
-            // Refresh UI so quick-scanned images appear immediately
+            // Final UI refresh
             ServiceLocator.SearchService.RefreshResults();
+            
+            // Reload folder tree to show new folders
+            await ServiceLocator.FolderService.LoadFolders();
 
-            // Phase 2: Automatically start deep scan in background (non-blocking)
+            // Stage 3: Background metadata extraction (fire-and-forget, low priority)
             _ = Task.Run(async () =>
             {
                 try
                 {
-                    // Small delay to let UI settle
-                    await Task.Delay(2000, cancellationToken);
+                    // Wait for UI to settle
+                    await Task.Delay(5000, cancellationToken);
                     
-                    Logger.Log("ScanNewFolder: Starting background deep scan...");
-                    await DeepScanPendingImages(batchSize: 200, cancellationToken);
+                    Logger.Log("ScanNewFolder: Starting background metadata extraction...");
+                    await DeepScanPendingImages(batchSize: 100, cancellationToken);
                     
                     Logger.Log("ScanNewFolder: Background metadata extraction complete");
-                    ServiceLocator.ToastService.Toast("Metadata extraction complete", "Scanning");
-                    ServiceLocator.SearchService.RefreshResults();
+                }
+                catch (OperationCanceledException)
+                {
+                    Logger.Log("ScanNewFolder: Background scan cancelled");
                 }
                 catch (Exception ex)
                 {
-                    Logger.Log($"ScanNewFolder background deep scan error: {ex.Message}");
+                    Logger.Log($"ScanNewFolder background scan error: {ex.Message}");
                 }
             }, cancellationToken);
         }
@@ -360,61 +389,131 @@ public class ScanningService
     }
 
     /// <summary>
-    /// Phase 1: Quick scan that rapidly indexes files with basic information
-    /// Returns the number of files actually added to the database
+    /// ULTRA-FAST Stage 2: Parallel workers insert paths via PostgreSQL COPY
+    /// Uses multiple connections for maximum throughput on multi-core systems
     /// </summary>
-    private async Task<int> QuickScanFiles(List<string> filePaths, CancellationToken cancellationToken)
+    private async Task<int> QuickScanFilesOptimized(List<string> filePaths, CancellationToken cancellationToken)
     {
         if (filePaths.Count == 0) return 0;
 
-        ServiceLocator.ProgressService.SetStatus($"Quick scanning {filePaths.Count} files...");
-
-        return await Task.Run(() =>
+        // Parallel settings - balanced for throughput vs DB contention
+        var workerCount = Math.Min(Environment.ProcessorCount / 2, 4); // Use half cores, cap at 4
+        if (workerCount < 2) workerCount = 2; // Minimum 2 workers
+        var batchSize = 25000; // Smaller batches = more responsive cancel + progress
+        var uiRefreshIntervalMs = 1000; // Refresh UI every second
+        
+        var totalFiles = filePaths.Count;
+        var totalAdded = 0;
+        var processedCount = 0;
+        var lastRefreshTime = DateTime.UtcNow;
+        var progressLock = new object();
+        
+        Logger.Log($"QuickScan: Starting parallel scan with {workerCount} workers for {totalFiles:N0} files");
+        ServiceLocator.ProgressService.SetStatus($"Indexing {totalFiles:N0} files with {workerCount} workers...");
+        
+        // Pre-load folder cache once (shared read-only across workers)
+        Dictionary<string, Folder> folderCache;
+        using (var conn = _dataStore.OpenConnection())
         {
-            var fileInfoList = new List<(string path, long fileSize, DateTime createdDate, DateTime modifiedDate)>();
-
-            // Gather basic file info (very fast - no metadata parsing)
-            foreach (var filePath in filePaths)
+            folderCache = conn.Query<Folder>(
+                $"SELECT id, parent_id, root_folder_id, path, image_count, scanned_date, unavailable, archived, excluded, is_root FROM {_dataStore.Table("folder")}")
+                .ToDictionary(f => f.Path, f => f);
+            Logger.Log($"QuickScan: Pre-loaded {folderCache.Count} folders into cache");
+        }
+        
+        // Split files into chunks for parallel processing
+        var chunks = new List<List<string>>();
+        for (int i = 0; i < totalFiles; i += batchSize)
+        {
+            chunks.Add(filePaths.GetRange(i, Math.Min(batchSize, totalFiles - i)));
+        }
+        
+        Logger.Log($"QuickScan: Split into {chunks.Count} chunks of ~{batchSize:N0} files each");
+        
+        // Process chunks in parallel with limited concurrency
+        var semaphore = new SemaphoreSlim(workerCount);
+        var tasks = new List<Task<int>>();
+        var chunkIndex = 0;
+        
+        foreach (var chunk in chunks)
+        {
+            if (cancellationToken.IsCancellationRequested) break;
+            
+            var localChunk = chunk;
+            var localIndex = Interlocked.Increment(ref chunkIndex);
+            
+            await semaphore.WaitAsync(cancellationToken);
+            
+            var task = Task.Run(async () =>
             {
-                if (cancellationToken.IsCancellationRequested) break;
-
                 try
                 {
-                    var fileInfo = new FileInfo(filePath);
-                    if (fileInfo.Exists)
+                    // Each worker gets its own connection
+                    using var conn = _dataStore.OpenConnection();
+                    
+                    var added = _dataStore.QuickAddImagePathsOnly(conn, localChunk, folderCache, cancellationToken);
+                    
+                    // Update progress atomically
+                    lock (progressLock)
                     {
-                        fileInfoList.Add((
-                            filePath,
-                            fileInfo.Length,
-                            fileInfo.CreationTimeUtc,
-                            fileInfo.LastWriteTimeUtc
-                        ));
+                        totalAdded += added;
+                        processedCount += localChunk.Count;
+                        
+                        var now = DateTime.UtcNow;
+                        if ((now - lastRefreshTime).TotalMilliseconds >= uiRefreshIntervalMs)
+                        {
+                            var percent = (int)(processedCount * 100.0 / totalFiles);
+                            ServiceLocator.ProgressService.SetStatus($"Indexing... {processedCount:N0}/{totalFiles:N0} ({percent}%) - {totalAdded:N0} added");
+                            
+                            ServiceLocator.Dispatcher.BeginInvoke(() =>
+                            {
+                                ServiceLocator.SearchService.RefreshResults();
+                            });
+                            
+                            lastRefreshTime = now;
+                        }
                     }
+                    
+                    return added;
                 }
-                catch (Exception ex)
+                finally
                 {
-                    Logger.Log($"Quick scan error for {filePath}: {ex.Message}");
+                    semaphore.Release();
                 }
+            }, cancellationToken);
+            
+            tasks.Add(task);
+        }
+        
+        // Wait for all workers to complete
+        try
+        {
+            await Task.WhenAll(tasks);
+        }
+        catch (OperationCanceledException)
+        {
+            Logger.Log("QuickScan: Cancelled during parallel processing");
+        }
+        
+        // Fix sequence after bulk insert
+        if (totalAdded > 0)
+        {
+            try
+            {
+                using var conn = _dataStore.OpenConnection();
+                var maxId = conn.ExecuteScalar<int?>($"SELECT MAX(id) FROM {_dataStore.Table("image")}") ?? 0;
+                conn.Execute($"SELECT setval('{_dataStore.CurrentSchema}.image_id_seq', {maxId}, true)");
             }
-
-            if (fileInfoList.Count == 0) return 0;
-
-            // Bulk insert into database
-            using var conn = _dataStore.OpenConnection();
-            
-            // Pre-populate folder cache to avoid queries during COPY operation
-            var folderCache = conn.Query<Folder>("SELECT id, parent_id, root_folder_id, path, image_count, scanned_date, unavailable, archived, excluded, is_root FROM folder")
-                .ToDictionary(f => f.Path, f => f);
-            
-            var added = _dataStore.QuickAddImages(conn, fileInfoList, folderCache, cancellationToken);
-            
-            Logger.Log($"Quick scan complete: {added} files indexed out of {fileInfoList.Count} candidates");
-            
-            // Clear the progress status
-            ServiceLocator.ProgressService.ClearStatus();
-            
-            return added;
-        }, cancellationToken);
+            catch (Exception ex)
+            {
+                Logger.Log($"Sequence reset warning: {ex.Message}");
+            }
+        }
+        
+        Logger.Log($"QuickScan complete: {totalAdded:N0} files indexed out of {totalFiles:N0} using {workerCount} workers");
+        ServiceLocator.ProgressService.ClearStatus();
+        
+        return totalAdded;
     }
 
     /// <summary>

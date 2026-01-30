@@ -1,5 +1,6 @@
 using Npgsql;
 using Dapper;
+using Diffusion.Common;
 using Diffusion.Database.PostgreSQL.Models;
 
 namespace Diffusion.Database.PostgreSQL;
@@ -424,6 +425,20 @@ public partial class PostgreSQLDataStore
         return conn.Query<Folder>($"SELECT {FolderColumns} FROM {Table("folder")}");
     }
 
+    /// <summary>
+    /// Get folders from ALL schemas (for Watcher to monitor all folders)
+    /// </summary>
+    public IEnumerable<Folder> GetAllSchemasFolders()
+    {
+        using var conn = OpenConnection();
+        
+        // Query both public and civitai_downloads schemas
+        var publicFolders = conn.Query<Folder>($"SELECT {FolderColumns} FROM public.folder");
+        var civitaiFolders = conn.Query<Folder>($"SELECT {FolderColumns} FROM civitai_downloads.folder");
+        
+        return publicFolders.Concat(civitaiFolders);
+    }
+
     public Folder? GetFolder(string path)
     {
         using var conn = OpenConnection();
@@ -446,8 +461,8 @@ public partial class PostgreSQLDataStore
             try
             {
                 // Update image paths
-                var imagesUpdated = conn.Execute(@"
-                    UPDATE image 
+                var imagesUpdated = conn.Execute($@"
+                    UPDATE {Table("image")} 
                     SET path = @newPath || SUBSTRING(path FROM LENGTH(@path) + 1)
                     WHERE path LIKE @path || '\\%'",
                     new { path, newPath },
@@ -482,6 +497,7 @@ public partial class PostgreSQLDataStore
 
     public int RemoveFolder(int id)
     {
+        Logger.Log($"RemoveFolder(id={id}): Starting deletion");
         lock (_lock)
         {
             using var conn = OpenConnection();
@@ -490,7 +506,7 @@ public partial class PostgreSQLDataStore
             try
             {
                 // Delete associated data in correct order (respects foreign keys)
-                conn.Execute($@"
+                var nodePropsDeleted = conn.Execute($@"
                     {DirectoryTreeCTE}
                     DELETE FROM node_property
                     WHERE node_id IN (
@@ -502,8 +518,9 @@ public partial class PostgreSQLDataStore
                     )",
                     new { id },
                     transaction);
+                Logger.Log($"RemoveFolder(id={id}): Deleted {nodePropsDeleted} node_property rows");
 
-                conn.Execute($@"
+                var nodesDeleted = conn.Execute($@"
                     {DirectoryTreeCTE}
                     DELETE FROM node
                     WHERE image_id IN (
@@ -512,8 +529,9 @@ public partial class PostgreSQLDataStore
                     )",
                     new { id },
                     transaction);
+                Logger.Log($"RemoveFolder(id={id}): Deleted {nodesDeleted} node rows");
 
-                conn.Execute($@"
+                var albumImagesDeleted = conn.Execute($@"
                     {DirectoryTreeCTE}
                     DELETE FROM album_image
                     WHERE image_id IN (
@@ -522,6 +540,7 @@ public partial class PostgreSQLDataStore
                     )",
                     new { id },
                     transaction);
+                Logger.Log($"RemoveFolder(id={id}): Deleted {albumImagesDeleted} album_image rows");
 
                 var imagesDeleted = conn.Execute($@"
                     {DirectoryTreeCTE}
@@ -529,23 +548,28 @@ public partial class PostgreSQLDataStore
                     WHERE folder_id IN (SELECT id FROM directory_tree WHERE root_id = @id)",
                     new { id },
                     transaction);
+                Logger.Log($"RemoveFolder(id={id}): Deleted {imagesDeleted} image rows");
 
                 // Delete subfolders
-                conn.Execute($@"
+                var subfoldersDeleted = conn.Execute($@"
                     {DirectoryTreeCTE}
                     DELETE FROM {Table("folder")}
                     WHERE id IN (SELECT id FROM directory_tree WHERE root_id = @id)",
                     new { id },
                     transaction);
+                Logger.Log($"RemoveFolder(id={id}): Deleted {subfoldersDeleted} subfolder rows");
 
                 // Delete the folder itself
-                conn.Execute($@"DELETE FROM {Table("folder")} WHERE id = @id", new { id }, transaction);
+                var folderDeleted = conn.Execute($@"DELETE FROM {Table("folder")} WHERE id = @id", new { id }, transaction);
+                Logger.Log($"RemoveFolder(id={id}): Deleted {folderDeleted} folder row (the root folder itself)");
 
                 transaction.Commit();
+                Logger.Log($"RemoveFolder(id={id}): Transaction committed successfully");
                 return imagesDeleted;
             }
-            catch
+            catch (Exception ex)
             {
+                Logger.Log($"RemoveFolder(id={id}): Exception - {ex.Message}");
                 transaction.Rollback();
                 throw;
             }

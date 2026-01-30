@@ -44,7 +44,14 @@ namespace Diffusion.Toolkit
 
             _model.RemoveFolderCommand = new AsyncCommand<FolderViewModel>(async (o) =>
             {
-                await ServiceLocator.FolderService.ShowRemoveFolderDialog(o);
+                if (o == null)
+                {
+                    Logger.Log("RemoveFolderCommand: folder parameter is NULL!");
+                    return;
+                }
+                Logger.Log($"RemoveFolderCommand: Removing folder {o.Path}");
+                var result = await ServiceLocator.FolderService.ShowRemoveFolderDialog(o);
+                Logger.Log($"RemoveFolderCommand: Dialog result = {result}");
             });
 
             _model.DeleteFolderCommand = new AsyncCommand<FolderViewModel>(async (o) =>
